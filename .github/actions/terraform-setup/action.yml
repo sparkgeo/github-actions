@@ -1,5 +1,15 @@
+
 name: "Terramate and OpenTofu Setup and Cache"
 description: "Setup Terramate and OpenTofu"
+inputs:
+  opentofu_version:
+    description: "OpenTofu version to install"
+    required: false
+    default: "1.10.0"
+  terramate_version:
+    description: "Terramate version to install"
+    required: false
+    default: "0.14.7"
 runs:
   using: "composite"
   steps:
