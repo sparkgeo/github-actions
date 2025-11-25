@@ -29,7 +29,7 @@ runs:
       id: cache-tfdata
       with:
         path: .tfdata/
-        key: tofu-tfdata-${{ hashFiles('**/.terraform.lock.hcl') }}
+        key: tofu-tfdata-${{ env.OPENTOFU_VERSION }}-${{ env.TERRAMATE_VERSION }}-${{ hashFiles('**/.terraform.lock.hcl') }}
         restore-keys: |
           tofu-tfdata-
 
