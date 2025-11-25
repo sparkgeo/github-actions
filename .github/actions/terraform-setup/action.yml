@@ -1,0 +1,46 @@
+name: "Terramate and Opentofu Setup and Cache"
+description: "Setup Terramate and Opentofu"
+runs:
+  using: "composite"
+  steps:
+    - name: Setup OpenTofu
+      uses: opentofu/setup-opentofu@v1.0.6
+      with:
+        tofu_version: ${{ env.OPENTOFU_VERSION }}
+        tofu_wrapper: false
+
+    - name: Setup Terramate
+      uses: terramate-io/terramate-action@v3.0.0
+      with:
+        version: ${{ env.TERRAMATE_VERSION }}
+
+    - name: Cache OpenTofu
+      uses: actions/cache@v4.3.0
+      id: cache-tfdata
+      with:
+        path: .tfdata/
+        key: tofu-tfdata-${{ hashFiles('**/.terraform.lock.hcl') }}
+        restore-keys: |
+          tofu-tfdata-
+
+    - name: Check cache status
+      shell: bash
+      run: |
+        echo "Data cache hit: ${{ steps.cache-tfdata.outputs.cache-hit }}"
+
+    - name: Check Terramate configurations are up to date
+      shell: bash
+      run: |
+        terramate generate
+        if ! git diff --quiet; then
+          echo "Error: Terramate generated files are not up to date!"
+          echo "Please run 'terramate generate' locally and commit the changes."
+          git diff
+          exit 1
+        fi
+        echo "Terramate generated files are up to date."
+
+    - name: List changed stacks
+      shell: bash
+      run: terramate list --changed
+
