@@ -1,5 +1,5 @@
-name: "Terramate and Opentofu Setup and Cache"
-description: "Setup Terramate and Opentofu"
+name: "Terramate and OpenTofu Setup and Cache"
+description: "Setup Terramate and OpenTofu"
 runs:
   using: "composite"
   steps:
