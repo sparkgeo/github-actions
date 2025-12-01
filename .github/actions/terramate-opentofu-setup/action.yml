@@ -24,20 +24,6 @@ runs:
       with:
         version: ${{ env.TERRAMATE_VERSION }}
 
-    - name: Cache OpenTofu
-      uses: actions/cache@v4.3.0
-      id: cache-tfdata
-      with:
-        path: .tfdata/
-        key: tofu-tfdata-${{ env.OPENTOFU_VERSION }}-${{ env.TERRAMATE_VERSION }}-${{ hashFiles('**/.terraform.lock.hcl') }}
-        restore-keys: |
-          tofu-tfdata-
-
-    - name: Check cache status
-      shell: bash
-      run: |
-        echo "Data cache hit: ${{ steps.cache-tfdata.outputs.cache-hit }}"
-
     - name: Check Terramate configurations are up to date
       shell: bash
       run: |
