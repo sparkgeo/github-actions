@@ -36,6 +36,10 @@ runs:
         fi
         echo "Terramate generated files are up to date."
 
+    - name: Tofu init changed stacks
+      shell: bash
+      run: terramate run --changed tofu init
+
     - name: List changed stacks
       shell: bash
       run: terramate list --changed
