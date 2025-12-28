@@ -66,7 +66,7 @@ runs:
         path: ./
         base: ${{ github.event.repository.default_branch }}
         head: HEAD
-        extra_args: --debug --only-verified
+        extra_args: filesystem --only-verified
 
     - name: TruffleHog Results Status
       shell: bash
@@ -77,11 +77,7 @@ runs:
       continue-on-error: true
       shell: bash
       run: |
-        detect-secrets scan --all-files --force-use-all-plugins > secrets_report/detect_secrets.json
-        num_secrets=$(jq '.results | length' secrets_report/detect_secrets.json)
-        if [ "$num_secrets" -gt 0 ]; then
-          echo "Secrets found by detect-secrets: $num_secrets"
-        fi
+        detect-secrets scan --force-use-all-plugins > secrets_report/detect_secrets.json
 
     - name: Run git-secrets
       continue-on-error: true
@@ -138,15 +134,22 @@ runs:
       shell: bash
       run: kingfisher scan . | tee secrets_report/kingfisher.txt
 
-    - name: Install TruffleHog CLI
+    - name: Run TruffleHog OSS (JSON Export)
       continue-on-error: true
-      shell: bash
-      run: pip install trufflehog
+      uses: TruffleHog/trufflehog-oss-action@main
+      with:
+        path: ./
+        base: ${{ github.event.repository.default_branch }}
+        head: HEAD
+        extra_args: --json
 
-    - name: Run TruffleHog CLI (JSON)
+    - name: Copy TruffleHog JSON Report
       continue-on-error: true
       shell: bash
-      run: trufflehog filesystem --json . > secrets_report/trufflehog.json
+      run: |
+        if [ -f "${{ runner.temp }}/trufflehog-report.json" ]; then
+          cp "${{ runner.temp }}/trufflehog-report.json" secrets_report/trufflehog.json
+        fi
 
     - name: Upload combined results artifact
       uses: actions/upload-artifact@v4
