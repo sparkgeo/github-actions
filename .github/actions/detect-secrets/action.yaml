@@ -61,7 +61,7 @@ runs:
     - name: Run detect-secrets
       shell: bash
       run: |
-        output=$(detect-secrets scan --all-files --json)
+        output=$(detect-secrets scan --all-files --force-use-all-plugins)
         num_secrets=$(echo "$output" | jq '.results | length')
         if [ "$num_secrets" -gt 0 ]; then
           echo "Secrets found by detect-secrets:"
