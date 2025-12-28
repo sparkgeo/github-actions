@@ -80,8 +80,8 @@ runs:
       shell: bash
       run: |
         talisman --scan
-        if [ -f talisman_reports/data/report.json ]; then
-          report=$(cat talisman_reports/data/report.json)
+        if [ -f talisman_report/talisman_reports/data/report.json ]; then
+          report=$(cat talisman_report/talisman_reports/data/report.json)
           num_failures=$(echo "$report" | jq '.failures // [] | length')
           if [ "$num_failures" -gt 0 ]; then
             echo "Secrets found by Talisman:"
