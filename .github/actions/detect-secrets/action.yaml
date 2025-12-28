@@ -137,7 +137,7 @@ runs:
       env:
         TRUFFLEHOG_NO_UPDATE: "1"
       run: |
-        "$RUNNER_TEMP/trufflehog" filesystem . --json --only-verified > secrets_report/trufflehog.json
+        "$RUNNER_TEMP/trufflehog" filesystem . --json --only-verified 2>&1 | tee secrets_report/trufflehog.json
 
     - name: Upload combined results artifact
       uses: actions/upload-artifact@v6.0.0
