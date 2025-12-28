@@ -126,7 +126,7 @@ runs:
         set -euo pipefail
         TRH_VER=3.92.4
         TMPDIR="$(mktemp -d)"
-        curl -sSL -o "$TMPDIR/trufflehog.tar.gz" "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRH_VER}/trufflehog_${TRH_VER}_Linux_x86_64.tar.gz"
+        curl -sSL -o "$TMPDIR/trufflehog.tar.gz" "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRH_VER}/trufflehog_${TRH_VER}_linux_amd64.tar.gz"
         tar -xzf "$TMPDIR/trufflehog.tar.gz" -C "$TMPDIR"
         sudo install "$TMPDIR/trufflehog" /usr/local/bin/trufflehog
 
