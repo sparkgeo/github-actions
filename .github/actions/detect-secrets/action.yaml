@@ -128,13 +128,16 @@ runs:
         TMPDIR="$(mktemp -d)"
         curl -sSL -o "$TMPDIR/trufflehog.tar.gz" "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRH_VER}/trufflehog_${TRH_VER}_linux_amd64.tar.gz"
         tar -xzf "$TMPDIR/trufflehog.tar.gz" -C "$TMPDIR"
-        sudo install "$TMPDIR/trufflehog" /usr/local/bin/trufflehog
+        install "$TMPDIR/trufflehog" "$RUNNER_TEMP/trufflehog"
+        chmod +x "$RUNNER_TEMP/trufflehog"
 
     - name: Run TruffleHog (filesystem JSON)
       continue-on-error: true
       shell: bash
+      env:
+        TRUFFLEHOG_NO_UPDATE: "1"
       run: |
-        trufflehog filesystem --json --only-verified . > secrets_report/trufflehog.json
+        "$RUNNER_TEMP/trufflehog" filesystem . --json --only-verified > secrets_report/trufflehog.json
 
     - name: Upload combined results artifact
       uses: actions/upload-artifact@v4
