@@ -124,7 +124,7 @@ runs:
       shell: bash
       run: |
         pip install trufflehog
-        trufflehog filesystem . --json --only-verified > secrets_report/trufflehog.json 2>&1
+        trufflehog filesystem --only-verified --github-actions . > secrets_report/trufflehog.json 2>&1
 
     - name: Validate TruffleHog JSON
       continue-on-error: true
