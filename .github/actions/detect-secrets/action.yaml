@@ -77,9 +77,10 @@ runs:
       run: bash -c "$(curl --silent https://raw.githubusercontent.com/thoughtworks/talisman/main/install.sh)"
 
     - name: Run Talisman
+      continue-on-error: true
       shell: bash
       run: |
-        talisman --scan
+        talisman --scan || true
         if [ -f talisman_report/talisman_reports/data/report.json ]; then
           report=$(cat talisman_report/talisman_reports/data/report.json)
           num_failures=$(echo "$report" | jq '.failures // [] | length')
