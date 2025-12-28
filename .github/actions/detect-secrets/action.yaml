@@ -61,7 +61,7 @@ runs:
     - name: Run TruffleHog
       id: trufflehog
       continue-on-error: true
-      uses: trufflesecurity/trufflehog@main
+      uses: trufflesecurity/trufflehog@v3.92.4
       with:
         path: ./
         base: ${{ github.event.repository.default_branch }}
