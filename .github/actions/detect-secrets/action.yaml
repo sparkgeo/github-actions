@@ -43,6 +43,12 @@ runs:
       shell: bash
       run: pip install detect-secrets
 
+    - name: Run detect-secrets
+      continue-on-error: true
+      shell: bash
+      run: |
+        detect-secrets scan --force-use-all-plugins > secrets_report/detect_secrets.json
+
     - name: Install git-secrets
       shell: bash
       run: |
@@ -51,23 +57,17 @@ runs:
         sudo make install
         cd ..
 
+    - name: Run git-secrets
+      continue-on-error: true
+      shell: bash
+      run: git secrets --scan -r . | tee secrets_report/git_secrets.txt
+
     - name: Run Gitleaks
       uses: gitleaks/gitleaks-action@v2.3.9
       continue-on-error: true
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GITLEAKS_LICENSE: ${{ inputs.gitleaks-license }}
-
-    - name: Run detect-secrets
-      continue-on-error: true
-      shell: bash
-      run: |
-        detect-secrets scan --force-use-all-plugins > secrets_report/detect_secrets.json
-
-    - name: Run git-secrets
-      continue-on-error: true
-      shell: bash
-      run: git secrets --scan -r . | tee secrets_report/git_secrets.txt
 
     - name: Install Talisman
       shell: bash
@@ -106,7 +106,7 @@ runs:
       continue-on-error: true
       shell: bash
       run: |
-        credentialdigger scan . --sqlite /tmp/cred.db --models PathModel PasswordModel
+        credentialdigger scan . --sqlite /tmp/cred.db --models PathModel PasswordModel | tee secrets_report/credential_digger.txt
         cp /tmp/cred.db secrets_report/credential_digger.db || true
         [ -f rules.yml ] && cp rules.yml secrets_report/ || true
 
@@ -121,21 +121,20 @@ runs:
 
     - name: Run TruffleHog OSS (JSON Export)
       continue-on-error: true
-      uses: trufflesecurity/trufflehog@v3.92.4
-      with:
-        path: ./
-        base: ${{ github.event.repository.default_branch }}
-        head: HEAD
-        extra_args: --only-verified --json
+      shell: bash
+      run: |
+        pip install trufflehog
+        trufflehog filesystem . --json --only-verified > secrets_report/trufflehog.json 2>&1
 
-    - name: Copy TruffleHog JSON Report
+    - name: Validate TruffleHog JSON
       continue-on-error: true
       shell: bash
       run: |
-        if [ -f "$RUNNER_TEMP/trufflehog-report.json" ]; then
-          cp "$RUNNER_TEMP/trufflehog-report.json" secrets_report/trufflehog.json
+        if [ -f secrets_report/trufflehog.json ] && [ -s secrets_report/trufflehog.json ]; then
+          echo "TruffleHog JSON report generated successfully"
+          head -c 200 secrets_report/trufflehog.json
         else
-          echo "TruffleHog JSON report not found in $RUNNER_TEMP"
+          echo "No TruffleHog findings or report not created"
         fi
 
     - name: Upload combined results artifact
