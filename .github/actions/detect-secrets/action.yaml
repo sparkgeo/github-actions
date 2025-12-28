@@ -1,5 +1,10 @@
 name: Secrets Scan
 description: Scan the repository for secrets using multiple tools
+inputs:
+  github-token:
+    description: GitHub token for authentication
+    required: false
+    default: ${{ github.token }}
 runs:
   using: "composite"
   steps:
@@ -31,7 +36,7 @@ runs:
     - name: Run Gitleaks
       uses: gitleaks/gitleaks-action@v2.3.9
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
 
     - name: Run TruffleHog
       id: trufflehog
