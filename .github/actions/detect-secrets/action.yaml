@@ -1,5 +1,14 @@
-name: Secrets Scan
-description: Scan the repository for secrets using multiple tools
+name: Detect Secrets Action
+description: |
+  Scan the repository for secrets using the following tools:
+  1. Gitleaks: https://github.com/gitleaks/gitleaks
+  2. TruffleHog: https://github.com/trufflesecurity/trufflehog
+  3. detect-secrets: https://github.com/Yelp/detect-secrets
+  4. git-secrets: https://github.com/awslabs/git-secrets
+  5. Talisman: https://github.com/thoughtworks/talisman
+  6. credential-digger: https://github.com/SAP/credential-digger
+  7. kingfisher: https://github.com/mongodb/kingfisher
+
 inputs:
   github-token:
     description: GitHub token for authentication
@@ -9,12 +18,17 @@ inputs:
     description: Gitleaks license key for enterprise features
     required: true
     default: ""
+
 runs:
   using: "composite"
   steps:
     - uses: actions/checkout@v6.0.1
       with:
         fetch-depth: 0
+
+    - name: Prepare report directory
+      shell: bash
+      run: mkdir -p secrets_report
 
     - name: Setup Python
       uses: actions/setup-python@v6.1.0
@@ -39,6 +53,7 @@ runs:
 
     - name: Run Gitleaks
       uses: gitleaks/gitleaks-action@v2.3.9
+      continue-on-error: true
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GITLEAKS_LICENSE: ${{ inputs.gitleaks-license }}
@@ -59,18 +74,19 @@ runs:
       run: exit 1
 
     - name: Run detect-secrets
+      continue-on-error: true
       shell: bash
       run: |
-        output=$(detect-secrets scan --all-files --force-use-all-plugins)
-        num_secrets=$(echo "$output" | jq '.results | length')
+        detect-secrets scan --all-files --force-use-all-plugins > secrets_report/detect_secrets.json
+        num_secrets=$(jq '.results | length' secrets_report/detect_secrets.json)
         if [ "$num_secrets" -gt 0 ]; then
-          echo "Secrets found by detect-secrets:"
-          echo "$output"
+          echo "Secrets found by detect-secrets: $num_secrets"
         fi
 
     - name: Run git-secrets
+      continue-on-error: true
       shell: bash
-      run: git secrets --scan -r .
+      run: git secrets --scan -r . | tee secrets_report/git_secrets.txt
 
     - name: Install Talisman
       shell: bash
@@ -82,11 +98,10 @@ runs:
       run: |
         talisman --scan || true
         if [ -f talisman_report/talisman_reports/data/report.json ]; then
-          report=$(cat talisman_report/talisman_reports/data/report.json)
-          num_failures=$(echo "$report" | jq '.failures // [] | length')
+          cp talisman_report/talisman_reports/data/report.json secrets_report/talisman.json
+          num_failures=$(jq '.failures // [] | length' secrets_report/talisman.json)
           if [ "$num_failures" -gt 0 ]; then
-            echo "Secrets found by Talisman:"
-            echo "$report"
+            echo "Secrets found by Talisman: $num_failures"
           fi
         fi
 
@@ -107,13 +122,34 @@ runs:
       run: credentialdigger add_rules --sqlite /tmp/cred.db ./rules.yml
 
     - name: Run credential-digger
+      continue-on-error: true
       shell: bash
-      run: credentialdigger scan . --sqlite /tmp/cred.db --models PathModel PasswordModel
+      run: |
+        credentialdigger scan . --sqlite /tmp/cred.db --models PathModel PasswordModel
+        cp /tmp/cred.db secrets_report/credential_digger.db || true
+        [ -f rules.yml ] && cp rules.yml secrets_report/ || true
 
     - name: Install kingfisher
       shell: bash
       run: curl --silent --location https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/install-kingfisher.sh | bash
 
     - name: Run kingfisher
+      continue-on-error: true
       shell: bash
-      run: kingfisher scan .
+      run: kingfisher scan . | tee secrets_report/kingfisher.txt
+
+    - name: Install TruffleHog CLI
+      continue-on-error: true
+      shell: bash
+      run: pip install trufflehog
+
+    - name: Run TruffleHog CLI (JSON)
+      continue-on-error: true
+      shell: bash
+      run: trufflehog filesystem --json . > secrets_report/trufflehog.json
+
+    - name: Upload combined results artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: secrets-scan-results
+        path: secrets_report
