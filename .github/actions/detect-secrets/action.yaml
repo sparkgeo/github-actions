@@ -3,8 +3,12 @@ description: Scan the repository for secrets using multiple tools
 inputs:
   github-token:
     description: GitHub token for authentication
-    required: false
+    required: true
     default: ${{ github.token }}
+  gitleaks-license:
+    description: Gitleaks license key for enterprise features
+    required: true
+    default: ""
 runs:
   using: "composite"
   steps:
@@ -37,7 +41,7 @@ runs:
       uses: gitleaks/gitleaks-action@v2.3.9
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
-        GITLEAKS_LICENSE: ${{ input.gitleaks_license }}
+        GITLEAKS_LICENSE: ${{ inputs.gitleaks-license }}
 
     - name: Run TruffleHog
       id: trufflehog
