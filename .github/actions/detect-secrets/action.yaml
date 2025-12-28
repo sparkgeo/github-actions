@@ -126,7 +126,7 @@ runs:
         path: ./
         base: ${{ github.event.repository.default_branch }}
         head: HEAD
-        extra_args: filesystem --only-verified --github-actions --json
+        extra_args: --only-verified --json
 
     - name: Copy TruffleHog JSON Report
       continue-on-error: true
