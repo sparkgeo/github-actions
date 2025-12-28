@@ -117,14 +117,24 @@ runs:
     - name: Run kingfisher
       continue-on-error: true
       shell: bash
-      run: kingfisher scan . | tee secrets_report/kingfisher.txt
+      run: kingfisher scan . --exclude secrets_report/* | tee secrets_report/kingfisher.txt
 
-    - name: Run TruffleHog OSS (JSON Export)
+    - name: Install TruffleHog v3 binary
       continue-on-error: true
       shell: bash
       run: |
-        pip install trufflehog
-        trufflehog filesystem --only-verified --github-actions . > secrets_report/trufflehog.json 2>&1
+        set -euo pipefail
+        TRH_VER=3.92.4
+        TMPDIR="$(mktemp -d)"
+        curl -sSL -o "$TMPDIR/trufflehog.tar.gz" "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRH_VER}/trufflehog_${TRH_VER}_Linux_x86_64.tar.gz"
+        tar -xzf "$TMPDIR/trufflehog.tar.gz" -C "$TMPDIR"
+        sudo install "$TMPDIR/trufflehog" /usr/local/bin/trufflehog
+
+    - name: Run TruffleHog (filesystem JSON)
+      continue-on-error: true
+      shell: bash
+      run: |
+        trufflehog filesystem . --json --only-verified > secrets_report/trufflehog.json
 
     - name: Validate TruffleHog JSON
       continue-on-error: true
