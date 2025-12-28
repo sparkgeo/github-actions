@@ -1,0 +1,110 @@
+name: Secrets Scan
+description: Scan the repository for secrets using multiple tools
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v6.0.1
+      with:
+        fetch-depth: 0
+
+    - name: Setup Python
+      uses: actions/setup-python@v6.0.1
+      with:
+        python-version: "3.12"
+
+    - name: Install jq
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y jq
+
+    - name: Install detect-secrets
+      shell: bash
+      run: pip install detect-secrets
+
+    - name: Install git-secrets
+      shell: bash
+      run: |
+        git clone https://github.com/awslabs/git-secrets.git
+        cd git-secrets
+        sudo make install
+        cd ..
+
+    - name: Run Gitleaks
+      uses: gitleaks/gitleaks-action@v2.3.9
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Run TruffleHog
+      id: trufflehog
+      continue-on-error: true
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: ${{ github.event.repository.default_branch }}
+        head: HEAD
+        extra_args: --debug --only-verified
+
+    - name: TruffleHog Results Status
+      shell: bash
+      if: steps.trufflehog.outcome == 'failure'
+      run: exit 1
+
+    - name: Run detect-secrets
+      shell: bash
+      run: |
+        output=$(detect-secrets scan --all-files --json)
+        num_secrets=$(echo "$output" | jq '.results | length')
+        if [ "$num_secrets" -gt 0 ]; then
+          echo "Secrets found by detect-secrets:"
+          echo "$output"
+          exit 1
+        fi
+
+    - name: Run git-secrets
+      shell: bash
+      run: git secrets --scan -r .
+
+    - name: Install Talisman
+      shell: bash
+      run: bash -c "$(curl --silent https://raw.githubusercontent.com/thoughtworks/talisman/main/install.sh)"
+
+    - name: Run Talisman
+      shell: bash
+      run: |
+        talisman --scan
+        if [ -f talisman_reports/data/report.json ]; then
+          report=$(cat talisman_reports/data/report.json)
+          num_failures=$(echo "$report" | jq '.failures // [] | length')
+          if [ "$num_failures" -gt 0 ]; then
+            echo "Secrets found by Talisman:"
+            echo "$report"
+            exit 1
+          fi
+        fi
+
+    - name: Install dependencies for credential-digger
+      shell: bash
+      run: sudo apt install -y build-essential python3-dev
+
+    - name: Install credential-digger
+      shell: bash
+      run: pip install credentialdigger
+
+    - name: Download rules for credential-digger
+      shell: bash
+      run: curl -O https://raw.githubusercontent.com/SAP/credential-digger/main/ui/backend/rules.yml
+
+    - name: Add rules for credential-digger
+      shell: bash
+      run: credentialdigger add_rules --sqlite /tmp/cred.db ./rules.yml
+
+    - name: Run credential-digger
+      shell: bash
+      run: credentialdigger scan . --sqlite /tmp/cred.db --models PathModel PasswordModel
+
+    - name: Install kingfisher
+      shell: bash
+      run: curl --silent --location https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/install-kingfisher.sh | bash
+
+    - name: Run kingfisher
+      shell: bash
+      run: kingfisher scan .
