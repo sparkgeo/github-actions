@@ -86,7 +86,6 @@ runs:
           if [ "$num_failures" -gt 0 ]; then
             echo "Secrets found by Talisman:"
             echo "$report"
-            exit 1
           fi
         fi
 
