@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+      checks: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
@@ -52,5 +52,8 @@ jobs:
       - name: Upload SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@458d36d7d4f47d0dd16ca424c1d3cda0060f1360  # v3
         if: always()
+        # continue-on-error: security-events: write is unavailable on fork PRs (403);
+        # the zizmor step above already exits non-zero on findings so the gate still holds.
+        continue-on-error: true
         with:
           sarif_file: zizmor-results.sarif

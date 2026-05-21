@@ -25,7 +25,7 @@ Every PR that adds or modifies a workflow or composite action must satisfy all o
 [ ] No `pull_request_target` or `workflow_run` triggers without a documented threat model
     in the workflow file header comment explaining why the trigger is safe
 
-[ ] All `run:` steps declare `shell: bash` explicitly
+[ ] All `run:` steps declare `shell:` explicitly (shell: bash on Linux/macOS, shell: pwsh on Windows)
 
 [ ] actionlint and zizmor pass locally before pushing (see Local setup below)
 ```
