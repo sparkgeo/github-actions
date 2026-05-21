@@ -8,7 +8,7 @@ Every PR that adds or modifies a workflow or composite action must satisfy all o
 
 ```
 [ ] All `uses:` references pinned to a full 40-character commit SHA with a # version comment
-    e.g. uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+    e.g. uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
 [ ] `permissions:` block present at the workflow or job level — minimum: contents: read
     Default GITHUB_TOKEN permissions must never be relied upon implicitly
@@ -52,7 +52,7 @@ When adding or updating an action reference, always use the commit SHA of the ex
 ```bash
 gh api repos/<owner>/<repo>/commits/<tag> --jq '.sha'
 # e.g.
-gh api repos/actions/checkout/commits/v4 --jq '.sha'
+gh api repos/actions/checkout/commits/v6 --jq '.sha'
 ```
 
 Once configured, Renovate (issue #8) will keep pinned SHAs current automatically via automated PRs — do not update SHAs manually unless fixing a security incident.
