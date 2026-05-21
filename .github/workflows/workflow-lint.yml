@@ -41,19 +41,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install zizmor
-        shell: bash
-        run: pip install --require-hashes -r requirements/lint.txt
-
-      - name: Run zizmor
-        shell: bash
-        run: zizmor --format sarif . > zizmor-results.sarif
-
-      - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
-        if: always()
-        # continue-on-error: security-events: write is unavailable on fork PRs (403);
-        # the zizmor step above already exits non-zero on findings so the gate still holds.
-        continue-on-error: true
+      - uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d  # v0.5.6
         with:
-          sarif_file: zizmor-results.sarif
+          version: "1.25.2"
+          advanced-security: "true"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
