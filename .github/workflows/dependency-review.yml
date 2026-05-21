@@ -1,0 +1,47 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    paths:
+      - '**/package-lock.json'
+      - '**/yarn.lock'
+      - '**/pnpm-lock.yaml'
+      - '**/Pipfile.lock'
+      - '**/poetry.lock'
+      - '**/uv.lock'
+      - '**/go.sum'
+      - '**/Cargo.lock'
+      - '**/Gemfile.lock'
+      - '**/composer.lock'
+      - '**/requirements*.txt'
+  workflow_call:
+    inputs:
+      fail-on-severity:
+        description: 'Minimum vulnerability severity to fail: critical|high|moderate|low'
+        default: 'critical'
+        type: string
+      deny-licenses:
+        description: 'Comma-separated list of SPDX license identifiers to deny'
+        default: 'GPL-2.0,GPL-3.0,AGPL-3.0'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write  # post summary comment on PR
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          fail-on-severity: ${{ inputs.fail-on-severity || 'critical' }}
+          deny-licenses: ${{ inputs.deny-licenses || 'GPL-2.0,GPL-3.0,AGPL-3.0' }}
+          comment-summary-in-pr: always
