@@ -55,12 +55,12 @@ gh api repos/<owner>/<repo>/commits/<tag> --jq '.sha'
 gh api repos/actions/checkout/commits/v4 --jq '.sha'
 ```
 
-Renovate (issue #8) is configured to keep pinned SHAs current automatically via automated PRs — do not update SHAs manually unless fixing a security incident.
+Once configured, Renovate (issue #8) will keep pinned SHAs current automatically via automated PRs — do not update SHAs manually unless fixing a security incident.
 
 ## Adding a new workflow
 
 1. Create a GitHub issue (parent + context sub-issues where applicable)
-2. Assign to `ms280690`, type: Feature, labels: `security`, `enhancement`, `documentation`, `priority: high`
+2. Assign to the relevant team or individual, type: Feature, labels: `security`, `enhancement`, `documentation`, `priority: high`
 3. Branch from `main`: `git checkout -b issue-<number>-<short-description>`
 4. Implement the workflow — satisfy all checklist items above
 5. Update the workflow index table in `README.md`
