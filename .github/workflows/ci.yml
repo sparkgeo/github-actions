@@ -76,6 +76,23 @@ jobs:
 
       - uses: ./.github/actions/dependency-review
 
+  # Verify Terramate and OpenTofu are installed correctly.
+  # Terramate stack steps are no-ops in this repo (no stacks defined).
+  terramate-opentofu-setup:
+    name: Terramate + OpenTofu Setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      OPENTOFU_VERSION: "1.10.0"
+      TERRAMATE_VERSION: "0.14.7"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/terramate-opentofu-setup
+
   # Verify the storage optimizer composite action runs without error.
   storage-optimizer:
     name: Storage Optimizer
