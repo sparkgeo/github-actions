@@ -21,14 +21,14 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 
 | Action | Path | Purpose | Inputs |
 |---|---|---|---|
-| Actionlint | [`actionlint`](.github/actions/actionlint/action.yml) | Lints workflow and action YAML files using actionlint via reviewdog; posts annotations as GitHub Checks | None |
+| GitHub Actionlint | [`github-actionlint`](.github/actions/github-actionlint/action.yml) | Lints workflow and action YAML files using actionlint via reviewdog; posts annotations as GitHub Checks | None |
 | Zizmor | [`zizmor`](.github/actions/zizmor/action.yml) | Runs zizmor static security analysis against workflow and action YAML files; uploads findings as SARIF to the Security tab | None |
 | OpenSSF Scorecard | [`scorecard`](.github/actions/scorecard/action.yml) | Runs OpenSSF Scorecard checks; uploads SARIF to the Security tab and publishes results to the OpenSSF database | None |
 | Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or denied licenses; posts a summary comment | `fail-on-severity` (default: `high`), `deny-licenses` (default: `GPL-2.0,GPL-3.0,AGPL-3.0`), `comment-summary-in-pr` (default: `on-failure`) |
 | Storage Optimizer | [`storage-optimizer`](.github/actions/storage-optimizer/action.yml) | Frees disk space on GitHub-hosted runners by removing unused toolchains (JDK, .NET, Swift, Android SDK, etc.) and pruning Docker | None |
 | Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
 
-### Actionlint
+### GitHub Actionlint
 
 ```yaml
 jobs:
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@<SHA>
         with:
           persist-credentials: false
-      - uses: sparkgeo/github-actions/.github/actions/actionlint@<SHA>
+      - uses: sparkgeo/github-actions/.github/actions/github-actionlint@<SHA>
 ```
 
 ### Zizmor

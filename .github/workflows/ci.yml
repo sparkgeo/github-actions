@@ -26,7 +26,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/actionlint
+      - uses: ./.github/actions/github-actionlint
 
   # Security-scan workflow and action YAML files with zizmor.
   zizmor:

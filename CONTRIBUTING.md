@@ -1,6 +1,6 @@
 # Contributing
 
-This repo is the central library of reusable GitHub Actions workflows for the Sparkgeo organisation. All contributions must meet the security standards below before a PR can be merged.
+This repo is the central library of reusable GitHub Actions composite actions for the Sparkgeo organisation. All contributions must meet the security standards below before a PR can be merged.
 
 ## Workflow authoring checklist
 
@@ -57,14 +57,15 @@ gh api repos/actions/checkout/commits/v6 --jq '.sha'
 
 Once configured, Renovate (issue #8) will keep pinned SHAs current automatically via automated PRs — do not update SHAs manually unless fixing a security incident.
 
-## Adding a new workflow
+## Adding a new action
 
 1. Create a GitHub issue (parent + context sub-issues where applicable)
 2. Assign to the relevant team or individual, type: Feature, labels: `security`, `enhancement`, `documentation`, `priority: high`
 3. Branch from `main`: `git checkout -b issue-<number>-<short-description>`
-4. Implement the workflow — satisfy all checklist items above
-5. Update the workflow index table in `README.md`
-6. Open a PR referencing the issue: `Closes #<number>`
+4. Create the composite action under `.github/actions/<name>/action.yml` — satisfy all checklist items above
+5. Add a job for it in `.github/workflows/ci.yml` with minimum required permissions
+6. Update the composite actions table in `README.md` with a usage example
+7. Open a PR referencing the issue: `Closes #<number>`
 
 ## Security pillars reference
 
