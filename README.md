@@ -10,7 +10,7 @@ Call these from any Sparkgeo repo by referencing the workflow file at a pinned S
 
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
-| Workflow Lint | [`workflow-lint.yml`](.github/workflows/workflow-lint.yml) | `pull_request` on `.github/**`, `workflow_call` | Runs `actionlint` and `zizmor` against all workflow and composite action YAML files; posts annotations via GitHub Checks and uploads SARIF to the Security tab |
+| Actions Quality Gate | [`workflow-lint.yml`](.github/workflows/workflow-lint.yml) | `pull_request` on `.github/**`, `workflow_call` | Runs `actionlint` and `zizmor` against all workflow and composite action YAML files; posts annotations via GitHub Checks and uploads SARIF to the Security tab |
 
 ### Usage
 
