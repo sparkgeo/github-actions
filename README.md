@@ -11,6 +11,8 @@ Call these from any Sparkgeo repo by referencing the workflow file at a pinned S
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
 | Actions Quality Gate | [`workflow-lint.yml`](.github/workflows/workflow-lint.yml) | `pull_request` on `.github/**`, `workflow_call` | Runs `actionlint` and `zizmor` against all workflow and composite action YAML files; posts annotations via GitHub Checks and uploads SARIF to the Security tab |
+| OpenSSF Scorecard | [`scorecard.yml`](.github/workflows/scorecard.yml) | `schedule` (weekly Monday 06:00 UTC), `push` to `main`, `workflow_dispatch` | Runs OpenSSF Scorecard security checks; publishes results to the OpenSSF database and uploads SARIF to the GitHub Security tab |
+| Dependency Review | [`dependency-review.yml`](.github/workflows/dependency-review.yml) | `pull_request` on lockfiles, `workflow_call` | Blocks PRs that introduce dependencies with known vulnerabilities or denied licenses; posts a summary comment on the PR |
 
 ### Usage
 
@@ -35,6 +37,50 @@ Replace `<SHA>` with the full commit SHA of the version you want to pin to:
 
 ```bash
 gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
+```
+
+### OpenSSF Scorecard
+
+Runs automatically on a schedule. Add to any repo that should publish a Scorecard badge:
+
+```yaml
+# .github/workflows/scorecard.yml  (in a consuming repo)
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  scorecard:
+    uses: sparkgeo/github-actions/.github/workflows/scorecard.yml@<SHA>
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      id-token: write
+```
+
+### Dependency Review
+
+Blocks PRs that introduce vulnerable or denied-license dependencies. Callers can override defaults via `workflow_call` inputs:
+
+```yaml
+# .github/workflows/dependency-review.yml  (in a consuming repo)
+on:
+  pull_request:
+
+jobs:
+  dependency-review:
+    uses: sparkgeo/github-actions/.github/workflows/dependency-review.yml@<SHA>
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      fail-on-severity: high          # critical | high | moderate | low
+      deny-licenses: GPL-2.0,AGPL-3.0 # SPDX identifiers
+      comment-summary-in-pr: always   # always | on-failure | never
 ```
 
 ## Composite Actions

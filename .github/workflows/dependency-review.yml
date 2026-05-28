@@ -1,4 +1,5 @@
 name: Dependency Review
+# Blocks PRs that introduce dependencies with known vulnerabilities or denied licenses. Reusable via workflow_call.
 
 on:
   pull_request:
@@ -36,8 +37,9 @@ permissions:
   contents: read
 
 jobs:
+  # Scans dependency changes for known vulnerabilities and denied licenses; posts a summary comment on the PR.
   review:
-    name: Dependency review
+    name: Dependency Review
     runs-on: ubuntu-latest
     permissions:
       contents: read
