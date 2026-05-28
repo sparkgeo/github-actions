@@ -10,6 +10,7 @@ Call these from any Sparkgeo repo by referencing the workflow file at a pinned S
 
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
+| CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `workflow_dispatch` | Dogfoods this repo's own workflows and composite actions; serves as a live reference implementation for consuming repos |
 | Actions Quality Gate | [`workflow-lint.yml`](.github/workflows/workflow-lint.yml) | `pull_request` on `.github/**`, `workflow_call` | Runs `actionlint` and `zizmor` against all workflow and composite action YAML files; posts annotations via GitHub Checks and uploads SARIF to the Security tab |
 | OpenSSF Scorecard | [`scorecard.yml`](.github/workflows/scorecard.yml) | `schedule` (weekly Monday 06:00 UTC), `push` to `main`, `workflow_dispatch` | Runs OpenSSF Scorecard security checks; publishes results to the OpenSSF database and uploads SARIF to the GitHub Security tab |
 | Dependency Review | [`dependency-review.yml`](.github/workflows/dependency-review.yml) | `pull_request` on lockfiles, `workflow_call` | Blocks PRs that introduce dependencies with known vulnerabilities or denied licenses; posts a summary comment on the PR |

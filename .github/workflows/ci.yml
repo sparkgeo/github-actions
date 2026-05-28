@@ -1,0 +1,35 @@
+name: CI
+# Dogfoods this repo's own reusable workflows and composite actions on every push and PR.
+# Serves as a live reference implementation for consuming repos.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Run the repo's own workflow quality gate against itself.
+  workflow-lint:
+    name: Actions Quality Gate
+    uses: ./.github/workflows/workflow-lint.yml
+    permissions:
+      contents: read
+      checks: write
+      security-events: write
+
+  # Verify the storage optimizer composite action runs without error.
+  storage-optimizer:
+    name: Storage Optimizer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/storage-optimizer
