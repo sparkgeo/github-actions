@@ -1,0 +1,20 @@
+name: "Dependency Review"
+description: "Blocks PRs that introduce dependencies with known vulnerabilities or denied licenses; posts a summary comment on the PR."
+inputs:
+  fail-on-severity:
+    description: "Minimum vulnerability severity to fail: critical|high|moderate|low"
+    default: "high"
+  deny-licenses:
+    description: "Comma-separated list of SPDX license identifiers to deny"
+    default: "GPL-2.0,GPL-3.0,AGPL-3.0"
+  comment-summary-in-pr:
+    description: "Post a summary comment on the PR: always|on-failure|never"
+    default: "on-failure"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+      with:
+        fail-on-severity: ${{ inputs.fail-on-severity }}
+        deny-licenses: ${{ inputs.deny-licenses }}
+        comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}

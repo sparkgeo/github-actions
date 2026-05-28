@@ -1,25 +1,80 @@
 name: CI
-# Dogfoods this repo's own reusable workflows and composite actions on every push and PR.
+# Dogfoods this repo's own composite actions on every push and PR.
 # Serves as a live reference implementation for consuming repos.
 
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '0 6 * * 1'  # weekly Monday 06:00 UTC — for scorecard
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  # Run the repo's own workflow quality gate against itself.
-  workflow-lint:
-    name: Actions Quality Gate
-    uses: ./.github/workflows/workflow-lint.yml
+  # Lint workflow and action YAML files with actionlint.
+  actionlint:
+    name: Actionlint
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       checks: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/actionlint
+
+  # Security-scan workflow and action YAML files with zizmor.
+  zizmor:
+    name: Zizmor
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
       security-events: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/zizmor
+
+  # Run OpenSSF Scorecard on push to main, schedule, and manual dispatch.
+  # Skipped on pull_request — publishing partial results to OpenSSF is not useful.
+  scorecard:
+    name: OpenSSF Scorecard
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/scorecard
+
+  # Review dependency changes for vulnerabilities and license issues.
+  # Only meaningful on pull_request — requires PR base/head context.
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/dependency-review
 
   # Verify the storage optimizer composite action runs without error.
   storage-optimizer:

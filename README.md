@@ -1,97 +1,107 @@
 # sparkgeo/github-actions
 
-Reusable GitHub Actions workflows and composite actions for the Sparkgeo organisation.
+Reusable GitHub Actions composite actions and CI workflow for the Sparkgeo organisation.
 
-All action references in this repo are pinned to full commit SHAs. See [CONTRIBUTING.md](CONTRIBUTING.md) for authoring standards and how to add new workflows.
+All action references in this repo are pinned to full commit SHAs. See [CONTRIBUTING.md](CONTRIBUTING.md) for authoring standards and how to add new actions.
 
-## Reusable Workflows
-
-Call these from any Sparkgeo repo by referencing the workflow file at a pinned SHA.
+## Workflow
 
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
-| CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `workflow_dispatch` | Dogfoods this repo's own workflows and composite actions; serves as a live reference implementation for consuming repos |
-| Actions Quality Gate | [`workflow-lint.yml`](.github/workflows/workflow-lint.yml) | `pull_request` on `.github/**`, `workflow_call` | Runs `actionlint` and `zizmor` against all workflow and composite action YAML files; posts annotations via GitHub Checks and uploads SARIF to the Security tab |
-| OpenSSF Scorecard | [`scorecard.yml`](.github/workflows/scorecard.yml) | `schedule` (weekly Monday 06:00 UTC), `push` to `main`, `workflow_dispatch` | Runs OpenSSF Scorecard security checks; publishes results to the OpenSSF database and uploads SARIF to the GitHub Security tab |
-| Dependency Review | [`dependency-review.yml`](.github/workflows/dependency-review.yml) | `pull_request` on lockfiles, `workflow_call` | Blocks PRs that introduce dependencies with known vulnerabilities or denied licenses; posts a summary comment on the PR |
+| CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
 
-### Usage
+## Composite Actions
+
+Drop these into any job with a `uses:` step. Pin to a full commit SHA for supply-chain safety.
+
+```bash
+# Find the SHA to pin to
+gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
+```
+
+| Action | Path | Purpose | Inputs |
+|---|---|---|---|
+| Actionlint | [`actionlint`](.github/actions/actionlint/action.yml) | Lints workflow and action YAML files using actionlint via reviewdog; posts annotations as GitHub Checks | None |
+| Zizmor | [`zizmor`](.github/actions/zizmor/action.yml) | Runs zizmor static security analysis against workflow and action YAML files; uploads findings as SARIF to the Security tab | None |
+| OpenSSF Scorecard | [`scorecard`](.github/actions/scorecard/action.yml) | Runs OpenSSF Scorecard checks; uploads SARIF to the Security tab and publishes results to the OpenSSF database | None |
+| Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or denied licenses; posts a summary comment | `fail-on-severity` (default: `high`), `deny-licenses` (default: `GPL-2.0,GPL-3.0,AGPL-3.0`), `comment-summary-in-pr` (default: `on-failure`) |
+| Storage Optimizer | [`storage-optimizer`](.github/actions/storage-optimizer/action.yml) | Frees disk space on GitHub-hosted runners by removing unused toolchains (JDK, .NET, Swift, Android SDK, etc.) and pruning Docker | None |
+| Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
+
+### Actionlint
 
 ```yaml
-# .github/workflows/lint.yml  (in a consuming repo)
-on:
-  pull_request:
-    paths:
-      - '.github/workflows/**'
-      - '.github/actions/**'
-
 jobs:
   lint:
-    uses: sparkgeo/github-actions/.github/workflows/workflow-lint.yml@<SHA>
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       checks: write
-      security-events: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/actionlint@<SHA>
 ```
 
-Replace `<SHA>` with the full commit SHA of the version you want to pin to:
+### Zizmor
 
-```bash
-gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
+```yaml
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/zizmor@<SHA>
 ```
 
 ### OpenSSF Scorecard
 
-Runs automatically on a schedule. Add to any repo that should publish a Scorecard badge:
+Requires `id-token: write` for OIDC signing. Only runs on public repos with `publish_results: true`.
 
 ```yaml
-# .github/workflows/scorecard.yml  (in a consuming repo)
-on:
-  schedule:
-    - cron: '0 6 * * 1'
-  push:
-    branches: [main]
-  workflow_dispatch:
-
 jobs:
   scorecard:
-    uses: sparkgeo/github-actions/.github/workflows/scorecard.yml@<SHA>
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
       security-events: write
       id-token: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/scorecard@<SHA>
 ```
 
 ### Dependency Review
 
-Blocks PRs that introduce vulnerable or denied-license dependencies. Callers can override defaults via `workflow_call` inputs:
+Only meaningful on `pull_request` events — requires PR base/head context.
 
 ```yaml
-# .github/workflows/dependency-review.yml  (in a consuming repo)
-on:
-  pull_request:
-
 jobs:
   dependency-review:
-    uses: sparkgeo/github-actions/.github/workflows/dependency-review.yml@<SHA>
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
       pull-requests: write
-    with:
-      fail-on-severity: high          # critical | high | moderate | low
-      deny-licenses: GPL-2.0,AGPL-3.0 # SPDX identifiers
-      comment-summary-in-pr: always   # always | on-failure | never
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/dependency-review@<SHA>
+        with:
+          fail-on-severity: high           # critical | high | moderate | low
+          deny-licenses: GPL-2.0,AGPL-3.0  # SPDX identifiers
+          comment-summary-in-pr: always    # always | on-failure | never
 ```
-
-## Composite Actions
-
-Drop these into any job with a `uses:` step.
-
-| Action | Path | Purpose | Inputs |
-|---|---|---|---|
-| Storage Optimizer | [`storage-optimizer`](.github/actions/storage-optimizer/action.yml) | Frees disk space on GitHub-hosted runners by removing unused toolchains (JDK, .NET, Swift, Android SDK, etc.) and pruning Docker | None |
-| Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates that generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
 
 ### Storage Optimizer
 
