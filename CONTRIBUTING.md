@@ -67,6 +67,51 @@ Once configured, Renovate (issue #8) will keep pinned SHAs current automatically
 6. Update the composite actions table in `README.md` with a usage example
 7. Open a PR referencing the issue: `Closes #<number>`
 
+## Migrating from the reusable workflow pattern
+
+Prior to issue #29, this repo exposed an `Actions Quality Gate` reusable workflow
+(`workflow-lint.yml`) callable via `workflow_call`. That file has been deleted.
+
+If your repo references it:
+
+```yaml
+# OLD — no longer works
+jobs:
+  lint:
+    uses: sparkgeo/github-actions/.github/workflows/workflow-lint.yml@<SHA>
+```
+
+Replace with direct composite action calls:
+
+```yaml
+# NEW
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/github-actionlint@<SHA>
+
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/zizmor@<SHA>
+```
+
+The composite actions are individually callable and require explicit job shells with
+correct permissions (see README for full usage examples).
+
 ## Security pillars reference
 
 | Pillar | Issue | Summary |

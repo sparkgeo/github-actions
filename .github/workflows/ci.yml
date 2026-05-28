@@ -83,9 +83,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      OPENTOFU_VERSION: "1.10.0"
-      TERRAMATE_VERSION: "0.14.7"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -95,9 +92,12 @@ jobs:
       - uses: ./.github/actions/terramate-opentofu-setup
 
   # Verify the storage optimizer composite action runs without error.
+  # Gated to workflow_dispatch: storage-optimizer is only useful when a job does
+  # heavy disk work on the same runner; running it on a throwaway CI runner wastes minutes.
   storage-optimizer:
     name: Storage Optimizer
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
     steps:

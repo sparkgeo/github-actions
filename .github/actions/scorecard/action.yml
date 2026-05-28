@@ -1,5 +1,11 @@
 name: "OpenSSF Scorecard"
-description: "Runs OpenSSF Scorecard checks, uploads SARIF to the GitHub Security tab, and publishes results to the OpenSSF database."
+description: |
+  Runs OpenSSF Scorecard checks, uploads SARIF to the GitHub Security tab, and publishes results to the OpenSSF database.
+  Required permissions on calling job: id-token: write, security-events: write, actions: read, contents: read
+inputs:
+  publish_results:
+    description: "Publish results to the public OpenSSF Scorecard database and generate the Scorecard badge. Set to false for private repositories."
+    default: "true"
 runs:
   using: "composite"
   steps:
@@ -8,24 +14,18 @@ runs:
         results_file: scorecard-results.sarif
         results_format: sarif
         repo_token: ${{ github.token }}
-        # publish_results uploads to the public OpenSSF Scorecard database and
-        # generates the Scorecard badge. Only works on public repos.
-        publish_results: true
-
-    - id: check-sarif
-      shell: bash
-      if: always()
-      run: echo "exists=$(test -f scorecard-results.sarif && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        publish_results: ${{ inputs.publish_results }}
 
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-      if: always() && steps.check-sarif.outputs.exists == 'true'
+      if: always()
       with:
         name: scorecard-results
         path: scorecard-results.sarif
         retention-days: 5
+        if-no-files-found: ignore
 
     - uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
-      if: always() && steps.check-sarif.outputs.exists == 'true'
+      if: always() && hashFiles('scorecard-results.sarif') != ''
       with:
         sarif_file: scorecard-results.sarif
         category: scorecard
