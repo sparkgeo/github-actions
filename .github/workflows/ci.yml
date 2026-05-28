@@ -42,12 +42,12 @@ jobs:
 
       - uses: ./.github/actions/zizmor
 
-  # Run OpenSSF Scorecard on push to main, schedule, and manual dispatch.
-  # Skipped on pull_request — publishing partial results to OpenSSF is not useful.
+  # Run OpenSSF Scorecard on push to main and schedule only.
+  # Scorecard hard-requires the default branch; skipped on PRs and feature branches.
   scorecard:
     name: OpenSSF Scorecard
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       actions: read
