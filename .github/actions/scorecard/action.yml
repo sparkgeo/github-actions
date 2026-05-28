@@ -12,14 +12,20 @@ runs:
         # generates the Scorecard badge. Only works on public repos.
         publish_results: true
 
+    - id: check-sarif
+      shell: bash
+      if: always()
+      run: echo "exists=$(test -f scorecard-results.sarif && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      if: always() && steps.check-sarif.outputs.exists == 'true'
       with:
         name: scorecard-results
         path: scorecard-results.sarif
         retention-days: 5
 
     - uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
-      if: always()
+      if: always() && steps.check-sarif.outputs.exists == 'true'
       with:
         sarif_file: scorecard-results.sarif
         category: scorecard
