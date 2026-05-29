@@ -131,7 +131,7 @@ This repo is part of the Sparkgeo GitHub Actions security programme. The pillars
 | Pillar | Issue | Summary |
 |---|---|---|
 | Workflow authoring standards | #25 | SHA pinning policy; `actionlint`/`zizmor` gate |
-| Supply chain hardening | #26 | Org allowlist; dependency locking |
+| Supply chain hardening | #26 | Org allowlist; dependency locking; [approved actions](docs/approved-actions.md) |
 | OIDC & secret federation | #27 | No static credentials; OIDC for cloud auth; environment-scoped secrets |
 | Runner egress control | #28 | `harden-runner` audit → block; self-hosted runner isolation policy |
 | Enterprise governance & observability | #29 | Org rulesets; OpenSSF Scorecard; audit log → SIEM |
