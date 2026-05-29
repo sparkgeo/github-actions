@@ -1,0 +1,3 @@
+# Changes to workflow and action files require security team review.
+.github/workflows/  @sparkgeo/security-team
+.github/actions/    @sparkgeo/security-team

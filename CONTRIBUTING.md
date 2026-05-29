@@ -1,6 +1,6 @@
 # Contributing
 
-This repo is the central library of reusable GitHub Actions workflows for the Sparkgeo organisation. All contributions must meet the security standards below before a PR can be merged.
+This repo is the central library of reusable GitHub Actions composite actions for the Sparkgeo organisation. All contributions must meet the security standards below before a PR can be merged.
 
 ## Workflow authoring checklist
 
@@ -57,14 +57,60 @@ gh api repos/actions/checkout/commits/v6 --jq '.sha'
 
 Once configured, Renovate (issue #8) will keep pinned SHAs current automatically via automated PRs — do not update SHAs manually unless fixing a security incident.
 
-## Adding a new workflow
+## Adding a new action
 
 1. Create a GitHub issue (parent + context sub-issues where applicable)
 2. Assign to the relevant team or individual, type: Feature, labels: `security`, `enhancement`, `documentation`, `priority: high`
 3. Branch from `main`: `git checkout -b issue-<number>-<short-description>`
-4. Implement the workflow — satisfy all checklist items above
-5. Update the workflow index table in `README.md`
-6. Open a PR referencing the issue: `Closes #<number>`
+4. Create the composite action under `.github/actions/<name>/action.yml` — satisfy all checklist items above
+5. Add a job for it in `.github/workflows/ci.yml` with minimum required permissions
+6. Update the composite actions table in `README.md` with a usage example
+7. Open a PR referencing the issue: `Closes #<number>`
+
+## Migrating from the reusable workflow pattern
+
+Prior to issue #29, this repo exposed an `Actions Quality Gate` reusable workflow
+(`workflow-lint.yml`) callable via `workflow_call`. That file has been deleted.
+
+If your repo references it:
+
+```yaml
+# OLD — no longer works
+jobs:
+  lint:
+    uses: sparkgeo/github-actions/.github/workflows/workflow-lint.yml@<SHA>
+```
+
+Replace with direct composite action calls:
+
+```yaml
+# NEW
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/github-actionlint@<SHA>
+
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/zizmor@<SHA>
+```
+
+The composite actions are individually callable and require explicit job shells with
+correct permissions (see README for full usage examples).
 
 ## Security pillars reference
 

@@ -1,0 +1,114 @@
+name: CI
+# Dogfoods this repo's own composite actions on every push and PR.
+# Serves as a live reference implementation for consuming repos.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/**'
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'  # weekly Monday 06:00 UTC — for scorecard
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Lint workflow and action YAML files with actionlint.
+  actionlint:
+    name: Actionlint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/github-actionlint
+
+  # Security-scan workflow and action YAML files with zizmor.
+  zizmor:
+    name: Zizmor
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/zizmor
+
+  # Run OpenSSF Scorecard on push to main and schedule only.
+  # Scorecard hard-requires the default branch; skipped on PRs and feature branches.
+  scorecard:
+    name: OpenSSF Scorecard
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/scorecard
+
+  # Review dependency changes for vulnerabilities and license issues.
+  # Only meaningful on pull_request — requires PR base/head context.
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/dependency-review
+
+  # Verify Terramate and OpenTofu are installed correctly.
+  # Terramate stack steps are no-ops in this repo (no stacks defined).
+  terramate-opentofu-setup:
+    name: Terramate + OpenTofu Setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # terramate --changed requires full git history
+
+      - uses: ./.github/actions/terramate-opentofu-setup
+
+  # Verify the storage optimizer composite action runs without error.
+  # Gated to workflow_dispatch: storage-optimizer is only useful when a job does
+  # heavy disk work on the same runner; running it on a throwaway CI runner wastes minutes.
+  storage-optimizer:
+    name: Storage Optimizer
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/storage-optimizer

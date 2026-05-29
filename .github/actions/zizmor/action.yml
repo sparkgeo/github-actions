@@ -1,0 +1,11 @@
+name: "Zizmor"
+description: "Runs zizmor static security analysis against GitHub Actions workflow and action YAML files; uploads findings as SARIF to the GitHub Security tab."
+runs:
+  using: "composite"
+  steps:
+    - uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d  # v0.5.6
+      with:
+        version: "1.25.2"
+        advanced-security: "true"
+      env:
+        GITHUB_TOKEN: ${{ github.token }}

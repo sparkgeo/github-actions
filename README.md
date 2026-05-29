@@ -1,50 +1,107 @@
 # sparkgeo/github-actions
 
-Reusable GitHub Actions workflows and composite actions for the Sparkgeo organisation.
+Reusable GitHub Actions composite actions and CI workflow for the Sparkgeo organisation.
 
-All action references in this repo are pinned to full commit SHAs. See [CONTRIBUTING.md](CONTRIBUTING.md) for authoring standards and how to add new workflows.
+All action references in this repo are pinned to full commit SHAs. See [CONTRIBUTING.md](CONTRIBUTING.md) for authoring standards and how to add new actions.
 
-## Reusable Workflows
-
-Call these from any Sparkgeo repo by referencing the workflow file at a pinned SHA.
+## Workflow
 
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
-| Actions Quality Gate | [`workflow-lint.yml`](.github/workflows/workflow-lint.yml) | `pull_request` on `.github/**`, `workflow_call` | Runs `actionlint` and `zizmor` against all workflow and composite action YAML files; posts annotations via GitHub Checks and uploads SARIF to the Security tab |
-
-### Usage
-
-```yaml
-# .github/workflows/lint.yml  (in a consuming repo)
-on:
-  pull_request:
-    paths:
-      - '.github/workflows/**'
-      - '.github/actions/**'
-
-jobs:
-  lint:
-    uses: sparkgeo/github-actions/.github/workflows/workflow-lint.yml@<SHA>
-    permissions:
-      contents: read
-      checks: write
-      security-events: write
-```
-
-Replace `<SHA>` with the full commit SHA of the version you want to pin to:
-
-```bash
-gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
-```
+| CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
 
 ## Composite Actions
 
-Drop these into any job with a `uses:` step.
+Drop these into any job with a `uses:` step. Pin to a full commit SHA for supply-chain safety.
+
+```bash
+# Find the SHA to pin to
+gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
+```
 
 | Action | Path | Purpose | Inputs |
 |---|---|---|---|
+| GitHub Actionlint | [`github-actionlint`](.github/actions/github-actionlint/action.yml) | Lints workflow and action YAML files using actionlint via reviewdog; posts annotations as GitHub Checks | None |
+| Zizmor | [`zizmor`](.github/actions/zizmor/action.yml) | Runs zizmor static security analysis against workflow and action YAML files; uploads findings as SARIF to the Security tab | None |
+| OpenSSF Scorecard | [`scorecard`](.github/actions/scorecard/action.yml) | Runs OpenSSF Scorecard checks; uploads SARIF to the Security tab and publishes results to the OpenSSF database | `publish_results` (default: `true` — set to `false` for private repos) |
+| Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or denied licenses; posts a summary comment | `fail-on-severity` (default: `high`), `deny-licenses` (default: `GPL-2.0,GPL-3.0,AGPL-3.0`), `comment-summary-in-pr` (default: `on-failure`) |
 | Storage Optimizer | [`storage-optimizer`](.github/actions/storage-optimizer/action.yml) | Frees disk space on GitHub-hosted runners by removing unused toolchains (JDK, .NET, Swift, Android SDK, etc.) and pruning Docker | None |
-| Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates that generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
+| Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
+
+### GitHub Actionlint
+
+```yaml
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/github-actionlint@<SHA>
+```
+
+### Zizmor
+
+```yaml
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/zizmor@<SHA>
+```
+
+### OpenSSF Scorecard
+
+Requires `id-token: write` for OIDC signing. Only runs on public repos with `publish_results: true`.
+
+```yaml
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/scorecard@<SHA>
+```
+
+### Dependency Review
+
+Only meaningful on `pull_request` events — requires PR base/head context.
+
+```yaml
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/dependency-review@<SHA>
+        with:
+          fail-on-severity: high           # critical | high | moderate | low
+          deny-licenses: GPL-2.0,AGPL-3.0  # SPDX identifiers
+          comment-summary-in-pr: always    # always | on-failure | never
+```
 
 ### Storage Optimizer
 
@@ -74,7 +131,7 @@ This repo is part of the Sparkgeo GitHub Actions security programme. The pillars
 | Pillar | Issue | Summary |
 |---|---|---|
 | Workflow authoring standards | #25 | SHA pinning policy; `actionlint`/`zizmor` gate |
-| Supply chain hardening | #26 | Org allowlist; dependency locking |
+| Supply chain hardening | #26 | Org allowlist; dependency locking; [approved actions](docs/approved-actions.md) |
 | OIDC & secret federation | #27 | No static credentials; OIDC for cloud auth; environment-scoped secrets |
 | Runner egress control | #28 | `harden-runner` audit → block; self-hosted runner isolation policy |
 | Enterprise governance & observability | #29 | Org rulesets; OpenSSF Scorecard; audit log → SIEM |
