@@ -23,7 +23,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 |---|---|---|---|
 | GitHub Actionlint | [`github-actionlint`](.github/actions/github-actionlint/action.yml) | Lints workflow and action YAML files using actionlint via reviewdog; posts annotations as GitHub Checks | None |
 | Zizmor | [`zizmor`](.github/actions/zizmor/action.yml) | Runs zizmor static security analysis against workflow and action YAML files; uploads findings as SARIF to the Security tab | None |
-| OpenSSF Scorecard | [`scorecard`](.github/actions/scorecard/action.yml) | Runs OpenSSF Scorecard checks; uploads SARIF to the Security tab and publishes results to the OpenSSF database | `publish_results` (default: `true` — set to `false` for private repos) |
+| OpenSSF Scorecard | [`scorecard`](.github/actions/scorecard/action.yml) | Runs OpenSSF Scorecard checks; uploads SARIF to the Security tab | `publish_results` (default: `false` — always fails with HTTP 400 if set to `true`; see action description) |
 | Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or denied licenses; posts a summary comment | `fail-on-severity` (default: `high`), `deny-licenses` (default: `GPL-2.0,GPL-3.0,AGPL-3.0`), `comment-summary-in-pr` (default: `on-failure`) |
 | Storage Optimizer | [`storage-optimizer`](.github/actions/storage-optimizer/action.yml) | Frees disk space on GitHub-hosted runners by removing unused toolchains (JDK, .NET, Swift, Android SDK, etc.) and pruning Docker | None |
 | Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
@@ -62,9 +62,9 @@ jobs:
 
 ### OpenSSF Scorecard
 
-Requires `id-token: write` for OIDC signing. SARIF is always uploaded to the GitHub Security tab.
+SARIF is always uploaded to the GitHub Security tab. Does not require `id-token: write` — `publish_results` defaults to `false` and no OIDC token is consumed.
 
-> **Note on `publish_results`:** The scorecard webapp verifies that the calling workflow directly invokes `ossf/scorecard-action` as a job step. Composite action wrapping hides that call, so `publish_results: true` always fails with a 400 error. This composite action therefore defaults `publish_results` to `false`. To publish results to the public OpenSSF database and generate the Scorecard badge, call `ossf/scorecard-action` directly in your workflow.
+> **Note on `publish_results`:** Setting `publish_results: true` always fails with HTTP 400. The scorecard webapp verifies that the calling workflow directly invokes `ossf/scorecard-action` as a job step — composite action wrapping hides that call. Keep the default (`false`). To publish to the public OpenSSF database, call `ossf/scorecard-action` directly in your workflow.
 
 ```yaml
 jobs:
@@ -74,13 +74,12 @@ jobs:
       contents: read
       actions: read
       security-events: write
-      id-token: write
     steps:
       - uses: actions/checkout@<SHA>
         with:
           persist-credentials: false
       - uses: sparkgeo/github-actions/.github/actions/scorecard@<SHA>
-        # publish_results defaults to false — see note above
+        # publish_results defaults to false — do not set to true (always fails with HTTP 400)
 ```
 
 ### Dependency Review
