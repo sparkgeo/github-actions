@@ -62,7 +62,9 @@ jobs:
 
 ### OpenSSF Scorecard
 
-Requires `id-token: write` for OIDC signing. Only runs on public repos with `publish_results: true`.
+Requires `id-token: write` for OIDC signing. SARIF is always uploaded to the GitHub Security tab.
+
+> **Note on `publish_results`:** The scorecard webapp verifies that the calling workflow directly invokes `ossf/scorecard-action` as a job step. Composite action wrapping hides that call, so `publish_results: true` always fails with a 400 error. This composite action therefore defaults `publish_results` to `false`. To publish results to the public OpenSSF database and generate the Scorecard badge, call `ossf/scorecard-action` directly in your workflow.
 
 ```yaml
 jobs:
@@ -78,6 +80,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: sparkgeo/github-actions/.github/actions/scorecard@<SHA>
+        # publish_results defaults to false — see note above
 ```
 
 ### Dependency Review

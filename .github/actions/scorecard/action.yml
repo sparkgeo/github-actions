@@ -1,11 +1,17 @@
 name: "OpenSSF Scorecard"
 description: |
-  Runs OpenSSF Scorecard checks, uploads SARIF to the GitHub Security tab, and publishes results to the OpenSSF database.
+  Runs OpenSSF Scorecard checks and uploads SARIF to the GitHub Security tab.
   Required permissions on calling job: id-token: write, security-events: write, actions: read, contents: read
+
+  NOTE: publish_results defaults to false. The scorecard webapp verifies that the
+  calling workflow directly invokes ossf/scorecard-action as a job step. Composite
+  action wrapping hides that call, so publication always fails with a 400 error.
+  To publish to the OpenSSF database, call ossf/scorecard-action directly in your
+  workflow instead of using this composite action.
 inputs:
   publish_results:
-    description: "Publish results to the public OpenSSF Scorecard database and generate the Scorecard badge. Set to false for private repositories."
-    default: "true"
+    description: "Publish results to the public OpenSSF Scorecard database. Only works when ossf/scorecard-action is called directly (not via a composite action). See action description."
+    default: "false"
 runs:
   using: "composite"
   steps:
