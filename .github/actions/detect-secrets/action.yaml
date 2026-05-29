@@ -1,0 +1,146 @@
+name: Detect Secrets Action
+description: |
+  Scan the repository for secrets using the following tools:
+  1. Gitleaks: https://github.com/gitleaks/gitleaks
+  2. TruffleHog: https://github.com/trufflesecurity/trufflehog
+  3. detect-secrets: https://github.com/Yelp/detect-secrets
+  4. git-secrets: https://github.com/awslabs/git-secrets
+  5. Talisman: https://github.com/thoughtworks/talisman
+  6. credential-digger: https://github.com/SAP/credential-digger
+  7. kingfisher: https://github.com/mongodb/kingfisher
+
+inputs:
+  github-token:
+    description: GitHub token for authentication
+    required: true
+    default: ${{ github.token }}
+  gitleaks-license:
+    description: Gitleaks license key for enterprise features
+    required: true
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v6.0.1
+      with:
+        fetch-depth: 0
+
+    - name: Prepare report directory
+      shell: bash
+      run: mkdir -p secrets_report
+
+    - name: Setup Python
+      uses: actions/setup-python@v6.1.0
+      with:
+        python-version: "3.12.12"
+
+    - name: Install jq
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y jq
+
+    - name: Install detect-secrets
+      shell: bash
+      run: pip install detect-secrets
+
+    - name: Run detect-secrets
+      continue-on-error: true
+      shell: bash
+      run: |
+        detect-secrets scan --force-use-all-plugins > secrets_report/detect_secrets.json
+
+    - name: Install git-secrets
+      shell: bash
+      run: |
+        git clone https://github.com/awslabs/git-secrets.git
+        cd git-secrets
+        sudo make install
+        cd ..
+
+    - name: Run git-secrets
+      continue-on-error: true
+      shell: bash
+      run: git secrets --scan -r . | tee secrets_report/git_secrets.txt
+
+    - name: Run Gitleaks
+      uses: gitleaks/gitleaks-action@v2.3.9
+      continue-on-error: true
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITLEAKS_LICENSE: ${{ inputs.gitleaks-license }}
+
+    - name: Install Talisman
+      shell: bash
+      run: bash -c "$(curl --silent https://raw.githubusercontent.com/thoughtworks/talisman/main/install.sh)"
+
+    - name: Run Talisman
+      continue-on-error: true
+      shell: bash
+      run: |
+        talisman --scan || true
+        if [ -f talisman_report/talisman_reports/data/report.json ]; then
+          cp talisman_report/talisman_reports/data/report.json secrets_report/talisman.json
+          num_failures=$(jq '.failures // [] | length' secrets_report/talisman.json)
+          if [ "$num_failures" -gt 0 ]; then
+            echo "Secrets found by Talisman: $num_failures"
+          fi
+        fi
+
+    - name: Install dependencies for credential-digger
+      shell: bash
+      run: sudo apt install -y build-essential python3-dev
+
+    - name: Install credential-digger
+      shell: bash
+      run: pip install credentialdigger
+
+    - name: Download rules for credential-digger
+      shell: bash
+      run: curl -O https://raw.githubusercontent.com/SAP/credential-digger/main/ui/backend/rules.yml
+
+    - name: Add rules for credential-digger
+      shell: bash
+      run: credentialdigger add_rules --sqlite /tmp/cred.db ./rules.yml
+
+    - name: Run credential-digger
+      continue-on-error: true
+      shell: bash
+      run: |
+        credentialdigger scan . --sqlite /tmp/cred.db --models PathModel PasswordModel | tee secrets_report/credential_digger.txt
+        cp /tmp/cred.db secrets_report/credential_digger.db || true
+        [ -f rules.yml ] && cp rules.yml secrets_report/ || true
+
+    - name: Install kingfisher
+      shell: bash
+      run: curl --silent --location https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/install-kingfisher.sh | bash
+
+    - name: Run kingfisher
+      continue-on-error: true
+      shell: bash
+      run: kingfisher scan . --exclude secrets_report/* | tee secrets_report/kingfisher.txt
+
+    - name: Install TruffleHog v3 binary
+      continue-on-error: true
+      shell: bash
+      run: |
+        set -euo pipefail
+        TRH_VER=3.92.4
+        TMPDIR="$(mktemp -d)"
+        curl -sSL -o "$TMPDIR/trufflehog.tar.gz" "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRH_VER}/trufflehog_${TRH_VER}_linux_amd64.tar.gz"
+        tar -xzf "$TMPDIR/trufflehog.tar.gz" -C "$TMPDIR"
+        install "$TMPDIR/trufflehog" "$RUNNER_TEMP/trufflehog"
+        chmod +x "$RUNNER_TEMP/trufflehog"
+
+    - name: Run TruffleHog (filesystem JSON)
+      continue-on-error: true
+      shell: bash
+      env:
+        TRUFFLEHOG_NO_UPDATE: "1"
+      run: |
+        "$RUNNER_TEMP/trufflehog" filesystem . --json --only-verified 2>&1 | tee secrets_report/trufflehog.json
+
+    - name: Upload combined results artifact
+      uses: actions/upload-artifact@v6.0.0
+      with:
+        name: secrets-scan-results
+        path: secrets_report
