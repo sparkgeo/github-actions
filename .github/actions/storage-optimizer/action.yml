@@ -6,29 +6,19 @@ runs:
     - name: Cleanup
       shell: bash
       run: |
-        # Remove Java (JDKs)
-        sudo rm -rf /usr/lib/jvm
-        # Remove .NET SDKs
-        sudo rm -rf /usr/share/dotnet
-        # Remove Swift toolchain
-        sudo rm -rf /usr/share/swift
-        # Remove Haskell (GHC)
-        sudo rm -rf /usr/local/.ghcup
-        # Remove Julia
-        sudo rm -rf /usr/local/julia*
-        # Remove Android SDK
-        sudo rm -rf /usr/local/lib/android
-        # Remove Chromium
-        sudo rm -rf /usr/local/share/chromium
-        # Remove Microsoft and Google tools
-        sudo rm -rf /opt/microsoft /opt/google
-        # Remove Azure CLI
-        sudo rm -rf /opt/az
-        # Remove PowerShell
-        sudo rm -rf /usr/local/share/powershell
-        # Remove cached tools
-        sudo rm -rf /opt/hostedtoolcache
-        # Clean up Docker
-        docker system prune -af || true
-        docker builder prune -af || true
+        sudo rm -rf \
+          /usr/lib/jvm \
+          /usr/share/dotnet \
+          /usr/share/swift \
+          /usr/local/.ghcup \
+          /usr/local/julia* \
+          /usr/local/lib/android \
+          /usr/local/share/chromium \
+          /opt/microsoft /opt/google \
+          /opt/az \
+          /usr/local/share/powershell \
+          /opt/hostedtoolcache &
+        docker system prune -af || true &
+        docker builder prune -af || true &
+        wait
         df -h

@@ -5,6 +5,8 @@ name: CI
 on:
   push:
     branches: [main]
+    paths:
+      - '.github/**'
   pull_request:
   schedule:
     - cron: '0 6 * * 1'  # weekly Monday 06:00 UTC — for scorecard
@@ -12,6 +14,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Lint workflow and action YAML files with actionlint.
