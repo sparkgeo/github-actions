@@ -29,6 +29,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or non-permitted licenses; posts a summary comment. Also supports non-PR invocation via `base-ref`/`head-ref`. | `fail-on-severity` (default: `high`), `allow-licenses` (default: `MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, CC0-1.0`), `comment-summary-in-pr` (default: `on-failure`), `base-ref` (default: `""`), `head-ref` (default: `""`) |
 | Storage Optimizer | [`storage-optimizer`](.github/actions/storage-optimizer/action.yml) | Frees disk space on GitHub-hosted runners by removing unused toolchains (JDK, .NET, Swift, Android SDK, etc.) and pruning Docker | None |
 | Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
+| AWS OIDC Auth | [`aws-oidc-auth`](.github/actions/aws-oidc-auth/action.yml) | Assumes an IAM role via GitHub OIDC — no static credentials stored; enforces traceable session name `{repo}-{run_id}` | `role-arn` (required), `aws-region` (required), `role-session-name` (default: `{repo}-{run_id}`) |
 
 ### GitHub Actionlint
 
@@ -129,6 +130,31 @@ steps:
 ```
 
 The action will fail the job if `terramate generate` produces uncommitted output, ensuring generated files are always in sync with the source of truth.
+
+### AWS OIDC Auth
+
+Exchanges a GitHub OIDC token for short-lived AWS credentials — no static key stored as a secret. See [docs/oidc-trust-policies.md](docs/oidc-trust-policies.md) for IAM trust policy setup and migration checklist.
+
+```yaml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write    # required for OIDC token exchange
+      contents: read
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - uses: sparkgeo/github-actions/.github/actions/aws-oidc-auth@<SHA>
+        with:
+          role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ca-central-1
+      # AWS credentials now available in environment
+      - run: aws sts get-caller-identity
+```
+
+Store the role ARN as a repository or environment **variable** (not a secret — ARNs are not sensitive). For production deployments, add a `environment: production` key to the job and configure required reviewers in Settings → Environments.
 
 ## Security
 
