@@ -67,10 +67,11 @@ jobs:
   # On pull_request: compares PR base/head via built-in event context.
   # On push to main: compares the pushed range (event.before → sha) so maintainers
   # can see the action work end-to-end without opening a PR.
+  # Skipped on first push to a branch (event.before = zero SHA) — no base to compare.
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before != '0000000000000000000000000000000000000000')
     permissions:
       contents: read
       pull-requests: write

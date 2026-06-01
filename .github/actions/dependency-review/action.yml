@@ -19,6 +19,15 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Validate ref inputs
+      if: ${{ (inputs.base-ref != '' && inputs.head-ref == '') || (inputs.base-ref == '' && inputs.head-ref != '') }}
+      shell: bash
+      env:
+        BASE_REF: ${{ inputs.base-ref }}
+        HEAD_REF: ${{ inputs.head-ref }}
+      run: |
+        echo "::error::dependency-review: base-ref and head-ref must both be set or both be empty. Got base-ref='${BASE_REF}' head-ref='${HEAD_REF}'."
+        exit 1
     - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
       if: ${{ inputs.base-ref == '' }}
       with:
