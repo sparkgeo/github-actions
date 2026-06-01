@@ -1,5 +1,7 @@
 # sparkgeo/github-actions
 
+[![CI](https://github.com/sparkgeo/github-actions/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sparkgeo/github-actions/actions/workflows/ci.yml)
+
 Reusable GitHub Actions composite actions and CI workflow for the Sparkgeo organisation.
 
 All action references in this repo are pinned to full commit SHAs. See [CONTRIBUTING.md](CONTRIBUTING.md) for authoring standards and how to add new actions.

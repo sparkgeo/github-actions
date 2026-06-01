@@ -64,11 +64,13 @@ jobs:
       - uses: ./.github/actions/scorecard
 
   # Review dependency changes for vulnerabilities and license issues.
-  # Only meaningful on pull_request — requires PR base/head context.
+  # On pull_request: compares PR base/head via built-in event context.
+  # On push to main: compares the pushed range (event.before → sha) so maintainers
+  # can see the action work end-to-end without opening a PR.
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     permissions:
       contents: read
       pull-requests: write
@@ -78,6 +80,9 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/dependency-review
+        with:
+          base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
+          head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
@@ -95,12 +100,11 @@ jobs:
       - uses: ./.github/actions/terramate-opentofu-setup
 
   # Verify the storage optimizer composite action runs without error.
-  # Gated to workflow_dispatch: storage-optimizer is only useful when a job does
-  # heavy disk work on the same runner; running it on a throwaway CI runner wastes minutes.
+  # Runs on push to main (demonstration) and workflow_dispatch (on-demand).
   storage-optimizer:
     name: Storage Optimizer
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     permissions:
       contents: read
     steps:

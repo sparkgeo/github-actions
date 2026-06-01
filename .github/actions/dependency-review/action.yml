@@ -10,11 +10,26 @@ inputs:
   comment-summary-in-pr:
     description: "Post a summary comment on the PR: always|on-failure|never"
     default: "on-failure"
+  base-ref:
+    description: "Base commit SHA for non-PR events (e.g. github.event.before on push). Leave empty on pull_request — the action reads PR context automatically."
+    default: ""
+  head-ref:
+    description: "Head commit SHA for non-PR events (e.g. github.sha on push). Leave empty on pull_request."
+    default: ""
 runs:
   using: "composite"
   steps:
     - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+      if: ${{ inputs.base-ref == '' }}
       with:
+        fail-on-severity: ${{ inputs.fail-on-severity }}
+        deny-licenses: ${{ inputs.deny-licenses }}
+        comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
+    - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+      if: ${{ inputs.base-ref != '' }}
+      with:
+        base-ref: ${{ inputs.base-ref }}
+        head-ref: ${{ inputs.head-ref }}
         fail-on-severity: ${{ inputs.fail-on-severity }}
         deny-licenses: ${{ inputs.deny-licenses }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}

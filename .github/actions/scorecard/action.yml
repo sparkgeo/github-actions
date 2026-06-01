@@ -34,6 +34,21 @@ runs:
         retention-days: 5
         if-no-files-found: ignore
 
+    - name: Print scorecard summary
+      if: always() && hashFiles('scorecard-results.sarif') != ''
+      shell: bash
+      run: |
+        echo "=== OpenSSF Scorecard Results ==="
+        findings=$(jq -r '
+          .runs[].results[]? |
+          "  [\(.ruleId | gsub("ID$";""))] \(.message.text | split("\n")[0])"
+        ' scorecard-results.sarif)
+        if [[ -z "$findings" ]]; then
+          echo "  All checks passed"
+        else
+          echo "$findings"
+        fi
+
     - uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
       if: always() && hashFiles('scorecard-results.sarif') != ''
       with:
