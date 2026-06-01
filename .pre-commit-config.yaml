@@ -8,3 +8,12 @@ repos:
     rev: 9257c6050c0261b8c57e712f632dc4a8010109a9  # v1.25.2
     hooks:
       - id: zizmor
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.16.3
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
