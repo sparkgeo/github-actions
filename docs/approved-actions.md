@@ -27,6 +27,40 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `terramate-io/terramate-action` | Terramate | `c5a13758` (v3.0.0) | `terramate-opentofu-setup` | Install Terramate CLI | 2026-05-21 |
 | `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress monitor — audits outbound network calls; baseline for enforce mode | 2026-06-01 |
 
+## Data handling and third-party telemetry
+
+### step-security/harden-runner
+
+`harden-runner` sends network egress telemetry to StepSecurity's platform (app.stepsecurity.io). This is the mechanism that powers the dashboard — it is not a side effect.
+
+**Data sent to StepSecurity:**
+- Repository name and organisation
+- Workflow run ID, job name, step name
+- Outbound connection metadata: destination hostname/IP, port, process name, timestamp
+
+**Data NOT sent:** secrets, environment variables, source code, file contents.
+
+**Implications by repo visibility:**
+
+| Repo type | Risk | Recommendation |
+|---|---|---|
+| Public | Low — repo name/structure already public | Acceptable; use `egress-policy: audit` to build endpoint allowlist |
+| Private | Medium — org name + CI topology exposed to StepSecurity | Review [StepSecurity privacy policy](https://www.stepsecurity.io/privacy) and data processing terms before adopting; if org policy prohibits third-party CI telemetry, omit this action |
+
+There is no mode that suppresses telemetry while keeping the dashboard — if data leaving GitHub is unacceptable, remove `harden-runner` entirely and enforce egress via network-level controls instead.
+
+### Decision: private repo usage
+
+For private repos, the recommendation is to **omit `harden-runner` entirely** from consuming workflows. There is no configuration option that suppresses telemetry while keeping monitoring — the two are inseparable.
+
+Alternatives for private repos that need egress control:
+
+- **GitHub Enterprise Cloud (GHEC) Actions network configurations** — network-layer egress control; data stays within GitHub/Azure infrastructure; requires a GHEC subscription (approximately $21/user/month).
+- **Self-hosted runners with firewall rules** — egress data stays in your own infrastructure; trades StepSecurity dependency for additional ops overhead managing the runner fleet.
+- **StepSecurity Enterprise (self-hosted backend)** — licensed product where the runner agent connects to your own server rather than app.stepsecurity.io; eliminates third-party data sharing but requires procuring and operating the backend.
+
+For static pre-run security analysis on private repos, **zizmor + actionlint** (already included in this repo) provide workflow security coverage without any outbound egress, and should be considered sufficient for the static analysis layer.
+
 ## Security review criteria
 
 Before approving a new action, verify all of the following:
