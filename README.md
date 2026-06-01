@@ -151,9 +151,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { contents: read, checks: write }
     steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+      - uses: step-security/harden-runner@<SHA>
         with: { egress-policy: audit }
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@<SHA>
         with: { persist-credentials: false }
       - uses: sparkgeo/github-actions/.github/actions/github-actionlint@<SHA>
 
@@ -161,9 +161,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { contents: read, security-events: write }
     steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+      - uses: step-security/harden-runner@<SHA>
         with: { egress-policy: audit }
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@<SHA>
         with: { persist-credentials: false }
       - uses: sparkgeo/github-actions/.github/actions/zizmor@<SHA>
 
@@ -172,9 +172,9 @@ jobs:
     if: github.ref == 'refs/heads/main'
     permissions: { contents: read, actions: read, security-events: write }
     steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+      - uses: step-security/harden-runner@<SHA>
         with: { egress-policy: audit }
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@<SHA>
         with: { persist-credentials: false }
       - uses: sparkgeo/github-actions/.github/actions/scorecard@<SHA>
 
@@ -183,9 +183,9 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions: { contents: read, pull-requests: write }
     steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+      - uses: step-security/harden-runner@<SHA>
         with: { egress-policy: audit }
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@<SHA>
         with: { persist-credentials: false }
       - uses: sparkgeo/github-actions/.github/actions/dependency-review@<SHA>
 ```
@@ -208,7 +208,7 @@ jobs:
     permissions: { contents: read, checks: write }
     steps:
       # harden-runner omitted — sends egress telemetry to StepSecurity (third party)
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@<SHA>
         with: { persist-credentials: false }
       - uses: sparkgeo/github-actions/.github/actions/github-actionlint@<SHA>
 
@@ -217,7 +217,7 @@ jobs:
     permissions: { contents: read, security-events: write }
     # security-events: write requires GitHub Advanced Security on private repos
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@<SHA>
         with: { persist-credentials: false }
       - uses: sparkgeo/github-actions/.github/actions/zizmor@<SHA>
 
@@ -228,7 +228,7 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions: { contents: read, pull-requests: write }
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@<SHA>
         with: { persist-credentials: false }
       - uses: sparkgeo/github-actions/.github/actions/dependency-review@<SHA>
 ```
