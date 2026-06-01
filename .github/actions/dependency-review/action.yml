@@ -1,12 +1,12 @@
 name: "Dependency Review"
-description: "Blocks PRs that introduce dependencies with known vulnerabilities or denied licenses; posts a summary comment on the PR."
+description: "Blocks PRs that introduce dependencies with known vulnerabilities or non-permitted licenses; posts a summary comment on the PR."
 inputs:
   fail-on-severity:
     description: "Minimum vulnerability severity to fail: critical|high|moderate|low"
     default: "high"
-  deny-licenses:
-    description: "Comma-separated list of SPDX license identifiers to deny"
-    default: "GPL-2.0,GPL-3.0,AGPL-3.0"
+  allow-licenses:
+    description: "Comma-separated list of SPDX license identifiers that are permitted. Dependencies using any other license will fail the check."
+    default: "MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, CC0-1.0"
   comment-summary-in-pr:
     description: "Post a summary comment on the PR: always|on-failure|never"
     default: "on-failure"
@@ -23,7 +23,7 @@ runs:
       if: ${{ inputs.base-ref == '' }}
       with:
         fail-on-severity: ${{ inputs.fail-on-severity }}
-        deny-licenses: ${{ inputs.deny-licenses }}
+        allow-licenses: ${{ inputs.allow-licenses }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
     - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
       if: ${{ inputs.base-ref != '' }}
@@ -31,5 +31,5 @@ runs:
         base-ref: ${{ inputs.base-ref }}
         head-ref: ${{ inputs.head-ref }}
         fail-on-severity: ${{ inputs.fail-on-severity }}
-        deny-licenses: ${{ inputs.deny-licenses }}
+        allow-licenses: ${{ inputs.allow-licenses }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
