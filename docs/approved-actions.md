@@ -25,6 +25,7 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `zizmorcore/zizmor-action` | zizmorcore | `5f14fd08` (v0.5.6) | `zizmor` | Zizmor static security analysis; uploads SARIF | 2026-05-21 |
 | `opentofu/setup-opentofu` | OpenTofu | `847eaa4a` (v2.0.1) | `terramate-opentofu-setup` | Install OpenTofu CLI | 2026-05-21 |
 | `terramate-io/terramate-action` | Terramate | `c5a13758` (v3.0.0) | `terramate-opentofu-setup` | Install Terramate CLI | 2026-05-21 |
+| `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress monitor — audits outbound network calls; baseline for enforce mode | 2026-06-01 |
 
 ## Security review criteria
 
@@ -54,7 +55,7 @@ Before approving a new action, verify all of the following:
      "github_owned_allowed": true,
      "verified_allowed": false,
      "patterns_allowed": [
-       "ossf/*", "reviewdog/*", "zizmorcore/*", "opentofu/*", "terramate-io/*",
+       "ossf/*", "reviewdog/*", "zizmorcore/*", "opentofu/*", "terramate-io/*", "step-security/*",
        "<new-publisher>/*"
      ]
    }
@@ -74,6 +75,7 @@ reviewdog/*
 zizmorcore/*
 opentofu/*
 terramate-io/*
+step-security/*
 ```
 
 GitHub-owned actions (`actions/*`, `github/*`) are covered by `github_owned_allowed: true` and do not need explicit patterns.
