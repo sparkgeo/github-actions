@@ -1,5 +1,7 @@
 # sparkgeo/github-actions
 
+[![CI](https://github.com/sparkgeo/github-actions/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sparkgeo/github-actions/actions/workflows/ci.yml)
+
 Reusable GitHub Actions composite actions and CI workflow for the Sparkgeo organisation.
 
 All action references in this repo are pinned to full commit SHAs. See [CONTRIBUTING.md](CONTRIBUTING.md) for authoring standards and how to add new actions.
@@ -24,7 +26,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | GitHub Actionlint | [`github-actionlint`](.github/actions/github-actionlint/action.yml) | Lints workflow and action YAML files using actionlint via reviewdog; posts annotations as GitHub Checks | None |
 | Zizmor | [`zizmor`](.github/actions/zizmor/action.yml) | Runs zizmor static security analysis against workflow and action YAML files; uploads findings as SARIF to the Security tab | None |
 | OpenSSF Scorecard | [`scorecard`](.github/actions/scorecard/action.yml) | Runs OpenSSF Scorecard checks; uploads SARIF to the Security tab | `publish_results` (default: `false` — always fails with HTTP 400 if set to `true`; see action description) |
-| Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or denied licenses; posts a summary comment | `fail-on-severity` (default: `high`), `deny-licenses` (default: `GPL-2.0,GPL-3.0,AGPL-3.0`), `comment-summary-in-pr` (default: `on-failure`) |
+| Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or non-permitted licenses; posts a summary comment. Also supports non-PR invocation via `base-ref`/`head-ref`. | `fail-on-severity` (default: `high`), `allow-licenses` (default: `MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, CC0-1.0`), `comment-summary-in-pr` (default: `on-failure`), `base-ref` (default: `""`), `head-ref` (default: `""`) |
 | Storage Optimizer | [`storage-optimizer`](.github/actions/storage-optimizer/action.yml) | Frees disk space on GitHub-hosted runners by removing unused toolchains (JDK, .NET, Swift, Android SDK, etc.) and pruning Docker | None |
 | Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
 
@@ -84,13 +86,13 @@ jobs:
 
 ### Dependency Review
 
-Only meaningful on `pull_request` events — requires PR base/head context.
+Works on `pull_request` events (automatic base/head from PR context) and on push/non-PR events by passing `base-ref`/`head-ref` explicitly. Skip on initial branch push (`event.before` = zero SHA — no base to compare).
 
 ```yaml
 jobs:
   dependency-review:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before != '0000000000000000000000000000000000000000')
     permissions:
       contents: read
       pull-requests: write
@@ -100,9 +102,11 @@ jobs:
           persist-credentials: false
       - uses: sparkgeo/github-actions/.github/actions/dependency-review@<SHA>
         with:
-          fail-on-severity: high           # critical | high | moderate | low
-          deny-licenses: GPL-2.0,AGPL-3.0  # SPDX identifiers
-          comment-summary-in-pr: always    # always | on-failure | never
+          fail-on-severity: high                              # critical | high | moderate | low
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause      # SPDX identifiers; deps with other licenses fail
+          comment-summary-in-pr: always                       # always | on-failure | never
+          base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}  # leave empty on pull_request
+          head-ref: ${{ github.event_name == 'push' && github.sha || '' }}           # leave empty on pull_request
 ```
 
 ### Storage Optimizer
