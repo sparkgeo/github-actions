@@ -156,6 +156,111 @@ jobs:
 
 Store the role ARN as a repository or environment **variable** (not a secret — ARNs are not sensitive). For production deployments, add a `environment: production` key to the job and configure required reviewers in Settings → Environments.
 
+## Consuming repo CI setup
+
+Public and private repos use different subsets of these actions. The key differences are `harden-runner` (sends egress telemetry to StepSecurity — omit on private repos) and `scorecard` (requires public visibility to produce meaningful scores).
+
+### Public repo
+
+```yaml
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+permissions:
+  contents: read
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, checks: write }
+    steps:
+      - uses: step-security/harden-runner@<SHA>
+        with: { egress-policy: audit }
+      - uses: actions/checkout@<SHA>
+        with: { persist-credentials: false }
+      - uses: sparkgeo/github-actions/.github/actions/github-actionlint@<SHA>
+
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, security-events: write }
+    steps:
+      - uses: step-security/harden-runner@<SHA>
+        with: { egress-policy: audit }
+      - uses: actions/checkout@<SHA>
+        with: { persist-credentials: false }
+      - uses: sparkgeo/github-actions/.github/actions/zizmor@<SHA>
+
+  scorecard:  # public repos only — checks degrade on private repos
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions: { contents: read, actions: read, security-events: write }
+    steps:
+      - uses: step-security/harden-runner@<SHA>
+        with: { egress-policy: audit }
+      - uses: actions/checkout@<SHA>
+        with: { persist-credentials: false }
+      - uses: sparkgeo/github-actions/.github/actions/scorecard@<SHA>
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions: { contents: read, pull-requests: write }
+    steps:
+      - uses: step-security/harden-runner@<SHA>
+        with: { egress-policy: audit }
+      - uses: actions/checkout@<SHA>
+        with: { persist-credentials: false }
+      - uses: sparkgeo/github-actions/.github/actions/dependency-review@<SHA>
+```
+
+### Private repo
+
+Same structure — drop `harden-runner` from every job and drop the `scorecard` job entirely:
+
+```yaml
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, checks: write }
+    steps:
+      # harden-runner omitted — sends egress telemetry to StepSecurity (third party)
+      - uses: actions/checkout@<SHA>
+        with: { persist-credentials: false }
+      - uses: sparkgeo/github-actions/.github/actions/github-actionlint@<SHA>
+
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, security-events: write }
+    # security-events: write requires GitHub Advanced Security on private repos
+    steps:
+      - uses: actions/checkout@<SHA>
+        with: { persist-credentials: false }
+      - uses: sparkgeo/github-actions/.github/actions/zizmor@<SHA>
+
+  # scorecard omitted — most checks require public repo visibility
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions: { contents: read, pull-requests: write }
+    steps:
+      - uses: actions/checkout@<SHA>
+        with: { persist-credentials: false }
+      - uses: sparkgeo/github-actions/.github/actions/dependency-review@<SHA>
+```
+
+See [docs/approved-actions.md](docs/approved-actions.md) for full data handling and telemetry details.
+
 ## Security
 
 This repo is part of the Sparkgeo GitHub Actions security programme. The pillars are:
