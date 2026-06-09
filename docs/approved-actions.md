@@ -91,7 +91,7 @@ Before approving a new action, verify all of the following:
      "github_owned_allowed": true,
      "verified_allowed": false,
      "patterns_allowed": [
-       "ossf/*", "reviewdog/*", "zizmorcore/*", "opentofu/*", "terramate-io/*", "step-security/*", "aws-actions/*", "google-github-actions/*",
+       "ossf/*", "reviewdog/*", "zizmorcore/*", "opentofu/*", "terramate-io/*", "step-security/*", "aws-actions/*", "google-github-actions/*", "pnpm/*",
        "<new-publisher>/*"
      ]
    }
@@ -114,6 +114,7 @@ terramate-io/*
 step-security/*
 aws-actions/*
 google-github-actions/*
+pnpm/*
 ```
 
 GitHub-owned actions (`actions/*`, `github/*`) are covered by `github_owned_allowed: true` and do not need explicit patterns.
