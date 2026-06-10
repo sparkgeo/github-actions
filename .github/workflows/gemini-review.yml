@@ -25,6 +25,13 @@ jobs:
       id-token: 'write'
       issues: 'write'
       pull-requests: 'write'
+    env:
+      # Set at JOB level so it propagates into run-gemini-cli's internal
+      # composite steps (step-level env does NOT). Headless CI cannot show the
+      # folder-trust dialog; without this the code-review extension install
+      # blocks on the prompt until the job times out. See gemini-cli
+      # docs/cli/trusted-folders.md.
+      GEMINI_CLI_TRUST_WORKSPACE: 'true'
     steps:
       - name: 'Mint identity token'
         id: 'mint_identity_token'

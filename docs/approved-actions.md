@@ -69,9 +69,10 @@ These are not GitHub Actions (no `uses:` reference) so the org allowlist does no
 
 | Tool | Used in | Pinned version | How it is installed | Review date |
 |---|---|---|---|---|
-| `gitleaks` | `gitleaks` composite action, `secrets-precommit.yml`, `.pre-commit-config.yaml` | `v8.30.1` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `gitleaks/gitleaks-action` Action is deliberately avoided — it requires a paid `GITLEAKS_LICENSE` for organisation accounts. | 2026-06-10 |
+| `gitleaks` | `gitleaks` composite action, `secrets-precommit.yml`, `.pre-commit-config.yaml` | `v8.30.1` (`83d9cd68`) | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `gitleaks/gitleaks-action` Action is deliberately avoided — it requires a paid `GITLEAKS_LICENSE` for organisation accounts. | 2026-06-10 |
+| `trufflehog` | `trufflehog` composite action, `secrets-scan.yml` | `v3.95.5` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `trufflesecurity/trufflehog` Action is avoided to keep the supply chain to a single checksum-verified download; findings are converted to SARIF in-action with `jq`. | 2026-06-10 |
 
-When bumping the version, update it in all three locations above and re-confirm the checksum download path.
+When bumping a version, update it in all locations listed above and re-confirm the checksum download path.
 
 ## Security review criteria
 
