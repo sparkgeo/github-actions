@@ -84,16 +84,25 @@ runs:
         echo "Verified: ${VERIFIED}, unverified: ${UNVERIFIED}"
 
         # Convert NDJSON findings to SARIF 2.1.0. Verified -> error, else warning.
-        jq -s '{
+        # rules[] is populated with one entry per distinct detector so the
+        # Security tab shows a clean title per alert type.
+        jq -s '. as $findings
+        | ($findings | map(.DetectorName // "UnknownDetector") | unique) as $detectors
+        | {
           "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
           version: "2.1.0",
           runs: [{
             tool: { driver: {
               name: "TruffleHog",
               informationUri: "https://github.com/trufflesecurity/trufflehog",
-              rules: []
+              rules: ($detectors | map({
+                id: .,
+                name: .,
+                shortDescription: { text: ("Secret detected by the " + . + " detector.") },
+                helpUri: "https://github.com/trufflesecurity/trufflehog"
+              }))
             }},
-            results: [ .[] | {
+            results: [ $findings[] | {
               ruleId: (.DetectorName // "UnknownDetector"),
               level: (if .Verified then "error" else "warning" end),
               message: { text: ((if .Verified then "Verified" else "Unverified" end)
