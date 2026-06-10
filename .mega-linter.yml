@@ -1,0 +1,15 @@
+# MegaLinter configuration — https://megalinter.io/latest/config-file/
+# Consuming repos drop their own .mega-linter.yml; this one tunes the dogfood
+# run in ci.yml for this (YAML/Markdown/shell-heavy) repo.
+
+APPLY_FIXES: none
+
+# SPELL (cspell/proselint) and COPYPASTE (jscpd) are high-noise for an
+# infra/docs repo and are not part of the lint gate's intent.
+DISABLE:
+  - SPELL
+  - COPYPASTE
+
+SHOW_ELAPSED_TIME: true
+FLAVOR_SUGGESTIONS: false
+PRINT_ALPACA: false

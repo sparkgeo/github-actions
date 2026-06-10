@@ -1,0 +1,54 @@
+name: Lint Pre-commit
+
+# Reusable CI gate that runs the consuming repo's .pre-commit-config.yaml hooks.
+# Language-agnostic — shared by the app, IaC, and Helm lint stages (issues #9/#10/#11).
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: 'Path to .pre-commit-config.yaml in the consuming repo'
+        default: '.pre-commit-config.yaml'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the pre-commit
+          composite from. Pin this to the SAME SHA you pinned lint-precommit.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    name: Pre-commit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # full history so the PR diff range can be resolved
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout pre-commit composite action
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/pre-commit
+        with:
+          config-path: ${{ inputs.config-path }}
