@@ -28,6 +28,7 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress monitor — audits outbound network calls; baseline for enforce mode | 2026-06-01 |
 | `aws-actions/configure-aws-credentials` | AWS (Amazon) | `99214aa6` (v6.1.3) | `aws-oidc-auth` | Assume IAM role via GitHub OIDC; exchanges OIDC token for short-lived AWS credentials | 2026-06-09 |
 | `google-github-actions/run-gemini-cli` | Google | `f77273f4` (v0) | `gemini-*.yml` workflows | Runs Gemini CLI for AI-assisted triage, review, and invocation | 2026-06-09 |
+| `oxsecurity/megalinter` | OX Security | `0e3ce9b9` (v9.5.0) | `lint-app.yml` | All-language lint/format gate; auto-detects languages, emits SARIF | 2026-06-10 |
 
 ## Data handling and third-party telemetry
 
@@ -71,6 +72,7 @@ These are not GitHub Actions (no `uses:` reference) so the org allowlist does no
 |---|---|---|---|---|
 | `gitleaks` | `gitleaks` composite action, `secrets-precommit.yml`, `.pre-commit-config.yaml` | `v8.30.1` (`83d9cd68`) | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `gitleaks/gitleaks-action` Action is deliberately avoided — it requires a paid `GITLEAKS_LICENSE` for organisation accounts. | 2026-06-10 |
 | `trufflehog` | `trufflehog` composite action, `secrets-scan.yml` | `v3.95.5` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `trufflesecurity/trufflehog` Action is avoided to keep the supply chain to a single checksum-verified download; findings are converted to SARIF in-action with `jq`. | 2026-06-10 |
+| `pre-commit` | `pre-commit` composite action, `lint-precommit.yml` | `4.6.0` | Run via `pipx run --spec pre-commit==4.6.0` (pipx is preinstalled on GitHub runners) — pinned version, ephemeral env, no PATH write. Hook versions themselves are pinned (to commit SHAs) in each consuming repo's `.pre-commit-config.yaml`. | 2026-06-10 |
 
 When bumping a version, update it in all locations listed above and re-confirm the checksum download path.
 
@@ -126,6 +128,7 @@ step-security/*
 aws-actions/*
 google-github-actions/*
 pnpm/*
+oxsecurity/*
 ```
 
 GitHub-owned actions (`actions/*`, `github/*`) are covered by `github_owned_allowed: true` and do not need explicit patterns.

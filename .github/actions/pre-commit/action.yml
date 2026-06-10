@@ -1,0 +1,52 @@
+name: "Pre-commit"
+description: |
+  Runs the consuming repo's .pre-commit-config.yaml hooks in CI — the non-bypassable
+  counterpart to a developer's local pre-commit hook. Language-agnostic: all hook
+  configuration lives in the consuming repo's config.
+
+  On a pull_request it runs hooks only against the changed files
+  (--from-ref/--to-ref); otherwise it runs against all files. Fails on any hook
+  that exits non-zero.
+
+  Required permissions on calling job: contents: read
+inputs:
+  version:
+    description: "pre-commit version to install (no leading 'v')."
+    default: "4.6.0"
+  config-path:
+    description: "Path to the pre-commit config in the consuming repo."
+    default: ".pre-commit-config.yaml"
+  from-ref:
+    description: "Lower bound of the diff to scan. Defaults to the PR base SHA."
+    default: ${{ github.event.pull_request.base.sha || '' }}
+  to-ref:
+    description: "Upper bound of the diff to scan. Defaults to the PR head SHA."
+    default: ${{ github.event.pull_request.head.sha || '' }}
+runs:
+  using: "composite"
+  steps:
+    - name: Run pre-commit
+      shell: bash
+      env:
+        PRE_COMMIT_VERSION: ${{ inputs.version }}
+        CONFIG_PATH: ${{ inputs.config-path }}
+        FROM_REF: ${{ inputs.from-ref }}
+        TO_REF: ${{ inputs.to-ref }}
+      run: |
+        set -euo pipefail
+        if [ ! -f "${CONFIG_PATH}" ]; then
+          echo "::error::pre-commit config not found at ${CONFIG_PATH}"
+          exit 1
+        fi
+        ARGS=(run --config "${CONFIG_PATH}" --show-diff-on-failure --color always)
+        if [ -n "${FROM_REF}" ] && [ -n "${TO_REF}" ]; then
+          echo "Running pre-commit on changed files ${FROM_REF}..${TO_REF}"
+          ARGS+=(--from-ref "${FROM_REF}" --to-ref "${TO_REF}")
+        else
+          echo "Running pre-commit on all files"
+          ARGS+=(--all-files)
+        fi
+        # pipx is preinstalled on GitHub-hosted runners; `pipx run` executes a
+        # pinned pre-commit in an ephemeral env — no GITHUB_PATH write and no
+        # PEP-668 "externally-managed" pip error on the system Python.
+        pipx run --spec "pre-commit==${PRE_COMMIT_VERSION}" pre-commit "${ARGS[@]}"
