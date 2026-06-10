@@ -37,6 +37,26 @@ jobs:
 
       - uses: ./.github/actions/github-actionlint
 
+  # Pattern-based secret detection with Gitleaks.
+  # Hard-fails the build on any match. On PRs scans only the PR commit range.
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # full history so the PR commit range can be scanned
+
+      - uses: ./.github/actions/gitleaks
+
   # Security-scan workflow and action YAML files with zizmor.
   zizmor:
     name: Zizmor

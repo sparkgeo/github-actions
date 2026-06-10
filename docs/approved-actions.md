@@ -63,6 +63,16 @@ Alternatives for private repos that need egress control:
 
 For static pre-run security analysis on private repos, **zizmor + actionlint** (already included in this repo) provide workflow security coverage without any outbound egress, and should be considered sufficient for the static analysis layer.
 
+## Pinned binary tooling (non-action dependencies)
+
+These are not GitHub Actions (no `uses:` reference) so the org allowlist does not apply, but they execute in CI and are tracked here for the same supply-chain reasons.
+
+| Tool | Used in | Pinned version | How it is installed | Review date |
+|---|---|---|---|---|
+| `gitleaks` | `gitleaks` composite action, `secrets-precommit.yml`, `.pre-commit-config.yaml` | `v8.30.1` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `gitleaks/gitleaks-action` Action is deliberately avoided — it requires a paid `GITLEAKS_LICENSE` for organisation accounts. | 2026-06-10 |
+
+When bumping the version, update it in all three locations above and re-confirm the checksum download path.
+
 ## Security review criteria
 
 Before approving a new action, verify all of the following:
