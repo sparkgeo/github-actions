@@ -47,6 +47,10 @@ jobs:
         uses: 'google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489'  # v0
         id: 'gemini_pr_review'
         env:
+          # Headless CI cannot show the folder-trust dialog; without this the
+          # code-review extension install blocks on the prompt until the job
+          # times out and is cancelled. See gemini-cli docs/cli/trusted-folders.md.
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
           GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
           ISSUE_TITLE: '${{ github.event.pull_request.title || github.event.issue.title }}'
           ISSUE_BODY: '${{ github.event.pull_request.body || github.event.issue.body }}'
