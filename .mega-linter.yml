@@ -10,6 +10,17 @@ DISABLE:
   - SPELL
   - COPYPASTE
 
+# These REPOSITORY linters duplicate this repo's dedicated security stack and
+# false-positive on intentional design:
+#  - CHECKOV CKV2_GHA_1 flags workflows that omit a top-level `permissions`
+#    block, but our reusable workflows omit it deliberately to inherit the
+#    caller's grant (see secrets-scan.yml / lint-app.yml). zizmor is our GHA gate.
+#  - DEVSKIM DS173237 flags token-like strings as hardcoded secrets
+#    (false positive); gitleaks + trufflehog cover real secrets.
+DISABLE_LINTERS:
+  - REPOSITORY_CHECKOV
+  - REPOSITORY_DEVSKIM
+
 SHOW_ELAPSED_TIME: true
 FLAVOR_SUGGESTIONS: false
 PRINT_ALPACA: false
