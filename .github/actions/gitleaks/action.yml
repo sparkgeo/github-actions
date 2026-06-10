@@ -6,9 +6,12 @@ description: |
   gitleaks-action — that requires a paid GITLEAKS_LICENSE for organisations).
 
   On a pull_request the action scans only the commits the PR adds
-  (base..head). Otherwise it scans the full working tree. A .gitleaks.toml
-  in the consuming repo (config-path) is honoured for custom rules and
-  allowlists.
+  (base..head). Otherwise (e.g. push to the default branch) it scans the full
+  git history, catching secrets that were committed and later removed from the
+  tree. A .gitleaks.toml in the consuming repo (config-path) is honoured for
+  custom rules and allowlists.
+
+  NOTE: non-PR scans require full history — set fetch-depth: 0 on checkout.
 
   Required permissions on calling job: contents: read
 inputs:
@@ -47,8 +50,8 @@ runs:
       env:
         CONFIG_PATH: ${{ inputs.config-path }}
         FAIL_ON_FINDING: ${{ inputs.fail-on-finding }}
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
       run: |
         set -euo pipefail
         ARGS=(--redact --verbose --no-banner)
@@ -62,9 +65,13 @@ runs:
           ARGS+=(--exit-code 0)
         fi
         if [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
+          # PR: scan only the commits the PR adds.
           echo "Scanning PR commit range ${PR_BASE_SHA}..${PR_HEAD_SHA}"
           "${RUNNER_TEMP}/gitleaks" git . --log-opts="${PR_BASE_SHA}..${PR_HEAD_SHA}" "${ARGS[@]}"
         else
-          echo "Scanning full working tree"
-          "${RUNNER_TEMP}/gitleaks" dir . "${ARGS[@]}"
+          # Non-PR (e.g. push to default branch): scan the full git history so
+          # secrets that were committed and later removed from the tree are
+          # still caught.
+          echo "Scanning full git history"
+          "${RUNNER_TEMP}/gitleaks" git . "${ARGS[@]}"
         fi
