@@ -77,8 +77,15 @@ Bind to a specific repo and branch — never the whole org:
    aws iam create-open-id-connect-provider \
      --url https://token.actions.githubusercontent.com \
      --client-id-list sts.amazonaws.com \
-     --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+     --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1 1c58a3a8518e8759bf075b76b750d4f2df264fcd
    ```
+   > **Thumbprints:** Since mid-2023 AWS validates the GitHub OIDC endpoint
+   > against its own trusted CA store and **ignores** the thumbprint for
+   > `token.actions.githubusercontent.com`, so rotation of GitHub's intermediate
+   > certs no longer breaks federation. The value is still required at creation.
+   > Both of GitHub's published thumbprints (rooted in DigiCert) are listed above
+   > for completeness — supplying both survives a primary→secondary cert rotation
+   > on any tooling that does still verify them.
 2. Create the IAM role with the trust policy above.
 3. Attach only the permissions the role needs (least privilege).
 4. Store the role ARN as a repo/environment variable (not a secret — ARNs are not sensitive):
