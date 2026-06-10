@@ -1,0 +1,70 @@
+name: "Gitleaks Secret Scan"
+description: |
+  Pattern-based secret detection with Gitleaks. Hard-fails on any match.
+
+  Installs a pinned, checksum-verified Gitleaks binary directly (no
+  gitleaks-action — that requires a paid GITLEAKS_LICENSE for organisations).
+
+  On a pull_request the action scans only the commits the PR adds
+  (base..head). Otherwise it scans the full working tree. A .gitleaks.toml
+  in the consuming repo (config-path) is honoured for custom rules and
+  allowlists.
+
+  Required permissions on calling job: contents: read
+inputs:
+  version:
+    description: "Gitleaks version to install (no leading 'v')."
+    default: "8.30.1"
+  config-path:
+    description: "Path to a .gitleaks.toml config in the consuming repo. Applied only if the file exists."
+    default: ".gitleaks.toml"
+  fail-on-finding:
+    description: "Hard-fail the step on any secret finding. Set false to report without blocking."
+    default: "true"
+runs:
+  using: "composite"
+  steps:
+    - name: Install Gitleaks
+      shell: bash
+      env:
+        GITLEAKS_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+        TARBALL="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+        # Verify the downloaded binary against the published checksum before use.
+        ( cd "${TMP}" && grep " ${TARBALL}\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${TMP}/${TARBALL}" -C "${TMP}" gitleaks
+        # Install to RUNNER_TEMP and invoke by absolute path in the next step;
+        # avoids writing to GITHUB_PATH.
+        install "${TMP}/gitleaks" "${RUNNER_TEMP}/gitleaks"
+
+    - name: Run Gitleaks
+      shell: bash
+      env:
+        CONFIG_PATH: ${{ inputs.config-path }}
+        FAIL_ON_FINDING: ${{ inputs.fail-on-finding }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        set -euo pipefail
+        ARGS=(--redact --verbose --no-banner)
+        if [ -f "${CONFIG_PATH}" ]; then
+          echo "Using Gitleaks config: ${CONFIG_PATH}"
+          ARGS+=(--config "${CONFIG_PATH}")
+        fi
+        if [ "${FAIL_ON_FINDING}" = "true" ]; then
+          ARGS+=(--exit-code 1)
+        else
+          ARGS+=(--exit-code 0)
+        fi
+        if [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
+          echo "Scanning PR commit range ${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          "${RUNNER_TEMP}/gitleaks" git . --log-opts="${PR_BASE_SHA}..${PR_HEAD_SHA}" "${ARGS[@]}"
+        else
+          echo "Scanning full working tree"
+          "${RUNNER_TEMP}/gitleaks" dir . "${ARGS[@]}"
+        fi
