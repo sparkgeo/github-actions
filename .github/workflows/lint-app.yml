@@ -59,8 +59,25 @@ jobs:
           GITHUB_STATUS_REPORTER: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Decide whether to upload: codeql-action rejects a SARIF whose `runs`
+      # array is empty ("1 item required; only 0 were supplied"). MegaLinter
+      # emits an empty SARIF when nothing reportable is found.
+      - name: Check SARIF has content
+        id: sarif
+        if: ${{ always() && inputs.sarif-upload }}
+        env:
+          SARIF_FILE: megalinter-reports/megalinter-report.sarif
+        run: |
+          set -euo pipefail
+          if [ -f "${SARIF_FILE}" ] && [ "$(jq '.runs | length' "${SARIF_FILE}")" -gt 0 ]; then
+            echo "upload=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "upload=false" >> "${GITHUB_OUTPUT}"
+            echo "No SARIF runs to upload — skipping."
+          fi
+
       - name: Upload SARIF to GitHub Security tab
-        if: ${{ always() && inputs.sarif-upload && hashFiles('megalinter-reports/megalinter-report.sarif') != '' }}
+        if: ${{ always() && steps.sarif.outputs.upload == 'true' }}
         uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
         with:
           sarif_file: megalinter-reports/megalinter-report.sarif
