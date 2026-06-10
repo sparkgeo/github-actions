@@ -1,0 +1,139 @@
+name: "TruffleHog Verified Secret Scan"
+description: |
+  Verified active-secret detection with TruffleHog. The PR-stage counterpart to
+  the gitleaks pre-commit gate (issue #23): TruffleHog confirms a matched
+  credential is genuinely live before blocking, minimising false-positive noise.
+
+  Installs a pinned, checksum-verified TruffleHog binary directly (no
+  trufflesecurity/trufflehog action — keeps the supply chain to a single
+  checksum-verified download).
+
+  Scans the full git history. On a pull_request it scans the PR commit range
+  (base..HEAD); otherwise it scans all history. Findings are converted to SARIF
+  and (optionally) uploaded to the GitHub Security tab — verified secrets as
+  `error`, unverified pattern matches as `warning`.
+
+  Gate: a verified active secret always hard-fails. Unverified matches are a
+  warning only, unless only-verified is false.
+
+  Required permissions on calling job: contents: read, security-events: write
+  (the latter only when sarif-upload is true).
+inputs:
+  version:
+    description: "TruffleHog version to install (no leading 'v')."
+    default: "3.95.5"
+  only-verified:
+    description: "Only hard-fail on verified active secrets. Set false to also fail on unverified matches."
+    default: "true"
+  sarif-upload:
+    description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
+    default: "true"
+runs:
+  using: "composite"
+  steps:
+    - name: Install TruffleHog
+      shell: bash
+      env:
+        TRUFFLEHOG_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}"
+        TARBALL="trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
+        curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/trufflehog_${TRUFFLEHOG_VERSION}_checksums.txt"
+        # Verify the downloaded binary against the published checksum before use.
+        ( cd "${TMP}" && grep " ${TARBALL}\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${TMP}/${TARBALL}" -C "${TMP}" trufflehog
+        # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
+        install "${TMP}/trufflehog" "${RUNNER_TEMP}/trufflehog"
+
+    - name: Scan and build SARIF
+      id: scan
+      shell: bash
+      env:
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+      run: |
+        set -euo pipefail
+        NDJSON="${RUNNER_TEMP}/trufflehog.ndjson"
+        SARIF="${RUNNER_TEMP}/trufflehog.sarif"
+
+        ARGS=(git "file://${PWD}" --results=verified,unknown --json --no-update)
+        if [ -n "${PR_BASE_SHA}" ]; then
+          echo "Scanning PR commit range ${PR_BASE_SHA}..HEAD"
+          ARGS+=(--since-commit "${PR_BASE_SHA}" --branch HEAD)
+        else
+          echo "Scanning full git history"
+        fi
+
+        # TruffleHog without --fail exits 0 even when secrets are found; we
+        # evaluate findings ourselves below. A non-zero exit is a real error.
+        set +e
+        "${RUNNER_TEMP}/trufflehog" "${ARGS[@]}" > "${NDJSON}"
+        rc=$?
+        set -e
+        if [ "${rc}" -ne 0 ]; then
+          echo "::error::TruffleHog exited with code ${rc}"
+          exit "${rc}"
+        fi
+
+        VERIFIED="$(jq -rs '[.[] | select(.Verified == true)] | length' "${NDJSON}")"
+        UNVERIFIED="$(jq -rs '[.[] | select(.Verified != true)] | length' "${NDJSON}")"
+        echo "verified=${VERIFIED}" >> "${GITHUB_OUTPUT}"
+        echo "unverified=${UNVERIFIED}" >> "${GITHUB_OUTPUT}"
+        echo "Verified: ${VERIFIED}, unverified: ${UNVERIFIED}"
+
+        # Convert NDJSON findings to SARIF 2.1.0. Verified -> error, else warning.
+        jq -s '{
+          "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+          version: "2.1.0",
+          runs: [{
+            tool: { driver: {
+              name: "TruffleHog",
+              informationUri: "https://github.com/trufflesecurity/trufflehog",
+              rules: []
+            }},
+            results: [ .[] | {
+              ruleId: (.DetectorName // "UnknownDetector"),
+              level: (if .Verified then "error" else "warning" end),
+              message: { text: ((if .Verified then "Verified" else "Unverified" end)
+                + " secret detected by " + (.DetectorName // "unknown") + " detector.") },
+              locations: [{ physicalLocation: {
+                artifactLocation: { uri: ((.SourceMetadata.Data.Git.file
+                  // .SourceMetadata.Data.Filesystem.file) // "UNKNOWN") },
+                region: { startLine: ((.SourceMetadata.Data.Git.line
+                  // .SourceMetadata.Data.Filesystem.line // 1) as $l
+                  | if ($l | type) == "number" and $l >= 1 then $l else 1 end) }
+              }}]
+            }]
+          }]
+        }' "${NDJSON}" > "${SARIF}"
+        echo "sarif=${SARIF}" >> "${GITHUB_OUTPUT}"
+
+    - name: Upload SARIF to GitHub Security tab
+      if: ${{ inputs.sarif-upload == 'true' }}
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif }}
+        category: trufflehog
+
+    - name: Enforce gate
+      shell: bash
+      env:
+        ONLY_VERIFIED: ${{ inputs.only-verified }}
+        VERIFIED: ${{ steps.scan.outputs.verified }}
+        UNVERIFIED: ${{ steps.scan.outputs.unverified }}
+      run: |
+        set -euo pipefail
+        FAIL=0
+        if [ "${VERIFIED}" -gt 0 ]; then
+          echo "::error::${VERIFIED} verified active secret(s) detected — revoke and rotate immediately."
+          FAIL=1
+        fi
+        if [ "${UNVERIFIED}" -gt 0 ]; then
+          echo "::warning::${UNVERIFIED} unverified secret match(es) — review in the Security tab."
+          if [ "${ONLY_VERIFIED}" != "true" ]; then
+            FAIL=1
+          fi
+        fi
+        exit "${FAIL}"

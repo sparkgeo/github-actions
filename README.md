@@ -12,6 +12,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
+| Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 
 ## Composite Actions
 
@@ -32,6 +33,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
 | AWS OIDC Auth | [`aws-oidc-auth`](.github/actions/aws-oidc-auth/action.yml) | Assumes an IAM role via GitHub OIDC — no static credentials stored; enforces traceable session name `{repo}-{run_id}` | `role-arn` (required), `aws-region` (required), `role-session-name` (default: `{repo}-{run_id}`) |
 | Gitleaks Secret Scan | [`gitleaks`](.github/actions/gitleaks/action.yml) | Pattern-based secret detection; hard-fails on any match. Scans the PR commit range on `pull_request`, else the full git history. Installs a checksum-verified Gitleaks binary (no paid license) | `version` (default: `8.30.1`), `config-path` (default: `.gitleaks.toml`), `fail-on-finding` (default: `true`) |
+| TruffleHog Verified Scan | [`trufflehog`](.github/actions/trufflehog/action.yml) | Verified active-secret detection; hard-fails on verified secrets, unverified matches are warnings. Converts findings to SARIF and uploads to the Security tab. Installs a checksum-verified TruffleHog binary | `version` (default: `3.95.5`), `only-verified` (default: `true`), `sarif-upload` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -210,6 +212,37 @@ Or drop the composite action straight into an existing job:
     '''EXAMPLE_KEY_[A-Z0-9]{20}''',  # synthetic example keys in docs
   ]
 ```
+
+### TruffleHog Verified Scan
+
+The PR-stage counterpart to gitleaks. Where gitleaks flags *patterns* fast, TruffleHog confirms which matches are **live, verified credentials** before blocking — cutting false-positive noise. Findings upload to the Security tab as SARIF (verified → `error`, unverified → `warning`).
+
+Run both gates together on every PR:
+
+```yaml
+# .github/workflows/secrets.yml
+name: Secrets Detection
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  gitleaks:
+    uses: sparkgeo/github-actions/.github/workflows/secrets-precommit.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+
+  trufflehog:
+    uses: sparkgeo/github-actions/.github/workflows/secrets-scan.yml@<SHA>
+    permissions:
+      contents: read
+      security-events: write   # required for SARIF upload
+    with:
+      actions-ref: <SHA>
+```
+
+**Gate behaviour:** a verified active secret hard-blocks the merge immediately. Unverified pattern matches are surfaced as warnings in the Security tab only (set `only-verified: false` to block on those too).
+
+**When a verified secret is detected:** revoke it immediately (do not wait for the PR to close), rotate at the source, then purge it from git history with `git filter-repo` / BFG and coordinate a force-push. See [SECURITY.md](SECURITY.md).
 
 ## Consuming repo CI setup
 
