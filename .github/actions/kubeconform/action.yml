@@ -1,0 +1,116 @@
+name: "Helm/Kustomize Kubeconform"
+description: |
+  Renders Helm charts and Kustomize overlays and validates the output against
+  the Kubernetes API schemas with kubeconform. Catches invalid field names,
+  missing required fields, and deprecated/removed API versions before they
+  reach a cluster.
+
+  Installs a pinned, checksum-verified kubeconform binary directly. helm and
+  kustomize are preinstalled on GitHub-hosted runners. Each failing chart/overlay
+  is emitted as a job-level error annotation (rendered output has no source-line
+  mapping, so inline annotations are not possible); the step fails if any
+  chart/overlay has a schema error.
+
+  Required permissions on calling job: contents: read
+inputs:
+  version:
+    description: "kubeconform version to install (no leading 'v')."
+    default: "0.8.0"
+  charts-dir:
+    description: "Directory containing Helm charts (each chart = a dir with Chart.yaml). Empty to skip."
+    default: "charts"
+  kustomize-dir:
+    description: "Directory containing Kustomize overlays (each = a dir with kustomization.yaml). Empty to skip."
+    default: ""
+  kubernetes-version:
+    description: "Target Kubernetes API version for schema validation."
+    default: "1.32.0"
+  ignore-missing-schemas:
+    description: "Skip validation for resource kinds with no schema (e.g. CRDs not in the registry)."
+    default: "false"
+runs:
+  using: "composite"
+  steps:
+    - name: Install kubeconform
+      shell: bash
+      env:
+        KUBECONFORM_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}"
+        curl -sSfL -o "${TMP}/kubeconform-linux-amd64.tar.gz" "${BASE}/kubeconform-linux-amd64.tar.gz"
+        curl -sSfL -o "${TMP}/CHECKSUMS" "${BASE}/CHECKSUMS"
+        # Verify the downloaded archive against the published checksum before use.
+        ( cd "${TMP}" && grep " kubeconform-linux-amd64.tar.gz\$" CHECKSUMS | sha256sum -c - )
+        tar -xzf "${TMP}/kubeconform-linux-amd64.tar.gz" -C "${TMP}" kubeconform
+        # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
+        install "${TMP}/kubeconform" "${RUNNER_TEMP}/kubeconform"
+
+    - name: Validate charts and overlays
+      shell: bash
+      env:
+        CHARTS_DIR: ${{ inputs.charts-dir }}
+        KUSTOMIZE_DIR: ${{ inputs.kustomize-dir }}
+        K8S_VERSION: ${{ inputs.kubernetes-version }}
+        IGNORE_MISSING: ${{ inputs.ignore-missing-schemas }}
+      run: |
+        set -euo pipefail
+        KC="${RUNNER_TEMP}/kubeconform"
+        KC_ARGS=(-strict -summary -kubernetes-version "${K8S_VERSION}")
+        if [ "${IGNORE_MISSING}" = "true" ]; then
+          KC_ARGS+=(-ignore-missing-schemas)
+        fi
+
+        failed=0
+        manifest="${RUNNER_TEMP}/rendered.yaml"
+
+        if [ -n "${CHARTS_DIR}" ] && [ -d "${CHARTS_DIR}" ]; then
+          while IFS= read -r chart; do
+            dir="$(dirname "${chart}")"
+            echo "::group::helm chart ${dir}"
+            # Pull subchart dependencies only when the chart declares them
+            # (top-level key, allowing any leading indentation).
+            if grep -qE '^[[:space:]]*dependencies:' "${chart}"; then
+              helm dependency build "${dir}"
+            fi
+            if ! helm lint "${dir}"; then
+              echo "::error title=helm lint::helm lint failed for chart ${dir}"
+              failed=1
+            fi
+            # Render and validate in separate steps so a template error is
+            # reported as such, not as a schema-validation failure.
+            if ! helm template release "${dir}" > "${manifest}"; then
+              echo "::error title=helm template::helm template failed for chart ${dir}"
+              failed=1
+            elif "${KC}" "${KC_ARGS[@]}" "${manifest}"; then
+              echo "${dir}: OK"
+            else
+              echo "::error title=kubeconform::Schema validation failed for Helm chart ${dir}"
+              failed=1
+            fi
+            echo "::endgroup::"
+            # -mindepth 1 prune skips vendored subchart dirs (<chart>/charts/*),
+            # which are rendered by the parent template, not standalone.
+          done < <(find "${CHARTS_DIR}" -mindepth 1 -type d -name charts -prune -o -name Chart.yaml -print)
+        fi
+
+        if [ -n "${KUSTOMIZE_DIR}" ] && [ -d "${KUSTOMIZE_DIR}" ]; then
+          while IFS= read -r kfile; do
+            dir="$(dirname "${kfile}")"
+            echo "::group::kustomize overlay ${dir}"
+            if ! kustomize build "${dir}" > "${manifest}"; then
+              echo "::error title=kustomize build::kustomize build failed for overlay ${dir}"
+              failed=1
+            elif "${KC}" "${KC_ARGS[@]}" "${manifest}"; then
+              echo "${dir}: OK"
+            else
+              echo "::error title=kubeconform::Schema validation failed for Kustomize overlay ${dir}"
+              failed=1
+            fi
+            echo "::endgroup::"
+            # Kustomize recognises these three config filenames only.
+          done < <(find "${KUSTOMIZE_DIR}" \( -name kustomization.yaml -o -name kustomization.yml -o -name Kustomization \) -print)
+        fi
+
+        exit "${failed}"
