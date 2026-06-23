@@ -1,0 +1,70 @@
+name: Lint Helm
+
+# Reusable PR lint gate for Helm charts and Kustomize overlays. Renders each
+# chart (helm template) / overlay (kustomize build) and validates the output
+# against the Kubernetes API schemas with kubeconform. Blocks on any schema
+# validation error.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      charts-dir:
+        description: 'Directory containing Helm charts (empty to skip)'
+        default: 'charts'
+        type: string
+      kustomize-dir:
+        description: 'Directory containing Kustomize overlays (empty to skip)'
+        default: ''
+        type: string
+      kubernetes-version:
+        description: 'Target Kubernetes API version for schema validation'
+        default: '1.32.0'
+        type: string
+      ignore-missing-schemas:
+        description: 'Skip validation for kinds with no schema (e.g. CRDs)'
+        default: false
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the kubeconform
+          composite from. Pin this to the SAME SHA you pinned lint-helm.yml to,
+          so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  kubeconform:
+    name: Kubeconform
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout kubeconform composite action
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/kubeconform
+        with:
+          charts-dir: ${{ inputs.charts-dir }}
+          kustomize-dir: ${{ inputs.kustomize-dir }}
+          kubernetes-version: ${{ inputs.kubernetes-version }}
+          ignore-missing-schemas: ${{ inputs.ignore-missing-schemas }}

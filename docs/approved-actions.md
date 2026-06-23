@@ -74,6 +74,7 @@ These are not GitHub Actions (no `uses:` reference) so the org allowlist does no
 | `trufflehog` | `trufflehog` composite action, `secrets-scan.yml` | `v3.95.5` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `trufflesecurity/trufflehog` Action is avoided to keep the supply chain to a single checksum-verified download; findings are converted to SARIF in-action with `jq`. | 2026-06-10 |
 | `pre-commit` | `pre-commit` composite action, `lint-precommit.yml` | `4.6.0` | Run via `pipx run --spec pre-commit==4.6.0` (pipx is preinstalled on GitHub runners) — pinned version, ephemeral env, no PATH write. Hook versions themselves are pinned (to commit SHAs) in each consuming repo's `.pre-commit-config.yaml`. | 2026-06-10 |
 | `tflint` | `tflint` composite action, `lint-iac.yml` | `v0.63.1` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `terraform-linters/setup-tflint` Action is avoided to keep the supply chain to a single checksum-verified download. Plugin rule sets are pinned in each consuming repo's `.tflint.hcl`. | 2026-06-23 |
+| `kubeconform` | `kubeconform` composite action, `lint-helm.yml` | `v0.8.0` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. helm and kustomize are preinstalled on GitHub-hosted runners. | 2026-06-23 |
 
 When bumping a version, update it in all locations listed above and re-confirm the checksum download path.
 

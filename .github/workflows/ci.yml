@@ -56,6 +56,26 @@ jobs:
 
       - uses: ./.github/actions/tflint
 
+  # Validate Helm/Kustomize with kubeconform. This repo has no charts/, so this
+  # is a smoke test that the composite installs and runs (exits 0, nothing to
+  # validate).
+  kubeconform:
+    name: Kubeconform
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/kubeconform
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
