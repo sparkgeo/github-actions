@@ -1,0 +1,11 @@
+# Reference .pre-commit-config.yaml for an Infrastructure as Code repo
+# (Terraform / OpenTofu). Copy to your repo root as `.pre-commit-config.yaml`.
+# Pair with the lint-iac.yml reusable workflow (tflint) for the CI gate.
+---
+repos:
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: 05fd71a57a467ccf5598f7e836d3af4cf9225abb  # v1.108.0
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+      - id: terraform_tflint  # uses your .tflint.hcl; same rules as the CI gate

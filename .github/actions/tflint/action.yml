@@ -1,0 +1,64 @@
+name: "TFLint"
+description: |
+  Lints Terraform / OpenTofu code with tflint, recursively. Cloud-provider rule
+  sets (AWS/GCP/Azure) are activated by a .tflint.hcl in the consuming repo —
+  this action is provider-agnostic.
+
+  Installs a pinned, checksum-verified tflint binary directly (no
+  terraform-linters/setup-tflint action — keeps the supply chain to one
+  checksum-verified download). Findings surface as inline PR annotations via a
+  problem matcher; the step fails on any finding at or above
+  minimum-failure-severity.
+
+  Required permissions on calling job: contents: read
+inputs:
+  version:
+    description: "tflint version to install (no leading 'v')."
+    default: "0.63.1"
+  directory:
+    description: "Directory to lint from (recursively)."
+    default: "."
+  minimum-failure-severity:
+    description: "Lowest severity that fails the build: error, warning, or notice."
+    default: "error"
+runs:
+  using: "composite"
+  steps:
+    - name: Install tflint
+      shell: bash
+      env:
+        TFLINT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}"
+        # Keep the published asset name so the checksum line matches the file.
+        curl -sSfL -o "${TMP}/tflint_linux_amd64.zip" "${BASE}/tflint_linux_amd64.zip"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/checksums.txt"
+        # Verify the downloaded binary against the published checksum before use.
+        ( cd "${TMP}" && grep " tflint_linux_amd64.zip\$" checksums.txt | sha256sum -c - )
+        unzip -q "${TMP}/tflint_linux_amd64.zip" -d "${TMP}"
+        # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
+        install "${TMP}/tflint" "${RUNNER_TEMP}/tflint"
+
+    - name: Run tflint
+      shell: bash
+      env:
+        DIRECTORY: ${{ inputs.directory }}
+        MIN_SEVERITY: ${{ inputs.minimum-failure-severity }}
+        MATCHER: ${{ github.action_path }}/tflint-matcher.json
+        # tflint --init pulls plugins from .tflint.hcl; the token lifts the
+        # anonymous GitHub API rate limit on those downloads.
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        cd "${DIRECTORY}"
+        "${RUNNER_TEMP}/tflint" --init
+        echo "::add-matcher::${MATCHER}"
+        # compact format = "file:line:col: Severity - message (rule)", which the
+        # problem matcher turns into inline PR annotations.
+        "${RUNNER_TEMP}/tflint" --recursive --format compact \
+          --minimum-failure-severity "${MIN_SEVERITY}" \
+          && rc=0 || rc=$?
+        echo "::remove-matcher owner=tflint::"
+        exit "${rc}"

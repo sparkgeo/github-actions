@@ -1,0 +1,71 @@
+name: Lint IaC
+
+# Reusable PR lint gate for Infrastructure as Code. Runs tflint recursively;
+# cloud-provider rule sets are activated by a .tflint.hcl in the consuming repo,
+# so this workflow is provider-agnostic. Findings appear as inline PR
+# annotations; the job blocks on any finding at or above minimum-failure-severity.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      directory:
+        description: 'Directory to lint from (recursively)'
+        default: '.'
+        type: string
+      minimum-failure-severity:
+        description: 'Lowest severity that fails the build: error, warning, or notice'
+        default: 'error'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the tflint
+          composite from. Pin this to the SAME SHA you pinned lint-iac.yml to,
+          so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Cache downloaded tflint plugins, keyed on the consuming repo's
+      # .tflint.hcl so provider rule-set downloads don't re-run every build.
+      - name: Cache tflint plugins
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8  # v6.0.0
+        with:
+          path: ~/.tflint.d/plugins
+          # Hash any .tflint.hcl in the repo, wherever it lives (root or the
+          # linted subdir), so a config change always invalidates the cache.
+          key: tflint-${{ runner.os }}-${{ hashFiles('**/.tflint.hcl') }}
+          restore-keys: tflint-${{ runner.os }}-
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout tflint composite action
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/tflint
+        with:
+          directory: ${{ inputs.directory }}
+          minimum-failure-severity: ${{ inputs.minimum-failure-severity }}
