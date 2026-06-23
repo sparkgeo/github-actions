@@ -15,6 +15,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
+| Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 
 ## Composite Actions
 
@@ -37,6 +38,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Gitleaks Secret Scan | [`gitleaks`](.github/actions/gitleaks/action.yml) | Pattern-based secret detection; hard-fails on any match. Scans the PR commit range on `pull_request`, else the full git history. Installs a checksum-verified Gitleaks binary (no paid license) | `version` (default: `8.30.1`), `config-path` (default: `.gitleaks.toml`), `fail-on-finding` (default: `true`) |
 | TruffleHog Verified Scan | [`trufflehog`](.github/actions/trufflehog/action.yml) | Verified active-secret detection; hard-fails on verified secrets, unverified matches are warnings. Converts findings to SARIF and uploads to the Security tab. Installs a checksum-verified TruffleHog binary | `version` (default: `3.95.5`), `only-verified` (default: `true`), `sarif-upload` (default: `true`) |
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
+| TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 
 ### GitHub Actionlint
 
@@ -305,6 +307,34 @@ jobs:
 Tune linters via an optional `.mega-linter.yml` in the consuming repo (enable/disable specific linters, set `DISABLE_ERRORS` per tool, etc.).
 
 > **Org allowlist:** `lint-app.yml` uses `oxsecurity/megalinter`, so `oxsecurity/*` must be on the org allowlist (already added in [approved-actions](docs/approved-actions.md); apply with the `gh api` allowlist update if not yet live).
+
+### Lint IaC (tflint)
+
+The PR-stage gate for Terraform / OpenTofu. Runs `tflint --recursive`; cloud-provider rule sets are activated by a `.tflint.hcl` in the consuming repo, so the workflow is provider-agnostic. Findings show as inline PR annotations and the job blocks on any finding at or above `minimum-failure-severity`. Plugin downloads are cached.
+
+```yaml
+# .github/workflows/lint.yml (add to the same file)
+  iac:
+    uses: sparkgeo/github-actions/.github/workflows/lint-iac.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      directory: .                      # default; point at a subdir if IaC lives there
+      minimum-failure-severity: error   # default; 'warning' to be stricter
+```
+
+Add a `.tflint.hcl` to the consuming repo root to enable provider rule sets — e.g. AWS:
+
+```hcl
+plugin "aws" {
+  enabled = true
+  version = "0.x.x"
+  source  = "github.com/terraform-linters/tflint-ruleset-aws"
+}
+```
+
+Swap `aws` for `google` ([tflint-ruleset-google](https://github.com/terraform-linters/tflint-ruleset-google)) or `azurerm` ([tflint-ruleset-azurerm](https://github.com/terraform-linters/tflint-ruleset-azurerm)). The default `terraform` ruleset is always active with no `.tflint.hcl`.
+
+For the local fast-feedback stage, copy [`examples/iac.pre-commit-config.yaml`](examples/iac.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`terraform_fmt` / `terraform_validate` / `terraform_tflint`) and gate it in CI with `lint-precommit.yml`.
 
 ## Consuming repo CI setup
 
