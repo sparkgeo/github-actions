@@ -49,7 +49,9 @@ jobs:
         uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8  # v6.0.0
         with:
           path: ~/.tflint.d/plugins
-          key: tflint-${{ runner.os }}-${{ hashFiles(format('{0}/.tflint.hcl', inputs.directory)) }}
+          # Hash any .tflint.hcl in the repo, wherever it lives (root or the
+          # linted subdir), so a config change always invalidates the cache.
+          key: tflint-${{ runner.os }}-${{ hashFiles('**/.tflint.hcl') }}
           restore-keys: tflint-${{ runner.os }}-
 
       # Load the composite action at the caller-pinned ref into a fixed path,
