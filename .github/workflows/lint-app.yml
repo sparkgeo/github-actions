@@ -1,0 +1,96 @@
+name: Lint App
+
+# Reusable PR lint gate for application source code. Runs MegaLinter, which
+# auto-detects every language in the repo and runs the appropriate linter and
+# formatter check for each. Findings upload to the Security tab as SARIF; the
+# job fails on any linter error.
+#
+# Configured entirely via a .mega-linter.yml in the consuming repo (optional).
+#
+# No composite wrapper: MegaLinter must run as a job step so the SARIF upload
+# can use continue-on-error + if:always (composite steps support neither),
+# guaranteeing findings reach the Security tab even when the lint gate fails.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      default-branch:
+        description: 'Default branch MegaLinter diffs against'
+        default: 'main'
+        type: string
+      filter-regex-exclude:
+        description: "Regex of paths to exclude (e.g. 'dist/|generated/')"
+        default: ''
+        type: string
+      sarif-upload:
+        description: 'Upload SARIF results to the GitHub Security tab'
+        default: true
+        type: boolean
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always) and adds
+# `security-events: write` only when it wants SARIF upload. See README.
+
+jobs:
+  megalinter:
+    name: MegaLinter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # MegaLinter needs history to diff against the base
+
+      - name: MegaLinter
+        id: megalinter
+        uses: oxsecurity/megalinter@0e3ce9b9c8c10effb9b269509cc47ca17cae31c7  # v9.5.0
+        continue-on-error: true  # let the SARIF upload run before we gate
+        env:
+          DEFAULT_BRANCH: ${{ inputs.default-branch }}
+          FILTER_REGEX_EXCLUDE: ${{ inputs.filter-regex-exclude }}
+          APPLY_FIXES: none
+          SARIF_REPORTER: true
+          GITHUB_COMMENT_REPORTER: false
+          GITHUB_STATUS_REPORTER: false
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Decide whether to upload: codeql-action rejects a SARIF whose `runs`
+      # array is empty ("1 item required; only 0 were supplied"). MegaLinter
+      # emits an empty SARIF when nothing reportable is found.
+      - name: Check SARIF has content
+        id: sarif
+        if: ${{ always() && inputs.sarif-upload }}
+        env:
+          SARIF_FILE: megalinter-reports/megalinter-report.sarif
+        run: |
+          set -euo pipefail
+          if [ -f "${SARIF_FILE}" ] && [ "$(jq '.runs | length' "${SARIF_FILE}")" -gt 0 ]; then
+            echo "upload=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "upload=false" >> "${GITHUB_OUTPUT}"
+            echo "No SARIF runs to upload — skipping."
+          fi
+
+      - name: Upload SARIF to GitHub Security tab
+        if: ${{ always() && steps.sarif.outputs.upload == 'true' }}
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+        with:
+          sarif_file: megalinter-reports/megalinter-report.sarif
+          category: megalinter
+
+      - name: Enforce gate
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.megalinter.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "${OUTCOME}" != "success" ]; then
+            echo "::error::MegaLinter reported lint errors — see the annotations and the Security tab."
+            exit 1
+          fi
+          echo "MegaLinter passed."

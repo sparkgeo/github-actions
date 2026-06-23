@@ -37,6 +37,38 @@ jobs:
 
       - uses: ./.github/actions/github-actionlint
 
+  # Dogfood the app lint gate by calling the reusable workflow directly.
+  # (MegaLinter has no composite under .github/actions — its only reliable gate
+  # is its exit code, which needs continue-on-error + if:always; those are
+  # job-step features composite-internal steps don't support. See lint-app.yml.)
+  lint-app:
+    name: Lint App
+    permissions:
+      contents: read
+      security-events: write  # SARIF upload to the Security tab
+    uses: ./.github/workflows/lint-app.yml
+    with:
+      default-branch: main
+
+  # Run this repo's own .pre-commit-config.yaml hooks via the composite.
+  pre-commit:
+    name: Pre-commit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # full history so the PR diff range can be resolved
+
+      - uses: ./.github/actions/pre-commit
+
   # Pattern-based secret detection with Gitleaks.
   # Hard-fails the build on any match. On PRs scans only the PR commit range.
   gitleaks:

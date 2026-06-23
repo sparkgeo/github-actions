@@ -1,0 +1,36 @@
+# MegaLinter configuration — https://megalinter.io/latest/config-file/
+# Consuming repos drop their own .mega-linter.yml; this one tunes the dogfood
+# run in ci.yml for this (YAML/Markdown/shell-heavy) reference repo.
+
+APPLY_FIXES: none
+
+# Security scanning here is owned by this repo's DEDICATED stack: scorecard,
+# zizmor, gitleaks, trufflehog, dependency-review, harden-runner. MegaLinter's
+# REPOSITORY descriptor re-runs ~10 overlapping scanners (checkov, devskim,
+# osv-scanner, trivy, grype, kics, secretlint, dustilock, kingfisher, syft …)
+# that duplicate that stack and false-positive on intentional design
+# (e.g. checkov CKV2_GHA_1 vs our deliberately permissions-inheriting reusable
+# workflows). Disable the whole descriptor rather than curate ~10 exceptions.
+# SPELL/COPYPASTE are high-noise for an infra/docs repo.
+DISABLE:
+  - REPOSITORY
+  - SPELL
+  - COPYPASTE
+
+DISABLE_LINTERS:
+  # zizmor runs as a dedicated CI job + pre-commit hook with our pinned config;
+  # MegaLinter's copy uses a different config and conflicts.
+  - ACTION_ZIZMOR
+  # yamllint is noisy on GitHub Actions YAML (missing `---` document-start,
+  # `on:` truthy); actionlint + v8r (JSON-schema) already cover these files.
+  - YAML_YAMLLINT
+
+# Markdown style (MD060 table-pipe spacing, MD040, bare URLs) is advisory for
+# our GFM docs — surface it in the report, don't block the gate on it.
+DISABLE_ERRORS_LINTERS:
+  - MARKDOWN_MARKDOWNLINT
+  - MARKDOWN_MARKDOWN_TABLE_FORMATTER
+
+SHOW_ELAPSED_TIME: true
+FLAVOR_SUGGESTIONS: false
+PRINT_ALPACA: false

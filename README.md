@@ -13,6 +13,8 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
+| Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
+| Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 
 ## Composite Actions
 
@@ -34,6 +36,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | AWS OIDC Auth | [`aws-oidc-auth`](.github/actions/aws-oidc-auth/action.yml) | Assumes an IAM role via GitHub OIDC — no static credentials stored; enforces traceable session name `{repo}-{run_id}` | `role-arn` (required), `aws-region` (required), `role-session-name` (default: `{repo}-{run_id}`) |
 | Gitleaks Secret Scan | [`gitleaks`](.github/actions/gitleaks/action.yml) | Pattern-based secret detection; hard-fails on any match. Scans the PR commit range on `pull_request`, else the full git history. Installs a checksum-verified Gitleaks binary (no paid license) | `version` (default: `8.30.1`), `config-path` (default: `.gitleaks.toml`), `fail-on-finding` (default: `true`) |
 | TruffleHog Verified Scan | [`trufflehog`](.github/actions/trufflehog/action.yml) | Verified active-secret detection; hard-fails on verified secrets, unverified matches are warnings. Converts findings to SARIF and uploads to the Security tab. Installs a checksum-verified TruffleHog binary | `version` (default: `3.95.5`), `only-verified` (default: `true`), `sarif-upload` (default: `true`) |
+| Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 
 ### GitHub Actionlint
 
@@ -243,6 +246,65 @@ jobs:
 **Gate behaviour:** a verified active secret hard-blocks the merge immediately. Unverified pattern matches are surfaced as warnings in the Security tab only (set `only-verified: false` to block on those too).
 
 **When a verified secret is detected:** revoke it immediately (do not wait for the PR to close), rotate at the source, then purge it from git history with `git filter-repo` / BFG and coordinate a force-push. See [SECURITY.md](SECURITY.md).
+
+### Lint Pre-commit
+
+The non-bypassable CI counterpart to a developer's local pre-commit hook — runs the consuming repo's `.pre-commit-config.yaml` against the PR diff so anything that slipped past a missing local hook is still caught. Language-agnostic; all tool config lives in the consuming repo. Shared across the app, IaC, and Helm lint stages (#9 / #10 / #11).
+
+```yaml
+# .github/workflows/lint.yml
+name: Lint
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  pre-commit:
+    uses: sparkgeo/github-actions/.github/workflows/lint-precommit.yml@<SHA>
+    with:
+      actions-ref: <SHA>   # pin to the SAME SHA so the composite is immutable too
+```
+
+The consuming repo provides a `.pre-commit-config.yaml` at its root — e.g. for a Python + Node.js repo:
+
+```yaml
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: <SHA>  # v0.x.x
+    hooks:
+      - id: ruff
+      - id: ruff-format
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: <SHA>  # v3.x.x
+    hooks:
+      - id: prettier
+```
+
+### Lint App (MegaLinter)
+
+The PR-stage gate for application source. [MegaLinter](https://github.com/oxsecurity/megalinter) auto-detects every language in the repo and runs the right linter/formatter check for each — no per-language config in the workflow call. Findings upload to the Security tab as SARIF; the job blocks on any linter error.
+
+```yaml
+# .github/workflows/lint.yml
+name: Lint
+on: [pull_request]
+jobs:
+  pre-commit:
+    uses: sparkgeo/github-actions/.github/workflows/lint-precommit.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+
+  app:
+    uses: sparkgeo/github-actions/.github/workflows/lint-app.yml@<SHA>
+    permissions:
+      contents: read
+      security-events: write   # required for SARIF upload
+    with:
+      filter-regex-exclude: 'dist/|generated/'   # optional
+```
+
+Tune linters via an optional `.mega-linter.yml` in the consuming repo (enable/disable specific linters, set `DISABLE_ERRORS` per tool, etc.).
+
+> **Org allowlist:** `lint-app.yml` uses `oxsecurity/megalinter`, so `oxsecurity/*` must be on the org allowlist (already added in [approved-actions](docs/approved-actions.md); apply with the `gh api` allowlist update if not yet live).
 
 ## Consuming repo CI setup
 
