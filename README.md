@@ -345,7 +345,7 @@ For the local fast-feedback stage, copy [`examples/iac.pre-commit-config.yaml`](
 
 ### Lint Helm (kubeconform)
 
-The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `charts-dir` it runs `helm template`; for each overlay under `kustomize-dir` it runs `kustomize build`; the rendered manifests are validated against the Kubernetes API schemas with [kubeconform](https://github.com/yannh/kubeconform). The job blocks on any schema error (invalid fields, missing required fields, deprecated/removed API versions). helm and kustomize are preinstalled on GitHub-hosted runners.
+The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `charts-dir` it runs `helm lint`, then `helm template`; for each overlay under `kustomize-dir` it runs `kustomize build`; the rendered manifests are validated against the Kubernetes API schemas with [kubeconform](https://github.com/yannh/kubeconform). The job blocks on a `helm lint` failure, a render failure (`helm template` / `kustomize build`), or any schema error (invalid fields, missing required fields, deprecated/removed API versions) — each is reported with its own distinct annotation. helm and kustomize are preinstalled on GitHub-hosted runners.
 
 ```yaml
 # .github/workflows/lint.yml (add to the same file)

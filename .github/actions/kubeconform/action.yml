@@ -63,20 +63,27 @@ runs:
         fi
 
         failed=0
+        manifest="${RUNNER_TEMP}/rendered.yaml"
 
         if [ -n "${CHARTS_DIR}" ] && [ -d "${CHARTS_DIR}" ]; then
           while IFS= read -r chart; do
             dir="$(dirname "${chart}")"
             echo "::group::helm chart ${dir}"
-            # Pull subchart dependencies only when the chart declares them.
-            if grep -q '^dependencies:' "${chart}"; then
+            # Pull subchart dependencies only when the chart declares them
+            # (top-level key, allowing any leading indentation).
+            if grep -qE '^[[:space:]]*dependencies:' "${chart}"; then
               helm dependency build "${dir}"
             fi
             if ! helm lint "${dir}"; then
               echo "::error title=helm lint::helm lint failed for chart ${dir}"
               failed=1
             fi
-            if helm template release "${dir}" | "${KC}" "${KC_ARGS[@]}" -; then
+            # Render and validate in separate steps so a template error is
+            # reported as such, not as a schema-validation failure.
+            if ! helm template release "${dir}" > "${manifest}"; then
+              echo "::error title=helm template::helm template failed for chart ${dir}"
+              failed=1
+            elif "${KC}" "${KC_ARGS[@]}" "${manifest}"; then
               echo "${dir}: OK"
             else
               echo "::error title=kubeconform::Schema validation failed for Helm chart ${dir}"
@@ -92,14 +99,18 @@ runs:
           while IFS= read -r kfile; do
             dir="$(dirname "${kfile}")"
             echo "::group::kustomize overlay ${dir}"
-            if kustomize build "${dir}" | "${KC}" "${KC_ARGS[@]}" -; then
+            if ! kustomize build "${dir}" > "${manifest}"; then
+              echo "::error title=kustomize build::kustomize build failed for overlay ${dir}"
+              failed=1
+            elif "${KC}" "${KC_ARGS[@]}" "${manifest}"; then
               echo "${dir}: OK"
             else
               echo "::error title=kubeconform::Schema validation failed for Kustomize overlay ${dir}"
               failed=1
             fi
             echo "::endgroup::"
-          done < <(find "${KUSTOMIZE_DIR}" -name kustomization.yaml)
+            # Kustomize recognises these three config filenames only.
+          done < <(find "${KUSTOMIZE_DIR}" \( -name kustomization.yaml -o -name kustomization.yml -o -name Kustomization \) -print)
         fi
 
         exit "${failed}"
