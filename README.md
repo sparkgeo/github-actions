@@ -336,6 +336,11 @@ Swap `aws` for `google` ([tflint-ruleset-google](https://github.com/terraform-li
 
 For the local fast-feedback stage, copy [`examples/iac.pre-commit-config.yaml`](examples/iac.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`terraform_fmt` / `terraform_validate` / `terraform_tflint`) and gate it in CI with `lint-precommit.yml`.
 
+#### OpenTofu & Terramate notes
+
+- **OpenTofu:** works on Terraform-compatible `.tf` files. tflint does **not** read `.tofu` files and does not understand OpenTofu-only syntax (e.g. the state/plan `encryption` block, 1.7+). Standard `.tf` OpenTofu code lints fine; keep OpenTofu-specific config out of `.tf` if you hit false positives.
+- **Terramate:** tflint ignores `.tm.hcl` stack files (only `.tf` is linted). If you **commit** terramate-generated `.tf` (`_terramate_generated_*.tf`), `tflint --recursive` lints those too — they often trip rules like `terraform_required_providers` or `terraform_unused_declarations` that you can't hand-fix. Either fix the generate templates, disable those rules in `.tflint.hcl`, or rely on the default `error` severity floor (these are `Warning`-level, so they annotate but do not block).
+
 ## Consuming repo CI setup
 
 Public and private repos use different subsets of these actions. The key differences are `harden-runner` (sends egress telemetry to StepSecurity — omit on private repos) and `scorecard` (requires public visibility to produce meaningful scores).
