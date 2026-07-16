@@ -1,0 +1,9 @@
+# Reference .pre-commit-config.yaml for a Helm / Kustomize repo.
+# Copy to your repo root as `.pre-commit-config.yaml`.
+# Pair with the lint-helm.yml reusable workflow (kubeconform) for the CI gate.
+---
+repos:
+  - repo: https://github.com/gruntwork-io/pre-commit
+    rev: 40f924cd642f5dc98d12bd97b07f3752223553da  # v0.1.30
+    hooks:
+      - id: helmlint  # runs `helm lint` on charts; needs helm installed locally
