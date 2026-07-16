@@ -75,6 +75,7 @@ These are not GitHub Actions (no `uses:` reference) so the org allowlist does no
 | `pre-commit` | `pre-commit` composite action, `lint-precommit.yml` | `4.6.0` | Run via `pipx run --spec pre-commit==4.6.0` (pipx is preinstalled on GitHub runners) — pinned version, ephemeral env, no PATH write. Hook versions themselves are pinned (to commit SHAs) in each consuming repo's `.pre-commit-config.yaml`. | 2026-06-10 |
 | `tflint` | `tflint` composite action, `lint-iac.yml` | `v0.63.1` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `terraform-linters/setup-tflint` Action is avoided to keep the supply chain to a single checksum-verified download. Plugin rule sets are pinned in each consuming repo's `.tflint.hcl`. | 2026-06-23 |
 | `kubeconform` | `kubeconform` composite action, `lint-helm.yml` | `v0.8.0` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. helm and kustomize are preinstalled on GitHub-hosted runners. | 2026-06-23 |
+| `osv-scanner` | `osv-scanner` composite action, `dep-scan-app.yml` | `v2.4.0` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. Queries `osv.dev` / `deps.dev` at scan time — sends package names, versions, and file hashes (no source code). Use `--offline` mode if that egress is unacceptable. | 2026-07-16 |
 
 When bumping a version, update it in all locations listed above and re-confirm the checksum download path.
 
