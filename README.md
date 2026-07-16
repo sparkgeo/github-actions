@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| Dependency Scan (App) | [`dep-scan-app.yml`](.github/workflows/dep-scan-app.yml) | `workflow_call` | Reusable osv-scanner gate — scans all lockfiles against the OSV database; blocks on `fail-on-severity`; SARIF to Security tab |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| OSV-Scanner | [`osv-scanner`](.github/actions/osv-scanner/action.yml) | Scans lockfiles against the OSV database; job-level annotations + SARIF; fails at/above the CVSS threshold. Installs a checksum-verified osv-scanner binary | `version` (default: `2.4.0`), `directory` (default: `.`), `fail-on-severity` (default: `critical`), `sarif-upload` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -368,6 +370,31 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+## Dependency scanning
+
+PR gates that check dependencies for known vulnerabilities. Automated update PRs are handled separately by the central Renovate runner (see issue #8), not these workflows.
+
+### Dependency Scan — App (osv-scanner)
+
+Scans every lockfile in the repo (Python, JS/TS, Go, Ruby, Rust, Java, …) against the [OSV database](https://osv.dev). Language-agnostic — no per-ecosystem config. Findings are emitted as job-level annotations and uploaded as SARIF; the job fails when any vulnerability's CVSS score is at or above `fail-on-severity`.
+
+```yaml
+# .github/workflows/dep-scan.yml
+name: Dependency Scan
+on: [pull_request]
+jobs:
+  app:
+    uses: sparkgeo/github-actions/.github/workflows/dep-scan-app.yml@<SHA>
+    permissions:
+      contents: read
+      security-events: write   # required for SARIF upload
+    with:
+      actions-ref: <SHA>
+      fail-on-severity: critical   # default; 'high' for a stricter gate
+```
+
+`fail-on-severity` maps to CVSS: `critical` ≥ 9.0, `high` ≥ 7.0, `medium` ≥ 4.0, `low` ≥ 0.1. On a private repo with no GitHub Code Security license, set `sarif-upload: false` (findings still appear as job annotations and in the log).
 
 ## Consuming repo CI setup
 

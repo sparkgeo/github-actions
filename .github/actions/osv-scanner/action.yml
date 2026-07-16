@@ -1,0 +1,98 @@
+name: "OSV-Scanner Dependency Scan"
+description: |
+  Scans all lockfiles in the repo against the OSV vulnerability database
+  (https://osv.dev). Language-agnostic — one invocation covers Python, JS/TS,
+  Go, Ruby, Rust, Java, etc.
+
+  Installs a pinned, checksum-verified osv-scanner binary directly. Produces
+  SARIF (optionally uploaded to the Security tab) and emits each finding as a
+  job-level annotation. The step fails when any vulnerability's CVSS score is at
+  or above the fail-on-severity threshold.
+
+  Required permissions on calling job: contents: read (plus security-events:
+  write when sarif-upload is true).
+inputs:
+  version:
+    description: "osv-scanner version to install (no leading 'v')."
+    default: "2.4.0"
+  directory:
+    description: "Directory to scan (recursively)."
+    default: "."
+  fail-on-severity:
+    description: "Lowest CVSS severity that fails the build: critical, high, medium, or low."
+    default: "critical"
+  sarif-upload:
+    description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
+    default: "true"
+runs:
+  using: "composite"
+  steps:
+    - name: Install osv-scanner
+      shell: bash
+      env:
+        OSV_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}"
+        curl -sSfL -o "${TMP}/osv-scanner_linux_amd64" "${BASE}/osv-scanner_linux_amd64"
+        curl -sSfL -o "${TMP}/osv-scanner_SHA256SUMS" "${BASE}/osv-scanner_SHA256SUMS"
+        # Verify the downloaded binary against the published checksum before use.
+        ( cd "${TMP}" && grep " osv-scanner_linux_amd64\$" osv-scanner_SHA256SUMS | sha256sum -c - )
+        install "${TMP}/osv-scanner_linux_amd64" "${RUNNER_TEMP}/osv-scanner"
+
+    - name: Scan dependencies
+      id: scan
+      shell: bash
+      env:
+        DIRECTORY: ${{ inputs.directory }}
+      run: |
+        set -euo pipefail
+        OSV="${RUNNER_TEMP}/osv-scanner"
+        SARIF="${RUNNER_TEMP}/osv.sarif"
+        JSON="${RUNNER_TEMP}/osv.json"
+        # osv-scanner exits non-zero when vulnerabilities are found; we gate on
+        # severity ourselves below, so tolerate that exit here.
+        "${OSV}" scan source -r --format sarif --output-file "${SARIF}" "${DIRECTORY}" || true
+        "${OSV}" scan source -r --format json --output-file "${JSON}" "${DIRECTORY}" || true
+        echo "sarif=${SARIF}" >> "${GITHUB_OUTPUT}"
+        echo "json=${JSON}" >> "${GITHUB_OUTPUT}"
+
+    - name: Upload SARIF to GitHub Security tab
+      if: ${{ inputs.sarif-upload != 'false' && hashFiles(steps.scan.outputs.sarif) != '' }}
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif }}
+        category: osv-scanner
+
+    - name: Annotate and enforce gate
+      shell: bash
+      env:
+        JSON: ${{ steps.scan.outputs.json }}
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+      run: |
+        set -euo pipefail
+        case "${FAIL_ON}" in
+          critical) THRESH=9.0 ;;
+          high)     THRESH=7.0 ;;
+          medium)   THRESH=4.0 ;;
+          low)      THRESH=0.1 ;;
+          *) echo "::error::invalid fail-on-severity '${FAIL_ON}'"; exit 1 ;;
+        esac
+
+        # Emit one annotation per affected package (job-level: lockfiles have no
+        # reliable source-line mapping). max_severity is a numeric CVSS score.
+        jq -r '.results[]?.packages[]?
+          | .package.name as $p
+          | ([.groups[]?.max_severity | select(. != null) | tonumber] | max // 0) as $s
+          | "\($s)\t\($p)\t" + ([.vulnerabilities[]?.id] | join(","))' "${JSON}" \
+          | while IFS=$'\t' read -r sev pkg ids; do
+              echo "::warning title=osv-scanner::${pkg}: ${ids} (max CVSS ${sev})"
+            done
+
+        MAX="$(jq '[.results[]?.packages[]?.groups[]?.max_severity | select(. != null) | tonumber] | max // 0' "${JSON}")"
+        echo "Highest CVSS severity found: ${MAX} (threshold ${THRESH} for '${FAIL_ON}')"
+        if awk "BEGIN{exit !(${MAX} >= ${THRESH})}"; then
+          echo "::error::Dependency vulnerabilities at or above '${FAIL_ON}' severity (CVSS ${MAX})."
+          exit 1
+        fi
