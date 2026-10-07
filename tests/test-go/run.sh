@@ -18,7 +18,7 @@ while IFS='|' read -r json cov threshold want_rc want_failed want_skipped want_c
   out="$(mktemp)"; log="$(mktemp)"; summary="$(mktemp)"; junit="$(mktemp)"
   export GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY="$summary" REPORT_TOOL=go
   MODULE_PATH=example.com/calc FILE_PREFIX=svc python3 -I "$CONVERT" "$HERE/fixtures/json/$json" "$junit" || { echo "FAIL $json: converter exited $?"; fails=$((fails+1)); continue; }
-  export JUNIT_XML="$junit" COVERAGE_XML= COVERAGE_PERCENT="$cov" COVERAGE_THRESHOLD="$threshold"
+  export JUNIT_XML="$junit" COVERAGE_XML='' COVERAGE_PERCENT="$cov" COVERAGE_THRESHOLD="$threshold"
   python3 -I "$REPORT" > "$log" 2>&1; rc=$?
   got_failed="$(grep '^tests-failed=' "$out" | cut -d= -f2-)"
   got_skipped="$(grep '^tests-skipped=' "$out" | cut -d= -f2-)"
@@ -33,11 +33,11 @@ while IFS='|' read -r json cov threshold want_rc want_failed want_skipped want_c
     echo "FAIL $json cov=$cov thr=$threshold -> rc=$rc (want $want_rc) failed='$got_failed' (want '$want_failed') skipped='$got_skipped' (want '$want_skipped') cov='$got_cov' (want '$want_cov') annotation=$got_annot (want $want_annot)"; fails=$((fails+1))
   fi
 done <<'CASES'
-gotest-pass.json|100.0|80|0|0|0|100.0|0
-gotest-pass.json|83.3|90|1|0|0|83.3|0
-gotest-pass.json|83.3|0|0|0|0|83.3|0
-gotest-fail.json|0.0|80|1|2|1|0.0|1
-gotest-fail.json|0.0|0|1|2|1|0.0|1
+gotest-pass.jsonl|100.0|80|0|0|0|100.0|0
+gotest-pass.jsonl|83.3|90|1|0|0|83.3|0
+gotest-pass.jsonl|83.3|0|0|0|0|83.3|0
+gotest-fail.jsonl|0.0|80|1|2|1|0.0|1
+gotest-fail.jsonl|0.0|0|1|2|1|0.0|1
 CASES
 echo "$fails failure(s)"
 exit "$fails"
