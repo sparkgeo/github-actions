@@ -5,8 +5,9 @@ Shared by the pytest and node-test composites: pytest's xunit1 JUnit plus
 coverage.py XML, or vitest/jest JUnit plus cobertura XML. Both coverage
 formats carry `line-rate` on the root element.
 
-Inputs via env: JUNIT_XML, COVERAGE_XML, COVERAGE_THRESHOLD (percent; 0
-disables), REPORT_TOOL (annotation title and summary heading; default
+Inputs via env: JUNIT_XML, COVERAGE_XML (or COVERAGE_PERCENT for tools
+that report a plain number, e.g. `go tool cover -func`), COVERAGE_THRESHOLD
+(percent; 0 disables), REPORT_TOOL (annotation title and summary heading; default
 pytest). Writes tests-total / tests-failed / tests-skipped /
 coverage-percent to GITHUB_OUTPUT, a table to GITHUB_STEP_SUMMARY, one
 ::error annotation per failed or errored test case, and exits 1 when any
@@ -58,16 +59,24 @@ def main() -> int:
             failed += 1
             # pytest xunit1 sets file; jest-junit sets file when
             # JEST_JUNIT_ADD_FILE_ATTRIBUTE is on; vitest puts the path in
-            # classname. pytest's `line` is zero-based; the others omit it.
+            # classname. pytest's `line` is zero-based; go test's is one-based;
+            # the others omit it (annotation lands on line 1).
             classname = case.get("classname", "")
-            file = case.get("file") or (classname if "/" in classname else None)
-            line = int(case.get("line", "0") or 0) + 1
+            looks_like_path = "/" in classname and "." in classname.rsplit("/", 1)[-1]
+            file = case.get("file") or (classname if looks_like_path else None)
+            line = int(case.get("line", "0") or 0) + (1 if tool == "pytest" or not case.get("line") else 0)
             annotate("error", f"{tool} {name}", bad.get("message") or (bad.text or "").strip() or "failed", file, line)
         elif case.find("skipped") is not None:
             skipped += 1
 
     coverage = None
-    if cov_path:
+    cov_pct = os.environ.get("COVERAGE_PERCENT", "")
+    if cov_pct:
+        try:
+            coverage = round(float(cov_pct), 1)
+        except ValueError:
+            annotate("error", "coverage", f"COVERAGE_PERCENT is not a number: {cov_pct!r}")
+    elif cov_path:
         try:
             rate = ET.parse(cov_path).getroot().get("line-rate")
             coverage = round(float(rate) * 100, 1)

@@ -128,6 +128,32 @@ jobs:
           working-directory: tests/test-node/fixtures/project
           coverage-threshold: 100
 
+  # Go test gate: unit-test the converter and shared report script on recorded
+  # go test JSON, then run the composite end to end on the fixture module.
+  go-test:
+    name: Go Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Converter and report script fixtures
+        shell: bash
+        run: bash tests/test-go/run.sh
+
+      - uses: ./.github/actions/go-test
+        with:
+          working-directory: tests/test-go/fixtures/project
+          coverage-threshold: 100
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
