@@ -50,6 +50,7 @@ All ports are 443.
 | Dependency Review | `github.com`, `api.github.com` | dependency graph comparison, PR comment |
 | Terramate + OpenTofu Setup | `github.com`, `get.opentofu.org`, `release-assets.githubusercontent.com` | OpenTofu and Terramate installers |
 | Storage Optimizer | `github.com` | checkout only |
+| Threat Feeds | `github.com`, `api.github.com`, `release-assets.githubusercontent.com` | checkout; `gh release view` / `gh release download` of the mirror snapshot |
 
 ### Deliberately not allowed
 
@@ -64,6 +65,19 @@ All ports are 443.
 |---|---|---|
 | OSV-Scanner | `github.com`, `release-assets.githubusercontent.com` (binary), `api.osv.dev` (queries) | #54 |
 | Severity Gate | none beyond checkout | #135 |
+
+## Other workflows in this repo
+
+| Workflow / job | Host | Needed by |
+|---|---|---|
+| Threat Feeds Mirror (`threat-feeds-mirror.yml`) | `www.cisa.gov` | CISA KEV catalogue |
+| | `epss.empiricalsecurity.com` | FIRST EPSS scores (`epss.cyentia.com` redirects here; fetched directly) |
+| | `threatfox.abuse.ch`, `feodotracker.abuse.ch`, `urlhaus.abuse.ch` | abuse.ch exports |
+| | `github.com`, `api.github.com`, `uploads.github.com`, `release-assets.githubusercontent.com` | checkout, previous snapshot, release creation and asset upload, tracking issue |
+
+The mirror is the only job in the organisation that may reach the upstream
+feed hosts. Consuming workflows read the snapshot through the `threat-feeds`
+composite and need only the three GitHub hosts listed for the Threat Feeds job.
 
 ## Reusable workflows
 

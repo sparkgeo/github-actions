@@ -90,6 +90,63 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Dogfood the threat-feeds composite against the mirror's latest snapshot
+  # (threat-feeds-mirror.yml). Until the first mirror run after merge there is
+  # no release, so the composite step is skipped with a warning rather than
+  # failing. The normaliser is checked against recorded feed samples first.
+  threat-feeds:
+    name: Threat Feeds
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Normaliser fixtures
+        run: tests/threat-feeds/run.sh
+
+      - name: Check for a published snapshot
+        id: snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view threat-feeds-latest --json id >/dev/null 2>&1; then
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+            echo "::warning title=threat-feeds::no threat-feeds-latest release yet; composite not exercised"
+          fi
+
+      - id: feeds
+        if: steps.snapshot.outputs.exists == 'true'
+        uses: ./.github/actions/threat-feeds
+        with:
+          feeds: kev,threatfox
+
+      - name: Inspect snapshot
+        if: steps.snapshot.outputs.exists == 'true'
+        env:
+          DIR: ${{ steps.feeds.outputs.feeds-dir }}
+          TAG: ${{ steps.feeds.outputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "snapshot ${TAG}"
+          for f in kev threatfox; do
+            jq -r '"\(.feed): \(.count) entries fetched \(.fetched_at)"' "${DIR}/${f}.json"
+          done
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
