@@ -27,7 +27,7 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `terramate-io/terramate-action` | Terramate | `c5a13758` (v3.0.0) | `terramate-opentofu-setup` | Install Terramate CLI | 2026-05-21 |
 | `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress monitor — audits outbound network calls; baseline for enforce mode | 2026-06-01 |
 | `aws-actions/configure-aws-credentials` | AWS (Amazon) | `99214aa6` (v6.1.3) | `aws-oidc-auth` | Assume IAM role via GitHub OIDC; exchanges OIDC token for short-lived AWS credentials | 2026-06-09 |
-| `oxsecurity/megalinter` | OX Security | `0e3ce9b9` (v9.5.0) | `lint-app.yml` | All-language lint/format gate; auto-detects languages, emits SARIF | 2026-06-10 |
+| `oxsecurity/megalinter` | OX Security | `0e3ce9b9` (v9.5.0) | `lint-app.yml` | All-language lint/format gate; auto-detects languages, emits SARIF. Licence AGPL-3.0: run in CI only, never redistributed, so exempted from the `dependency-review` licence gate via `allow-dependencies-licenses` in `ci.yml` | 2026-06-10 |
 
 ## Data handling and third-party telemetry
 
