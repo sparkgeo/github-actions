@@ -33,16 +33,17 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | GitHub Actionlint | [`github-actionlint`](.github/actions/github-actionlint/action.yml) | Lints workflow and action YAML files using actionlint via reviewdog; posts annotations as GitHub Checks | None |
 | Zizmor | [`zizmor`](.github/actions/zizmor/action.yml) | Runs zizmor static security analysis against workflow and action YAML files; uploads findings as SARIF to the Security tab | None |
 | OpenSSF Scorecard | [`scorecard`](.github/actions/scorecard/action.yml) | Runs OpenSSF Scorecard checks; uploads SARIF to the Security tab | `publish_results` (default: `false` — always fails with HTTP 400 if set to `true`; see action description) |
-| Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or non-permitted licenses; posts a summary comment. Also supports non-PR invocation via `base-ref`/`head-ref`. | `fail-on-severity` (default: `high`), `allow-licenses` (default: `MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, CC0-1.0`), `allow-dependencies-licenses` (default: `""`; purls exempt from the licence check), `comment-summary-in-pr` (default: `on-failure`), `base-ref` (default: `""`), `head-ref` (default: `""`) |
+| Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or non-permitted licenses; posts a summary comment. Also supports non-PR invocation via `base-ref`/`head-ref`. | `fail-on-severity` (default: `high`; `critical|high|medium|low|none`, see [gate policy](docs/gate-policy.md)), `allow-licenses` (default: `MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, CC0-1.0`), `allow-dependencies-licenses` (default: `""`; purls exempt from the licence check), `comment-summary-in-pr` (default: `on-failure`), `base-ref` (default: `""`), `head-ref` (default: `""`) |
 | Storage Optimizer | [`storage-optimizer`](.github/actions/storage-optimizer/action.yml) | Frees disk space on GitHub-hosted runners by removing unused toolchains (JDK, .NET, Swift, Android SDK, etc.) and pruning Docker | None |
 | Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
 | AWS OIDC Auth | [`aws-oidc-auth`](.github/actions/aws-oidc-auth/action.yml) | Assumes an IAM role via GitHub OIDC — no static credentials stored; enforces traceable session name `{repo}-{run_id}` | `role-arn` (required), `aws-region` (required), `role-session-name` (default: `{repo}-{run_id}`) |
 | Gitleaks Secret Scan | [`gitleaks`](.github/actions/gitleaks/action.yml) | Pattern-based secret detection; hard-fails on any match. Scans the PR commit range on `pull_request`, else the full git history. Installs a checksum-verified Gitleaks binary (no paid license) | `version` (default: `8.30.1`), `config-path` (default: `.gitleaks.toml`), `fail-on-finding` (default: `true`) |
 | TruffleHog Verified Scan | [`trufflehog`](.github/actions/trufflehog/action.yml) | Verified active-secret detection; hard-fails on verified secrets, unverified matches are warnings. Converts findings to SARIF and uploads to the Security tab. Installs a checksum-verified TruffleHog binary | `version` (default: `3.95.5`), `only-verified` (default: `true`), `sarif-upload` (default: `true`) |
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
-| TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
+| TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `fail-on-severity` (default: `high`; see [gate policy](docs/gate-policy.md)), `minimum-failure-severity` (deprecated alias, default: `""`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | OSV-Scanner | [`osv-scanner`](.github/actions/osv-scanner/action.yml) | Scans lockfiles against the OSV database; job-level annotations + SARIF; fails at/above the CVSS threshold. Installs a checksum-verified osv-scanner binary | `version` (default: `2.4.0`), `directory` (default: `.`), `fail-on-severity` (default: `critical`), `sarif-upload` (default: `true`) |
+| Severity Gate | [`severity-gate`](.github/actions/severity-gate/action.yml) | Shared pass/fail gate for scanners without a native threshold: reads a findings file, annotates per package, outputs `max-score`/`max-severity`, fails at/above `fail-on-severity`. Vocabulary in [docs/gate-policy.md](docs/gate-policy.md) | `findings-file` (required), `format` (default: `osv-json`), `fail-on-severity` (default: `critical`) |
 
 ### GitHub Actionlint
 
@@ -116,7 +117,7 @@ jobs:
           persist-credentials: false
       - uses: sparkgeo/github-actions/.github/actions/dependency-review@<SHA>
         with:
-          fail-on-severity: high                              # critical | high | moderate | low
+          fail-on-severity: high                              # critical | high | medium | low | none
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause      # SPDX identifiers; deps with other licenses fail
           comment-summary-in-pr: always                       # always | on-failure | never
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}  # leave empty on pull_request
@@ -314,7 +315,7 @@ Tune linters via an optional `.mega-linter.yml` in the consuming repo (enable/di
 
 ### Lint IaC (tflint)
 
-The PR-stage gate for Terraform / OpenTofu. Runs `tflint --recursive`; cloud-provider rule sets are activated by a `.tflint.hcl` in the consuming repo, so the workflow is provider-agnostic. Findings show as inline PR annotations and the job blocks on any finding at or above `minimum-failure-severity`. Plugin downloads are cached.
+The PR-stage gate for Terraform / OpenTofu. Runs `tflint --recursive`; cloud-provider rule sets are activated by a `.tflint.hcl` in the consuming repo, so the workflow is provider-agnostic. Findings show as inline PR annotations and the job blocks on any finding at or above `fail-on-severity` (`high` = tflint errors, `medium` = warnings too; see [gate policy](docs/gate-policy.md)). Plugin downloads are cached.
 
 ```yaml
 # .github/workflows/lint.yml (add to the same file)
@@ -323,7 +324,7 @@ The PR-stage gate for Terraform / OpenTofu. Runs `tflint --recursive`; cloud-pro
     with:
       actions-ref: <SHA>
       directory: .                      # default; point at a subdir if IaC lives there
-      minimum-failure-severity: error   # default; 'warning' to be stricter
+      fail-on-severity: high            # default; 'medium' to block on warnings too
 ```
 
 Add a `.tflint.hcl` to the consuming repo root to enable provider rule sets — e.g. AWS:
@@ -343,7 +344,7 @@ For the local fast-feedback stage, copy [`examples/iac.pre-commit-config.yaml`](
 #### OpenTofu & Terramate notes
 
 - **OpenTofu:** works on Terraform-compatible `.tf` files. tflint does **not** read `.tofu` files and does not understand OpenTofu-only syntax (e.g. the state/plan `encryption` block, 1.7+). Standard `.tf` OpenTofu code lints fine; keep OpenTofu-specific config out of `.tf` if you hit false positives.
-- **Terramate:** tflint ignores `.tm.hcl` stack files (only `.tf` is linted). If you **commit** terramate-generated `.tf` (`_terramate_generated_*.tf`), `tflint --recursive` lints those too — they often trip rules like `terraform_required_providers` or `terraform_unused_declarations` that you can't hand-fix. Either fix the generate templates, disable those rules in `.tflint.hcl`, or rely on the default `error` severity floor (these are `Warning`-level, so they annotate but do not block).
+- **Terramate:** tflint ignores `.tm.hcl` stack files (only `.tf` is linted). If you **commit** terramate-generated `.tf` (`_terramate_generated_*.tf`), `tflint --recursive` lints those too — they often trip rules like `terraform_required_providers` or `terraform_unused_declarations` that you can't hand-fix. Either fix the generate templates, disable those rules in `.tflint.hcl`, or rely on the default `high` floor (these are tflint `Warning`-level, so they annotate but do not block).
 
 ### Lint Helm (kubeconform)
 
@@ -394,7 +395,7 @@ jobs:
       fail-on-severity: critical   # default; 'high' for a stricter gate
 ```
 
-`fail-on-severity` maps to CVSS: `critical` ≥ 9.0, `high` ≥ 7.0, `medium` ≥ 4.0, `low` ≥ 0.1. On a private repo with no GitHub Code Security license, set `sarif-upload: false` (findings still appear as job annotations and in the log).
+`fail-on-severity` maps to CVSS: `critical` ≥ 9.0, `high` ≥ 7.0, `medium` ≥ 4.0, `low` ≥ 0.1, `none` never fails. Same vocabulary on every scanner in this repo: [docs/gate-policy.md](docs/gate-policy.md). On a private repo with no GitHub Code Security license, set `sarif-upload: false` (findings still appear as job annotations and in the log).
 
 ## Consuming repo CI setup
 

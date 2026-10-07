@@ -8,7 +8,7 @@ description: |
   terraform-linters/setup-tflint action — keeps the supply chain to one
   checksum-verified download). Findings surface as inline PR annotations via a
   problem matcher; the step fails on any finding at or above
-  minimum-failure-severity.
+  fail-on-severity.
 
   Required permissions on calling job: contents: read
 inputs:
@@ -18,9 +18,12 @@ inputs:
   directory:
     description: "Directory to lint from (recursively)."
     default: "."
+  fail-on-severity:
+    description: "Lowest severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md). Maps to tflint error/warning/notice."
+    default: "high"
   minimum-failure-severity:
-    description: "Lowest severity that fails the build: error, warning, or notice."
-    default: "error"
+    description: "Deprecated: use fail-on-severity. tflint-native value (error, warning, notice); when set it overrides fail-on-severity."
+    default: ""
 runs:
   using: "composite"
   steps:
@@ -45,6 +48,7 @@ runs:
       shell: bash
       env:
         DIRECTORY: ${{ inputs.directory }}
+        FAIL_ON: ${{ inputs.fail-on-severity }}
         MIN_SEVERITY: ${{ inputs.minimum-failure-severity }}
         MATCHER: ${{ github.action_path }}/tflint-matcher.json
         # tflint --init pulls plugins from .tflint.hcl; the token lifts the
@@ -57,8 +61,22 @@ runs:
         echo "::add-matcher::${MATCHER}"
         # compact format = "file:line:col: Severity - message (rule)", which the
         # problem matcher turns into inline PR annotations.
+        # Canonical vocabulary (docs/gate-policy.md) mapped to tflint levels.
+        ADVISORY=false
+        if [ -n "${MIN_SEVERITY}" ]; then
+          echo "::warning title=tflint::minimum-failure-severity is deprecated; use fail-on-severity"
+        else
+          [ "${FAIL_ON}" = "none" ] && ADVISORY=true
+          case "${FAIL_ON}" in
+            critical|high) MIN_SEVERITY=error ;;
+            medium|moderate) MIN_SEVERITY=warning ;;
+            low|none) MIN_SEVERITY=notice ;;
+            *) echo "::error title=tflint::invalid fail-on-severity '${FAIL_ON}'"; exit 1 ;;
+          esac
+        fi
         "${RUNNER_TEMP}/tflint" --recursive --format compact \
           --minimum-failure-severity "${MIN_SEVERITY}" \
           && rc=0 || rc=$?
+        if [ "${ADVISORY}" = "true" ]; then rc=0; fi
         echo "::remove-matcher owner=tflint::"
         exit "${rc}"

@@ -1,0 +1,40 @@
+name: "Severity Gate"
+description: |
+  Shared pass/fail gate for scanners that have no native severity threshold.
+  Reads a findings file, emits one job-level annotation per affected package,
+  reports the highest score, and fails when it meets fail-on-severity.
+
+  Vocabulary and CVSS mapping are defined in docs/gate-policy.md:
+    critical >= 9.0, high >= 7.0, medium >= 4.0, low >= 0.1, none never fails.
+  `moderate` is accepted as an alias for `medium`.
+
+  Formats:
+    osv-json   output of `osv-scanner scan --format json`
+inputs:
+  findings-file:
+    description: "Path to the findings file."
+    required: true
+  format:
+    description: "Findings format: osv-json"
+    default: "osv-json"
+  fail-on-severity:
+    description: "Lowest severity that fails the job: critical, high, medium, low, or none."
+    default: "critical"
+outputs:
+  max-score:
+    description: "Highest CVSS score found (0 when none)."
+    value: ${{ steps.gate.outputs.max-score }}
+  max-severity:
+    description: "Highest severity found: critical, high, medium, low, or none."
+    value: ${{ steps.gate.outputs.max-severity }}
+runs:
+  using: "composite"
+  steps:
+    - name: Annotate and enforce gate
+      id: gate
+      shell: bash
+      env:
+        FINDINGS_FILE: ${{ inputs.findings-file }}
+        FORMAT: ${{ inputs.format }}
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+      run: bash "${{ github.action_path }}/gate.sh"
