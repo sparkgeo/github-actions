@@ -41,6 +41,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Helm/Kustomize Trivy Scan | [`k8s-scan`](.github/actions/k8s-scan/action.yml) | PR scan gate for deployment packages: trivy Kubernetes misconfiguration checks on Helm charts (inline template annotations) and rendered Kustomize overlays, secrets in chart sources, and CVEs in every image the rendered manifests reference. Checksum-verified trivy binary, cached DB, SARIF upload | `version` (default: `0.75.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `fail-on-severity` (default: `high`), `scan-images` (default: `true`), `ignore-unfixed` (default: `false`), `trivyignore-path` (default: `.trivyignore`), `sarif-upload` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +374,44 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### K8s Scan (trivy on Helm / Kustomize)
+
+The PR-stage security gate for deployment packages, next to [Lint Helm](#lint-helm-kubeconform) (schema validity). Runs [trivy](https://trivy.dev) three ways in one job: Kubernetes misconfiguration checks (NSA/CISA hardening, `KSV-*` rules) on every Helm chart under `charts-dir` and every rendered Kustomize overlay under `kustomize-dir`; secret detection on chart sources (values files, templates); and a vulnerability scan of every container image the rendered manifests reference. Findings are inline PR annotations on Helm templates (job-level for rendered overlays and images), summarised in the job, uploaded as SARIF, and the job blocks per `fail-on-severity` (default `high`; secrets always block).
+
+```yaml
+# .github/workflows/k8s-scan.yml
+name: K8s Scan
+on: [pull_request]
+permissions:
+  contents: read
+  security-events: write   # SARIF upload
+jobs:
+  trivy:
+    uses: sparkgeo/github-actions/.github/workflows/k8s-scan.yml@<SHA>
+    with:
+      actions-ref: <SHA>          # pin to the SAME SHA so the composite is immutable too
+      charts-dir: charts          # default; a single chart directory also works
+      # kustomize-dir: deploy/overlays
+      # fail-on-severity: high    # default
+      # ignore-unfixed: true      # skip CVEs with no fix yet
+```
+
+**Images.** References are collected from `helm template` / `kustomize build` output, so whatever `values.yaml` or `images:` pins is what gets scanned. Public registries (Docker Hub, GHCR, GCR, ECR Public) need nothing. For a private registry the login must happen before the scan in the same job, which a reusable workflow cannot do: use the composite directly instead (`aws-oidc-auth` + `aws ecr get-login-password | docker login`, then `uses: sparkgeo/github-actions/.github/actions/k8s-scan@<SHA>`). An image that cannot be pulled is a warning, not a failure. `scan-images: false` turns the image stage off.
+
+**Accepted risks.** A `.trivyignore` at the repo root (one `KSV-xxxx` or `CVE-xxxx` per line, with an expiry comment) is applied to every stage. Inline, Helm templates also accept `# trivy:ignore:KSV-0014` on the offending line.
+
+**Renovate for image tags.** Trivy gates what is pinned; Renovate keeps it current. For charts that pin tags in `values.yaml`, enable the `helm-values` manager and, for a private registry, a `hostRules` entry so Renovate can list tags:
+
+```json
+{
+  "helm-values": { "enabled": true },
+  "kustomize": { "enabled": true },
+  "hostRules": [
+    { "matchHost": "123456789012.dkr.ecr.us-west-2.amazonaws.com", "username": "AWS", "password": "{{ secrets.ECR_TOKEN }}" }
+  ]
+}
+```
 
 ## Consuming repo CI setup
 
