@@ -1,0 +1,146 @@
+name: "Trivy Image Scan"
+description: |
+  Scans a container image for OS and language-package vulnerabilities and
+  embedded secrets with trivy. Stack-agnostic. The image comes either from a
+  registry or the local daemon (image-ref) or from a workflow artifact holding
+  a `docker save` tarball (image-artifact), for images built in another job.
+
+  Installs a pinned, checksum-verified trivy binary and caches the
+  vulnerability database. One JSON scan drives the gate, the annotations and
+  the step summary; SARIF is derived with `trivy convert` and optionally
+  uploaded to the Security tab. Gate semantics follow docs/gate-policy.md
+  (trivy severities map 1:1; `none` reports only). A secret found in the
+  image always blocks unless the gate is `none`. Accepted risks go in a
+  `.trivyignore` file with an expiry comment.
+
+  Required permissions on calling job: contents: read (plus security-events:
+  write when sarif-upload is true; actions: read when image-artifact is used).
+inputs:
+  version:
+    description: "trivy version to install (no leading 'v')."
+    default: "0.75.0"
+  image-ref:
+    description: "Image reference to scan (registry or local daemon). Ignored when image-artifact is set."
+    default: ""
+  image-artifact:
+    description: "Name of a workflow artifact containing an image tarball (`docker save`) to scan instead of image-ref."
+    default: ""
+  image-tar:
+    description: "Tarball filename inside image-artifact."
+    default: "image.tar"
+  scanners:
+    description: "Comma-separated trivy scanners: vuln,secret,misconfig,license."
+    default: "vuln,secret"
+  fail-on-severity:
+    description: "Lowest severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md)."
+    default: "critical"
+  ignore-unfixed:
+    description: "Ignore vulnerabilities that have no fixed version yet."
+    default: "false"
+  trivyignore-path:
+    description: "Path to a .trivyignore file in the repository (applied only if it exists)."
+    default: ".trivyignore"
+  sarif-upload:
+    description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
+    default: "true"
+outputs:
+  max-severity:
+    description: "Highest severity found: critical, high, medium, low, or none."
+    value: ${{ steps.gate.outputs.max-severity }}
+  critical-count:
+    description: "Number of CRITICAL vulnerabilities."
+    value: ${{ steps.gate.outputs.critical-count }}
+  high-count:
+    description: "Number of HIGH vulnerabilities."
+    value: ${{ steps.gate.outputs.high-count }}
+  secret-count:
+    description: "Number of secrets found in the image."
+    value: ${{ steps.gate.outputs.secret-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install trivy
+      shell: bash
+      env:
+        TRIVY_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+        # Keep the published asset name so the checksum line matches the file.
+        curl -sSfL -o "${TMP}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" "${BASE}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/trivy_${TRIVY_VERSION}_checksums.txt"
+        # Verify the downloaded archive against the published checksum before use.
+        ( cd "${TMP}" && grep " trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${TMP}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -C "${TMP}" trivy
+        install "${TMP}/trivy" "${RUNNER_TEMP}/trivy"
+        "${RUNNER_TEMP}/trivy" --version | head -1
+
+    - name: Cache vulnerability database
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ~/.cache/trivy/db
+        # The DB is republished several times a day; a daily key keeps scans
+        # fresh while avoiding a ~70 MB download on every run.
+        key: trivy-db-${{ runner.os }}-${{ inputs.version }}-${{ github.run_started_at }}
+        restore-keys: |
+          trivy-db-${{ runner.os }}-${{ inputs.version }}-
+
+    - name: Download image artifact
+      if: ${{ inputs.image-artifact != '' }}
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      with:
+        name: ${{ inputs.image-artifact }}
+        path: ${{ runner.temp }}/image
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        IMAGE_REF: ${{ inputs.image-ref }}
+        IMAGE_ARTIFACT: ${{ inputs.image-artifact }}
+        IMAGE_TAR: ${{ inputs.image-tar }}
+        SCANNERS: ${{ inputs.scanners }}
+        IGNORE_UNFIXED: ${{ inputs.ignore-unfixed }}
+        TRIVYIGNORE: ${{ inputs.trivyignore-path }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/trivy-out"; mkdir -p "${OUT}"
+        args=(image --quiet --scanners "${SCANNERS}" --format json --output "${OUT}/results.json")
+        [ "${IGNORE_UNFIXED}" = "true" ] && args+=(--ignore-unfixed)
+        [ -f "${TRIVYIGNORE}" ] && args+=(--ignorefile "${TRIVYIGNORE}")
+        if [ -n "${IMAGE_ARTIFACT}" ]; then
+          TAR="${RUNNER_TEMP}/image/${IMAGE_TAR}"
+          [ -f "${TAR}" ] || { echo "::error title=trivy::${IMAGE_TAR} not found in artifact ${IMAGE_ARTIFACT}"; exit 1; }
+          args+=(--input "${TAR}")
+          TARGET="artifact ${IMAGE_ARTIFACT}/${IMAGE_TAR}"
+        elif [ -n "${IMAGE_REF}" ]; then
+          args+=("${IMAGE_REF}")
+          TARGET="${IMAGE_REF}"
+        else
+          echo "::error title=trivy::set image-ref or image-artifact"; exit 1
+        fi
+        echo "Scanning ${TARGET} with scanners ${SCANNERS}"
+        "${RUNNER_TEMP}/trivy" "${args[@]}"
+        "${RUNNER_TEMP}/trivy" convert --quiet --format sarif --output "${OUT}/results.sarif" "${OUT}/results.json"
+        echo "json=${OUT}/results.json" >> "${GITHUB_OUTPUT}"
+        if [ "$(jq '.runs | length' "${OUT}/results.sarif")" -gt 0 ]; then
+          echo "sarif=${OUT}/results.sarif" >> "${GITHUB_OUTPUT}"
+        else
+          echo "sarif=" >> "${GITHUB_OUTPUT}"
+        fi
+
+    - name: Upload SARIF to GitHub Security tab
+      if: ${{ inputs.sarif-upload != 'false' && steps.scan.outputs.sarif != '' }}
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif }}
+        category: trivy
+
+    - name: Annotate and enforce gate
+      id: gate
+      shell: bash
+      env:
+        RESULTS_JSON: ${{ steps.scan.outputs.json }}
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+      run: bash "${{ github.action_path }}/gate.sh"

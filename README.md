@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| Container Scan | [`container-scan.yml`](.github/workflows/container-scan.yml) | `workflow_call` | Reusable trivy gate — OS and language-package CVEs plus embedded secrets in a built image (registry ref or `docker save` artifact); SARIF to Security tab; blocks on `fail-on-severity` |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Trivy | [`trivy`](.github/actions/trivy/action.yml) | Container image vulnerability and secret scan; job-level annotations, step-summary table, SARIF; gate per `fail-on-severity`; DB cached daily. Installs a checksum-verified trivy binary | `version` (default: `0.75.0`), `image-ref`, `image-artifact`, `image-tar` (default: `image.tar`), `scanners` (default: `vuln,secret`), `fail-on-severity` (default: `critical`), `ignore-unfixed` (default: `false`), `trivyignore-path` (default: `.trivyignore`), `sarif-upload` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,67 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Container Scan (trivy)
+
+The PR/CI gate for built images. [trivy](https://github.com/aquasecurity/trivy) scans OS packages and language dependencies inside the image for known CVEs and finds embedded secrets, in one pass, for any stack. Pairs with `container-lint.yml` (Dockerfile before the build) and, later, `cosign` signing (#15).
+
+Two ways to hand the image over. If the build job pushes to a registry, pass the reference:
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+    steps:
+      - uses: actions/checkout@<SHA>
+      - id: build
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}"
+          docker build -t "$IMAGE" . && docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+  scan:
+    needs: build
+    uses: sparkgeo/github-actions/.github/workflows/container-scan.yml@<SHA>
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      actions-ref: <SHA>
+      image-ref: ${{ needs.build.outputs.image }}
+```
+
+If the image is not pushed on PRs, save it as an artifact; the scan job downloads it:
+
+```yaml
+  build:
+    steps:
+      - run: docker build -t app:pr . && docker save app:pr -o image.tar
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with: { name: image, path: image.tar, retention-days: 1 }
+  scan:
+    needs: build
+    uses: sparkgeo/github-actions/.github/workflows/container-scan.yml@<SHA>
+    permissions:
+      contents: read
+      actions: read            # download the artifact
+      security-events: write
+    with:
+      actions-ref: <SHA>
+      image-artifact: image
+```
+
+**Severity.** trivy severities map directly: `critical` (default) blocks on CRITICAL, `high` on HIGH and above, `medium`, `low` likewise, `none` reports only. A secret found in the image always blocks unless the gate is `none`. `ignore-unfixed: true` drops findings with no fixed version yet.
+
+**Accepted risk.** Put the CVE in a `.trivyignore` at the repo root, one per line, with the reason and an expiry date in a comment; review the file at the expiry. The EPSS/KEV override (#80) adjusts severities ahead of this gate once it lands.
+
+```
+# CVE-2024-12345: only reachable via the admin CLI, not shipped in this image. Review by 2026-12-31.
+CVE-2024-12345
+```
+
+**Egress.** The vulnerability DB comes from `ghcr.io` (`aquasecurity/trivy-db`), cached per day; the image registry (`ghcr.io`, ECR, `cgr.dev`, …) when `image-ref` is used.
 
 ## Consuming repo CI setup
 
