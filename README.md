@@ -479,6 +479,10 @@ jobs:
 
 See [docs/approved-actions.md](docs/approved-actions.md) for full data handling and telemetry details.
 
+## Dependency management
+
+Two tools, no overlap. Dependabot owns the `github-actions` ecosystem in every repo (keeps SHA pins current, one grouped PR per week; see [docs/dependabot.md](docs/dependabot.md)). The central Renovate runner (#86) owns every other ecosystem: application packages, Terraform providers and modules, Helm and Kustomize references, Docker base image digests. Dependabot alerts and security updates are on for all ecosystems regardless.
+
 ## Security
 
 This repo is part of the Sparkgeo GitHub Actions security programme. The pillars are:

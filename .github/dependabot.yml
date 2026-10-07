@@ -1,10 +1,28 @@
+# Dependabot owns the github-actions ecosystem org-wide: it keeps SHA-pinned
+# action references current with zero infrastructure. Every other ecosystem
+# (npm, pip, Go, Terraform, Helm, Docker base images) is handled by the
+# central Renovate runner (#86), which has github-actions disabled, so the two
+# never overlap. Reference config and rationale: docs/dependabot.md
 version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    # Let a new release settle before adopting it (supply-chain hygiene).
     cooldown:
       default-days: 7
+    # One PR per week for minor and patch bumps; majors stay individual so a
+    # breaking change (e.g. a new Node runtime) is reviewed on its own.
+    groups:
+      actions-minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "ci"
+    labels:
+      - "dependencies"
