@@ -303,10 +303,15 @@ jobs:
       contents: read
       security-events: write   # required for SARIF upload
     with:
+      flavor: python                              # smallest image that covers your stack (see below)
       filter-regex-exclude: 'dist/|generated/'   # optional
 ```
 
 Tune linters via an optional `.mega-linter.yml` in the consuming repo (enable/disable specific linters, set `DISABLE_ERRORS` per tool, etc.).
+
+**Pick a flavor.** Image pull dominates run time: the full image is ~4.8 GB compressed (about 3 minutes); flavors are 1.5–2.7 GB. Supported values of `flavor`: `full` (default), `cupcake`, `documentation`, `ci_light`, `python`, `javascript`, `terraform`, `go`. Linter coverage per flavor: <https://megalinter.io/latest/flavors/>. This repo's own CI uses `documentation` (ACTION, BASH, JSON, MARKDOWN, YAML).
+
+**Diff-only on PRs.** `validate-all-codebase` defaults to `auto`: pull requests lint only files changed against `default-branch`; pushes and manual runs lint everything. Set `true` or `false` to override.
 
 > **Org allowlist:** `lint-app.yml` uses `oxsecurity/megalinter`, so `oxsecurity/*` must be on the org allowlist (already added in [approved-actions](docs/approved-actions.md); apply with the `gh api` allowlist update if not yet live).
 
