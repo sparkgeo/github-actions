@@ -42,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | Pytest Coverage Gate | [`pytest`](.github/actions/pytest/action.yml) | Runs pytest under coverage.py; fails on test failures or line coverage below the threshold. Inline annotations for failed tests, counts and coverage in the step summary, JUnit + coverage XML kept as an artifact. Detects uv.lock (checksum-verified uv), poetry.lock (poetry) or requirements*.txt (pip) | `working-directory` (default: `.`), `python-version` (default: `""` — `.python-version`, then `requires-python`, then `3.12`), `coverage-threshold` (default: `80`; `0` disables), `coverage-source` (default: `""`), `extra-args` (default: `""`), `install-command` (default: `""`), `artifact-name` (default: `pytest-results`) |
+| Node Test Coverage Gate | [`node-test`](.github/actions/node-test/action.yml) | Runs vitest or jest (auto-detected from package.json) under coverage; fails on test failures or line coverage below the threshold. Inline annotations for failed tests, counts and coverage in the step summary, JUnit + cobertura XML kept as an artifact. Detects pnpm / yarn / npm from the lockfile and caches on it | `working-directory` (default: `.`), `node-version` (default: `""` — `.nvmrc`, then `.node-version`, then `22`), `coverage-threshold` (default: `80`; `0` disables), `extra-args` (default: `""`), `install-command` (default: `""`), `test-command` (default: `""`), `pnpm-version` (default: `""`), `artifact-name` (default: `node-test-results`) |
 
 ### GitHub Actionlint
 
@@ -413,6 +414,33 @@ jobs:
       - uses: codecov/codecov-action@<SHA>
         with: { files: coverage.xml, use_oidc: true }
 ```
+
+### Test (Node)
+
+The PR-stage test gate for Node.js repositories: `vitest` or `jest` (auto-detected from `package.json`) under coverage, blocking on any failed test and on line coverage below `coverage-threshold`. Same contract as [Test (Python)](#test-python); swap the workflow path and nothing else changes.
+
+```yaml
+# .github/workflows/test.yml
+name: Test
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  node:
+    uses: sparkgeo/github-actions/.github/workflows/test-node.yml@<SHA>
+    with:
+      actions-ref: <SHA>          # pin to the SAME SHA so the composite is immutable too
+      coverage-threshold: 80      # default
+      # working-directory: apps/web
+      # runtime-version: '22'     # default: .nvmrc, then .node-version, then 22
+      # extra-args: '--project unit'
+```
+
+**Project requirements.** vitest needs `@vitest/coverage-v8` (or `-istanbul`) in `devDependencies`; jest needs `jest-junit`. The composite fails early with a message naming the missing package. Coverage scope follows the project's own vitest/jest config (`coverage.include`, `collectCoverageFrom`).
+
+**Install detection.** `pnpm-lock.yaml` → `pnpm install --frozen-lockfile` (pnpm from `packageManager` in `package.json`, or the `pnpm-version` input); `yarn.lock` → `yarn install --frozen-lockfile` (v1) or `--immutable` (berry via corepack); `package-lock.json` / `npm-shrinkwrap.json` → `npm ci`. `setup-node` caches the package-manager store on the lockfile hash. Anything else: `install-command`, and `test-command` for a custom runner (it must write JUnit to `$JUNIT_XML` and cobertura XML to `$COVERAGE_XML`).
+
+**Outputs.** Failed tests appear as inline PR annotations on the test file (line 1: neither runner reports line numbers in JUnit). The step summary shows total/failed/skipped and the coverage percentage; `junit.xml` and `coverage.xml` are uploaded as the `node-test-results` artifact for 14 days.
 
 ## Consuming repo CI setup
 

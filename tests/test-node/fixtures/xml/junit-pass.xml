@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="3" failures="0" errors="0" time="0.002702028">
+    <testsuite name="test/calc.test.js" timestamp="2026-10-07T17:26:30.728Z" hostname="mehul-laptop" tests="3" failures="0" errors="0" skipped="0" time="0.002702028">
+        <testcase classname="test/calc.test.js" name="calc &gt; adds" time="0.001158519">
+        </testcase>
+        <testcase classname="test/calc.test.js" name="calc &gt; divides" time="0.00015136">
+        </testcase>
+        <testcase classname="test/calc.test.js" name="calc &gt; rejects division by zero" time="0.000183694">
+        </testcase>
+    </testsuite>
+</testsuites>
