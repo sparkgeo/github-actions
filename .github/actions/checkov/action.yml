@@ -1,0 +1,116 @@
+name: "Checkov IaC Scan"
+description: |
+  Scans infrastructure-as-code (Terraform / OpenTofu by default; CloudFormation,
+  Kubernetes, Helm, and more via `frameworks`) for misconfigurations with
+  checkov. Cloud-agnostic: AWS, GCP, and Azure policies ship with the tool.
+
+  Installs the pinned checkov release binary and verifies it against the
+  sha256 recorded here (the project publishes no checksum file). Produces
+  SARIF (optionally uploaded to the Security tab) and one annotation per
+  failed check. Gate semantics follow docs/gate-policy.md: without a Prisma
+  Cloud API key checkov reports no severities, so every finding counts as
+  `high`; `fail-on-severity: high` (default) blocks on any finding, `none`
+  reports only.
+
+  Intentional exceptions use the inline skip syntax inside the resource:
+    # checkov:skip=CKV_AWS_20:reason
+
+  Required permissions on calling job: contents: read (plus security-events:
+  write when sarif-upload is true).
+inputs:
+  version:
+    description: "checkov release to install (no leading 'v'). Changing it requires updating version-sha256."
+    default: "3.3.25"
+  version-sha256:
+    description: "sha256 of checkov_linux_X86_64.zip for `version`."
+    default: "d76cd26e0eb642be12f60751ee627be3bab6c81e7add30dee018a03c0c1941e2"
+  directory:
+    description: "Directory to scan (recursively)."
+    default: "."
+  frameworks:
+    description: "Comma-separated checkov frameworks to run."
+    default: "terraform,terraform_json,cloudformation"
+  fail-on-severity:
+    description: "Lowest severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md)."
+    default: "high"
+  skip-checks:
+    description: "Comma-separated check IDs to skip for the whole run (prefer inline checkov:skip with a reason)."
+    default: ""
+  download-external-modules:
+    description: "Let checkov download remote Terraform modules so their resources are scanned."
+    default: "false"
+  sarif-upload:
+    description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
+    default: "true"
+outputs:
+  failed-count:
+    description: "Number of failed checks."
+    value: ${{ steps.gate.outputs.failed-count }}
+  passed-count:
+    description: "Number of passed checks."
+    value: ${{ steps.gate.outputs.passed-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install checkov
+      shell: bash
+      env:
+        CHECKOV_VERSION: ${{ inputs.version }}
+        CHECKOV_SHA256: ${{ inputs.version-sha256 }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        curl -sSfL -o "${TMP}/checkov.zip" \
+          "https://github.com/bridgecrewio/checkov/releases/download/${CHECKOV_VERSION}/checkov_linux_X86_64.zip"
+        echo "${CHECKOV_SHA256}  ${TMP}/checkov.zip" | sha256sum -c -
+        # The zip holds one file (dist/checkov); -j drops the directory.
+        unzip -j -q "${TMP}/checkov.zip" -d "${TMP}/bin"
+        install "${TMP}/bin/checkov" "${RUNNER_TEMP}/checkov"
+        "${RUNNER_TEMP}/checkov" --version
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        DIRECTORY: ${{ inputs.directory }}
+        FRAMEWORKS: ${{ inputs.frameworks }}
+        SKIP_CHECKS: ${{ inputs.skip-checks }}
+        DOWNLOAD_EXTERNAL: ${{ inputs.download-external-modules }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/checkov-out"
+        mkdir -p "${OUT}"
+        IFS=',' read -ra FW <<< "${FRAMEWORKS}"
+        args=(--directory "${DIRECTORY}" --framework "${FW[@]}"
+              --soft-fail --quiet --compact
+              -o cli -o json -o sarif --output-file-path "${OUT}"
+              --download-external-modules "${DOWNLOAD_EXTERNAL}")
+        if [ -n "${SKIP_CHECKS}" ]; then args+=(--skip-check "${SKIP_CHECKS}"); fi
+        # --soft-fail: we gate on the JSON ourselves below.
+        "${RUNNER_TEMP}/checkov" "${args[@]}"
+        # The "console,<dir>" output-path form crashes checkov 3.3.25; print the
+        # CLI report from the file instead.
+        [ -f "${OUT}/results_cli.txt" ] && cat "${OUT}/results_cli.txt"
+        [ -s "${OUT}/results_json.json" ] || echo '{"summary":{"failed":0,"passed":0,"skipped":0},"results":{"failed_checks":[]}}' > "${OUT}/results_json.json"
+        echo "json=${OUT}/results_json.json" >> "${GITHUB_OUTPUT}"
+        if [ -s "${OUT}/results_sarif.sarif" ] && [ "$(jq '.runs | length' "${OUT}/results_sarif.sarif")" -gt 0 ]; then
+          echo "sarif=${OUT}/results_sarif.sarif" >> "${GITHUB_OUTPUT}"
+        else
+          echo "sarif=" >> "${GITHUB_OUTPUT}"
+        fi
+
+    - name: Upload SARIF to GitHub Security tab
+      if: ${{ inputs.sarif-upload != 'false' && steps.scan.outputs.sarif != '' }}
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif }}
+        category: checkov
+
+    - name: Annotate and enforce gate
+      id: gate
+      shell: bash
+      env:
+        RESULTS_JSON: ${{ steps.scan.outputs.json }}
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+        DIRECTORY: ${{ inputs.directory }}
+      run: bash "${{ github.action_path }}/gate.sh"

@@ -56,6 +56,32 @@ jobs:
 
       - uses: ./.github/actions/tflint
 
+  # Scan IaC with checkov against the committed fixtures: the clean fixture
+  # must pass at the default gate, and the gate script is unit-tested.
+  checkov:
+    name: Checkov
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # SARIF upload to the Security tab
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Gate script fixtures
+        shell: bash
+        run: bash tests/iac-scan/run.sh
+
+      - uses: ./.github/actions/checkov
+        with:
+          directory: tests/iac-scan/fixtures/clean
+
   # Validate Helm/Kustomize with kubeconform. This repo has no charts/, so this
   # is a smoke test that the composite installs and runs (exits 0, nothing to
   # validate).
