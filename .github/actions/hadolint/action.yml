@@ -1,0 +1,148 @@
+name: "Hadolint Dockerfile Lint"
+description: |
+  Lints Dockerfiles with hadolint (Dockerfile AST rules, CIS Docker Benchmark
+  practices, shellcheck on RUN lines) and enforces digest-pinned base images.
+  No image build or Docker daemon needed, so it runs at pre-commit speed.
+
+  Installs a pinned, checksum-verified hadolint binary. Produces SARIF
+  (optionally uploaded to the Security tab) and one annotation per finding.
+  Gate semantics follow docs/gate-policy.md: fail-on-severity high blocks on
+  hadolint `error` findings, medium on `warning`, low on `info`/`style`,
+  none reports only. Base image digest pinning (require-digest-pin) is a
+  separate check that blocks regardless of severity.
+
+  Intentional exceptions use the inline comment above the instruction:
+    # hadolint ignore=DL3008
+
+  Required permissions on calling job: contents: read (plus security-events:
+  write when sarif-upload is true).
+inputs:
+  version:
+    description: "hadolint version to install (no leading 'v')."
+    default: "2.15.1"
+  dockerfile-pattern:
+    description: "Comma-separated glob patterns of Dockerfiles to lint, relative to the repo root."
+    default: "**/Dockerfile*,**/*.dockerfile"
+  fail-on-severity:
+    description: "Lowest severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md)."
+    default: "high"
+  ignore-rules:
+    description: "Comma-separated hadolint rule IDs to ignore for the whole run (prefer inline '# hadolint ignore=' with a reason)."
+    default: ""
+  require-digest-pin:
+    description: "Fail when any FROM references an image without @sha256:... (stage aliases and scratch exempt)."
+    default: "true"
+  sarif-upload:
+    description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
+    default: "true"
+outputs:
+  finding-count:
+    description: "Number of hadolint findings at any severity."
+    value: ${{ steps.lint.outputs.finding-count }}
+  unpinned-count:
+    description: "Number of FROM lines without a digest."
+    value: ${{ steps.digest.outputs.unpinned-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install hadolint
+      shell: bash
+      env:
+        HADOLINT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}"
+        # Keep the published asset name so the checksum line matches the file.
+        curl -sSfL -o "${TMP}/hadolint-linux-x86_64" "${BASE}/hadolint-linux-x86_64"
+        curl -sSfL -o "${TMP}/checksums.sha256" "${BASE}/checksums.sha256"
+        # Verify the downloaded binary against the published checksum before use.
+        ( cd "${TMP}" && grep ' \*hadolint-linux-x86_64$' checksums.sha256 | sha256sum -c - )
+        install "${TMP}/hadolint-linux-x86_64" "${RUNNER_TEMP}/hadolint"
+        "${RUNNER_TEMP}/hadolint" --version
+
+    - name: Find Dockerfiles
+      id: files
+      shell: bash
+      env:
+        PATTERNS: ${{ inputs.dockerfile-pattern }}
+      run: |
+        set -euo pipefail
+        shopt -s globstar nullglob
+        IFS=',' read -ra PATS <<< "${PATTERNS}"
+        files=()
+        for p in "${PATS[@]}"; do
+          p="${p## }"; p="${p%% }"
+          for f in ${p}; do [ -f "${f}" ] && files+=("${f}"); done
+        done
+        : > "${RUNNER_TEMP}/dockerfiles.txt"
+        if [ "${#files[@]}" -gt 0 ]; then
+          # De-duplicate; skip anything under .git.
+          printf '%s\n' "${files[@]}" | grep -v '^\.git/' | sort -u > "${RUNNER_TEMP}/dockerfiles.txt"
+        fi
+        COUNT="$(grep -c . "${RUNNER_TEMP}/dockerfiles.txt" || true)"
+        echo "count=${COUNT}" >> "${GITHUB_OUTPUT}"
+        echo "${COUNT} Dockerfile(s) matched"
+        [ "${COUNT}" -gt 0 ] || echo "::notice title=hadolint::no Dockerfiles matched; nothing to lint"
+
+    - name: Lint
+      id: lint
+      if: ${{ steps.files.outputs.count != '0' }}
+      shell: bash
+      env:
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+        IGNORE: ${{ inputs.ignore-rules }}
+      run: |
+        set -euo pipefail
+        mapfile -t files < "${RUNNER_TEMP}/dockerfiles.txt"
+        # Canonical vocabulary (docs/gate-policy.md) mapped to hadolint levels.
+        case "${FAIL_ON}" in
+          critical|high)   THRESH=error ;;
+          medium|moderate) THRESH=warning ;;
+          low)             THRESH=info ;;
+          none)            THRESH=none ;;
+          *) echo "::error title=hadolint::invalid fail-on-severity '${FAIL_ON}' (critical|high|medium|low|none)"; exit 1 ;;
+        esac
+        args=()
+        if [ -n "${IGNORE}" ]; then
+          IFS=',' read -ra RULES <<< "${IGNORE}"
+          for r in "${RULES[@]}"; do args+=(--ignore "${r}"); done
+        fi
+        OUT="${RUNNER_TEMP}/hadolint-out"; mkdir -p "${OUT}"
+        # JSON for annotations and the count; SARIF for the Security tab;
+        # exit code from the threshold run is the gate.
+        "${RUNNER_TEMP}/hadolint" --no-fail --format json "${args[@]}" "${files[@]}" > "${OUT}/results.json"
+        "${RUNNER_TEMP}/hadolint" --no-fail --format sarif "${args[@]}" "${files[@]}" > "${OUT}/results.sarif"
+        jq -r '.[] | "\(.file)\t\(.line)\t\(.level)\t\(.code)\t\(.message)"' "${OUT}/results.json" \
+          | while IFS=$'\t' read -r file line level code message; do
+              case "${level}" in error) kind=error ;; warning) kind=warning ;; *) kind=notice ;; esac
+              echo "::${kind} file=${file},line=${line},title=hadolint ${code}::${message}"
+            done
+        COUNT="$(jq 'length' "${OUT}/results.json")"
+        echo "finding-count=${COUNT}" >> "${GITHUB_OUTPUT}"
+        if [ "$(jq '.runs | length' "${OUT}/results.sarif")" -gt 0 ]; then
+          echo "sarif=${OUT}/results.sarif" >> "${GITHUB_OUTPUT}"
+        else
+          echo "sarif=" >> "${GITHUB_OUTPUT}"
+        fi
+        echo "hadolint: ${COUNT} finding(s); threshold '${FAIL_ON}' (hadolint ${THRESH})"
+        if [ "${THRESH}" != "none" ]; then
+          "${RUNNER_TEMP}/hadolint" --failure-threshold "${THRESH}" --format tty "${args[@]}" "${files[@]}" >/dev/null \
+            || { echo "::error title=hadolint::findings at or above '${FAIL_ON}' severity."; exit 1; }
+        fi
+
+    - name: Upload SARIF to GitHub Security tab
+      if: ${{ always() && inputs.sarif-upload != 'false' && steps.lint.outputs.sarif != '' }}
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.lint.outputs.sarif }}
+        category: hadolint
+
+    - name: Require digest-pinned base images
+      id: digest
+      if: ${{ always() && inputs.require-digest-pin != 'false' && steps.files.outputs.count != '0' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        mapfile -t files < "${RUNNER_TEMP}/dockerfiles.txt"
+        bash "${{ github.action_path }}/digest-check.sh" "${files[@]}"
