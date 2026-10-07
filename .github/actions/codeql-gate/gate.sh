@@ -29,16 +29,18 @@ if [ "${#files[@]}" -eq 0 ]; then
   exit 0
 fi
 
-# One row per result: score \t file \t line \t ruleId \t message \t language
+# One row per result: score \t file \t line \t ruleId \t message \t language.
+# Score "-" when the rule has no security-severity: a leading empty tab
+# field would be dropped by `read`.
 ROWS="$(jq -r '
   .runs[] as $run
-  | ($run.automationDetails.id // "" | capture("language:(?<l>[^/]+)")? .l // "unknown") as $lang
+  | ((($run.automationDetails.id // "") | try (capture("language:(?<l>[^/]+)") | .l) catch null) // "unknown") as $lang
   | $run.tool.driver.rules as $rules
   | ($run.results // [])[]
   | (.ruleId // .rule.id) as $rid
   | (if (.ruleIndex // .rule.index) != null then $rules[(.ruleIndex // .rule.index)]
      else (($rules // []) | map(select(.id == $rid)) | .[0]) end) as $rule
-  | ($rule.properties["security-severity"] // "-") as $score   # "-" keeps the column; a leading empty tab field would be dropped by read
+  | ($rule.properties["security-severity"] // "-") as $score
   | (.locations[0].physicalLocation.artifactLocation.uri // "") as $file
   | (.locations[0].physicalLocation.region.startLine // 0) as $line
   | "\($score)\t\($file)\t\($line)\t\($rid)\t\(.message.text | gsub("\n"; " "))\t\($lang)"
