@@ -20,6 +20,7 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `actions/upload-artifact` | GitHub (org-owned) | `043fb46d` (v7.0.1) | `scorecard` | Upload SARIF as retained artifact | 2026-05-21 |
 | `actions/dependency-review-action` | GitHub (org-owned) | `a1d282b3` (v5.0.0) | `dependency-review` | Block PRs with vulnerable/denied-license deps | 2026-05-21 |
 | `github/codeql-action/upload-sarif` | GitHub (org-owned) | `9e0d7b8d` (v4.35.5) | `scorecard`, `zizmor` | Upload SARIF to GitHub Security tab | 2026-05-21 |
+| `github/codeql-action/init`, `github/codeql-action/analyze` | GitHub (org-owned) | `88585263` (v4.38.2) | `sast-scan.yml`, `ci.yml` | CodeQL database build and query run; SARIF to Code Scanning | 2026-10-07 |
 | `ossf/scorecard-action` | OpenSSF | `4eaacf05` (v2.4.3) | `scorecard` | OpenSSF Scorecard supply-chain checks | 2026-05-21 |
 | `reviewdog/action-actionlint` | reviewdog | `6fb7acc9` (v1.72.0) | `github-actionlint` | Actionlint via reviewdog; posts Check annotations | 2026-05-21 |
 | `zizmorcore/zizmor-action` | zizmorcore | `5f14fd08` (v0.5.6) | `zizmor` | Zizmor static security analysis; uploads SARIF | 2026-05-21 |

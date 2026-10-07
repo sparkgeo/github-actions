@@ -1,0 +1,38 @@
+name: "CodeQL Gate"
+description: |
+  Turns the SARIF written by github/codeql-action/analyze into a pass/fail
+  gate with inline annotations and a step summary. CodeQL itself never fails
+  a job on findings; Code Scanning alerts are advisory unless a required
+  check blocks. This composite is that check.
+
+  Severity comes from each rule's `security-severity` (a CVSS-like score on
+  CodeQL security queries), mapped per docs/gate-policy.md: critical >= 9.0,
+  high >= 7.0, medium >= 4.0, low > 0. Results from code-quality queries carry
+  no score; they are reported and never block.
+inputs:
+  sarif-dir:
+    description: "Directory containing the *.sarif files from codeql-action/analyze (its `output` input)."
+    required: true
+  fail-on-severity:
+    description: "Lowest severity that fails the build: critical, high, medium, low, or none."
+    default: "high"
+outputs:
+  max-severity:
+    description: "Highest security severity found: critical, high, medium, low, or none."
+    value: ${{ steps.gate.outputs.max-severity }}
+  critical-count:
+    description: "Number of critical results."
+    value: ${{ steps.gate.outputs.critical-count }}
+  high-count:
+    description: "Number of high results."
+    value: ${{ steps.gate.outputs.high-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Annotate and enforce gate
+      id: gate
+      shell: bash
+      env:
+        SARIF_DIR: ${{ inputs.sarif-dir }}
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+      run: bash "${{ github.action_path }}/gate.sh"
