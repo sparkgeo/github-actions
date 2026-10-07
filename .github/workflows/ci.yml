@@ -244,6 +244,17 @@ jobs:
         with:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
+          # The semgrep composite's hash-locked requirements.txt is a CI tool
+          # install, not a redistributed dependency, so its copyleft and
+          # Python-licensed packages are exempt from the licence gate.
+          # Revisit when regenerating the lock: new packages may need adding.
+          allow-dependencies-licenses: >-
+            pkg:pypi/semgrep,
+            pkg:pypi/certifi,
+            pkg:pypi/cffi,
+            pkg:pypi/mcp,
+            pkg:pypi/protobuf,
+            pkg:pypi/typing-extensions
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
