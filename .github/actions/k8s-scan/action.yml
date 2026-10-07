@@ -1,0 +1,188 @@
+name: "Helm/Kustomize Trivy Scan"
+description: |
+  PR scan gate for deployment packages. Runs trivy over Helm charts and
+  Kustomize overlays for Kubernetes misconfigurations (NSA/CISA hardening
+  checks), secrets in chart sources, and CVEs in every container image the
+  rendered manifests reference. Registry-agnostic: log in to a private
+  registry (ECR/GHCR/GCR) in a step before this one and trivy reuses the
+  Docker credentials.
+
+  Helm charts are scanned in place by trivy (it renders them itself, so
+  findings annotate the template line). Kustomize overlays are rendered with
+  `kustomize build` and scanned as plain manifests (job-level annotations).
+  Image references are collected from `helm template` / `kustomize build`
+  output and each unique image is scanned with `trivy image`.
+
+  Installs a pinned, checksum-verified trivy binary and caches the
+  vulnerability database. Gate semantics follow docs/gate-policy.md
+  (trivy severities map 1:1; `none` reports only); a secret always blocks
+  unless the gate is `none`. Accepted risks go in a `.trivyignore` file.
+
+  Required permissions on calling job: contents: read (plus security-events:
+  write when sarif-upload is true).
+inputs:
+  version:
+    description: "trivy version to install (no leading 'v')."
+    default: "0.75.0"
+  charts-dir:
+    description: "Directory of Helm charts (each a dir with Chart.yaml), or a single chart directory. Empty to skip."
+    default: "charts"
+  kustomize-dir:
+    description: "Directory of Kustomize overlays (each a dir with kustomization.yaml), or a single overlay. Empty to skip."
+    default: ""
+  fail-on-severity:
+    description: "Lowest severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md)."
+    default: "high"
+  scan-images:
+    description: "Scan every container image referenced by the rendered manifests for vulnerabilities."
+    default: "true"
+  ignore-unfixed:
+    description: "Ignore image vulnerabilities that have no fixed version yet."
+    default: "false"
+  trivyignore-path:
+    description: "Path to a .trivyignore file in the repository (applied only if it exists)."
+    default: ".trivyignore"
+  sarif-upload:
+    description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
+    default: "true"
+outputs:
+  max-severity:
+    description: "Highest severity found: critical, high, medium, low, or none."
+    value: ${{ steps.gate.outputs.max-severity }}
+  critical-count:
+    description: "Number of CRITICAL findings (misconfigurations and image vulnerabilities)."
+    value: ${{ steps.gate.outputs.critical-count }}
+  high-count:
+    description: "Number of HIGH findings."
+    value: ${{ steps.gate.outputs.high-count }}
+  secret-count:
+    description: "Number of secrets found in chart or overlay sources."
+    value: ${{ steps.gate.outputs.secret-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install trivy
+      shell: bash
+      env:
+        TRIVY_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+        # Keep the published asset name so the checksum line matches the file.
+        curl -sSfL -o "${TMP}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" "${BASE}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/trivy_${TRIVY_VERSION}_checksums.txt"
+        # Verify the downloaded archive against the published checksum before use.
+        ( cd "${TMP}" && grep " trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${TMP}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -C "${TMP}" trivy
+        install "${TMP}/trivy" "${RUNNER_TEMP}/trivy"
+        "${RUNNER_TEMP}/trivy" --version | head -1
+
+    - name: Cache vulnerability database
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ~/.cache/trivy/db
+        # The DB is republished several times a day; a daily key keeps scans
+        # fresh while avoiding a ~70 MB download on every run.
+        key: trivy-db-${{ runner.os }}-${{ inputs.version }}-${{ github.run_started_at }}
+        restore-keys: |
+          trivy-db-${{ runner.os }}-${{ inputs.version }}-
+
+    - name: Scan charts, overlays and referenced images
+      id: scan
+      shell: bash
+      env:
+        CHARTS_DIR: ${{ inputs.charts-dir }}
+        KUSTOMIZE_DIR: ${{ inputs.kustomize-dir }}
+        SCAN_IMAGES: ${{ inputs.scan-images }}
+        IGNORE_UNFIXED: ${{ inputs.ignore-unfixed }}
+        TRIVYIGNORE: ${{ inputs.trivyignore-path }}
+        TRIVY_NO_PROGRESS: "true"
+        TRIVY_DISABLE_VEX_NOTICE: "true"
+      run: |
+        set -euo pipefail
+        TRIVY="${RUNNER_TEMP}/trivy"
+        OUT="${RUNNER_TEMP}/k8s-scan"; RESULTS="${OUT}/results"; RENDER="${OUT}/rendered"
+        mkdir -p "${RESULTS}" "${RENDER}"
+        common=(--format json --quiet)
+        [ -f "${TRIVYIGNORE}" ] && common+=(--ignorefile "${TRIVYIGNORE}")
+        images="${OUT}/images.txt"; : > "${images}"
+        collect_images() { grep -hoE '^[[:space:]]*(- )?image:[[:space:]]*["'"'"']?[^"'"'"' ]+' "$1" | sed -E 's/^.*image:[[:space:]]*["'"'"']?//' >> "${images}" || true; }
+
+        if [ -n "${CHARTS_DIR}" ]; then
+          if [ -f "${CHARTS_DIR}/Chart.yaml" ]; then charts=("${CHARTS_DIR}")
+          else mapfile -t charts < <(find "${CHARTS_DIR}" -mindepth 2 -maxdepth 2 -name Chart.yaml -printf '%h\n' | sort); fi
+          [ "${#charts[@]}" -gt 0 ] || echo "::warning title=trivy::no Chart.yaml found under ${CHARTS_DIR}"
+          for dir in "${charts[@]}"; do
+            echo "::group::helm chart ${dir}"
+            if [ -f "${dir}/Chart.lock" ] || grep -q '^dependencies:' "${dir}/Chart.yaml"; then helm dependency build "${dir}"; fi
+            helm template release "${dir}" > "${RENDER}/$(basename "${dir}").helm.yaml"
+            collect_images "${RENDER}/$(basename "${dir}").helm.yaml"
+            echo "::endgroup::"
+          done
+          # trivy renders charts itself; targets are relative to the scanned
+          # directory, so prefix them back to repo-relative paths for inline
+          # annotations.
+          "${TRIVY}" fs --scanners misconfig,secret "${common[@]}" -o "${OUT}/charts.raw.json" "${CHARTS_DIR}"
+          jq --arg p "${CHARTS_DIR%/}/" '.Results[]?.Target |= $p + .' "${OUT}/charts.raw.json" > "${RESULTS}/charts.json"
+        fi
+
+        if [ -n "${KUSTOMIZE_DIR}" ]; then
+          if [ -f "${KUSTOMIZE_DIR}/kustomization.yaml" ]; then overlays=("${KUSTOMIZE_DIR}")
+          else mapfile -t overlays < <(find "${KUSTOMIZE_DIR}" -mindepth 2 -maxdepth 2 -name 'kustomization.y*ml' -printf '%h\n' | sort); fi
+          [ "${#overlays[@]}" -gt 0 ] || echo "::warning title=trivy::no kustomization.yaml found under ${KUSTOMIZE_DIR}"
+          for dir in "${overlays[@]}"; do
+            name="$(basename "${dir}")"
+            echo "::group::kustomize overlay ${dir}"
+            mkdir -p "${RENDER}/kustomize-${name}"
+            kustomize build "${dir}" > "${RENDER}/kustomize-${name}/manifests.yaml"
+            collect_images "${RENDER}/kustomize-${name}/manifests.yaml"
+            "${TRIVY}" config "${common[@]}" -o "${OUT}/kustomize-${name}.raw.json" "${RENDER}/kustomize-${name}"
+            jq --arg t "kustomize overlay ${dir} (rendered)" '.Results[]?.Target = $t' "${OUT}/kustomize-${name}.raw.json" > "${RESULTS}/kustomize-${name}.json"
+            echo "::endgroup::"
+          done
+        fi
+
+        if [ "${SCAN_IMAGES}" = "true" ]; then
+          sort -u "${images}" -o "${images}"
+          echo "images referenced: $(wc -l < "${images}")"
+          n=0
+          while read -r ref; do
+            [ -n "${ref}" ] || continue
+            n=$((n+1))
+            echo "::group::image ${ref}"
+            args=(image --scanners vuln "${common[@]}" -o "${RESULTS}/image-${n}.json")
+            [ "${IGNORE_UNFIXED}" = "true" ] && args+=(--ignore-unfixed)
+            "${TRIVY}" "${args[@]}" "${ref}" || echo "::warning title=trivy::could not scan image ${ref} (not found or no registry access)"
+            echo "::endgroup::"
+          done < "${images}"
+        fi
+        echo "results-dir=${RESULTS}" >> "${GITHUB_OUTPUT}"
+
+    - name: Convert results to SARIF
+      if: ${{ inputs.sarif-upload != 'false' }}
+      shell: bash
+      env:
+        RESULTS: ${{ steps.scan.outputs.results-dir }}
+      run: |
+        set -euo pipefail
+        mkdir -p "${RUNNER_TEMP}/k8s-scan/sarif"
+        shopt -s nullglob
+        for f in "${RESULTS}"/*.json; do
+          "${RUNNER_TEMP}/trivy" convert --format sarif -o "${RUNNER_TEMP}/k8s-scan/sarif/$(basename "${f}" .json).sarif" "${f}"
+        done
+
+    - name: Upload SARIF to GitHub Security tab
+      if: ${{ inputs.sarif-upload != 'false' }}
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ runner.temp }}/k8s-scan/sarif
+        category: trivy-k8s
+
+    - name: Annotate and enforce gate
+      id: gate
+      shell: bash
+      env:
+        RESULTS_DIR: ${{ steps.scan.outputs.results-dir }}
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+      run: bash "${{ github.action_path }}/gate.sh"
