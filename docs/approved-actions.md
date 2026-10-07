@@ -27,6 +27,9 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `terramate-io/terramate-action` | Terramate | `c5a13758` (v3.0.0) | `terramate-opentofu-setup` | Install Terramate CLI | 2026-05-21 |
 | `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress monitor — audits outbound network calls; baseline for enforce mode | 2026-06-01 |
 | `aws-actions/configure-aws-credentials` | AWS (Amazon) | `99214aa6` (v6.1.3) | `aws-oidc-auth` | Assume IAM role via GitHub OIDC; exchanges OIDC token for short-lived AWS credentials | 2026-06-09 |
+| `actions/setup-python` | GitHub (org-owned) | `5fda3b95` (v7.0.0) | `pytest` | Python toolchain for the test gate | 2026-10-07 |
+| `actions/cache` | GitHub (org-owned) | `55cc8345` (v6.1.0) | `tflint`, `pytest` | Cache plugin and package downloads keyed on lockfile hash | 2026-10-07 |
+| `codecov/codecov-action` | Codecov (Sentry) | `303a32d7` (v7.1.1) | `pytest` (opt-in via `codecov-upload`) | Upload coverage.xml to Codecov using OIDC (no stored token). Off by default; sends coverage data and repo metadata to codecov.io when enabled | 2026-10-07 |
 | `ghcr.io/oxsecurity/megalinter[-<flavor>]` (Docker image, not an action) | OX Security | tag `v9.6.0` (`MEGALINTER_VERSION` in `lint-app.yml`) | `lint-app.yml` | All-language lint/format gate; auto-detects languages, emits SARIF. Run with `docker run` so the `flavor` input selects the image and only one image is pulled; not in the dependency graph, so no licence exemption needed (AGPL-3.0, run in CI only, never redistributed) | 2026-06-10 |
 
 ## Data handling and third-party telemetry

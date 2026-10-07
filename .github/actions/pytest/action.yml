@@ -1,0 +1,186 @@
+name: "Pytest Coverage Gate"
+description: |
+  Runs a Python project's test suite with pytest under coverage.py and
+  gates on test failures and a minimum line-coverage percentage. Failed
+  tests become inline annotations; counts and coverage land in the step
+  summary and as outputs; JUnit and coverage XML are kept as an artifact.
+
+  Dependency install is detected from the project: uv.lock (uv, installed
+  from a checksum-verified release tarball), poetry.lock (poetry), or
+  requirements*.txt (pip into a fresh venv). Set install-command to
+  override. pytest and coverage are added to the environment when the
+  project does not declare them.
+
+  Required permissions on calling job: contents: read (plus id-token: write
+  when codecov-upload is true, for tokenless OIDC upload).
+inputs:
+  working-directory:
+    description: "Project directory (the one holding pyproject.toml / the lockfile)."
+    default: "."
+  python-version:
+    description: "Python version. Empty reads .python-version, then the requires-python lower bound in pyproject.toml, then 3.12."
+    default: ""
+  coverage-threshold:
+    description: "Minimum line coverage percentage; the job fails below it. 0 disables the coverage gate."
+    default: "80"
+  coverage-source:
+    description: "Comma-separated packages or paths to measure (coverage run --source). Empty uses the project's coverage config."
+    default: ""
+  extra-args:
+    description: "Extra arguments passed to pytest."
+    default: ""
+  install-command:
+    description: "Override dependency install. Runs in a fresh venv (already on PATH) inside working-directory."
+    default: ""
+  uv-version:
+    description: "uv release used when uv.lock is present."
+    default: "0.12.23"
+  uv-sha256:
+    description: "sha256 of uv-x86_64-unknown-linux-gnu.tar.gz for uv-version (from the release's .sha256 asset)."
+    default: "9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6"
+  poetry-version:
+    description: "poetry release used when poetry.lock is present."
+    default: "2.5.1"
+  artifact-name:
+    description: "Name of the uploaded artifact holding junit.xml and coverage.xml."
+    default: "pytest-results"
+  codecov-upload:
+    description: "Upload coverage.xml to Codecov via OIDC (needs id-token: write)."
+    default: "false"
+outputs:
+  tests-total:
+    description: "Number of test cases."
+    value: ${{ steps.report.outputs.tests-total }}
+  tests-failed:
+    description: "Number of failed or errored test cases."
+    value: ${{ steps.report.outputs.tests-failed }}
+  coverage-percent:
+    description: "Line coverage percentage, one decimal."
+    value: ${{ steps.report.outputs.coverage-percent }}
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve Python version
+      id: python
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        REQUESTED: ${{ inputs.python-version }}
+      run: |
+        set -euo pipefail
+        v="${REQUESTED}"
+        if [ -z "${v}" ] && [ -f .python-version ]; then v="$(head -n1 .python-version | tr -d '[:space:]')"; fi
+        if [ -z "${v}" ] && [ -f pyproject.toml ]; then
+          v="$(sed -n 's/^requires-python *= *"[>=~^ ]*\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' pyproject.toml | head -n1)"
+        fi
+        v="${v:-3.12}"
+        echo "version=${v}" >> "${GITHUB_OUTPUT}"
+        echo "python ${v}"
+
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      with:
+        python-version: ${{ steps.python.outputs.version }}
+
+    - name: Cache package downloads
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: |
+          ~/.cache/pip
+          ~/.cache/uv
+          ~/.cache/pypoetry
+        key: pytest-${{ runner.os }}-py${{ steps.python.outputs.version }}-${{ hashFiles(format('{0}/uv.lock', inputs.working-directory), format('{0}/poetry.lock', inputs.working-directory), format('{0}/requirements*.txt', inputs.working-directory), format('{0}/pyproject.toml', inputs.working-directory)) }}
+        restore-keys: |
+          pytest-${{ runner.os }}-py${{ steps.python.outputs.version }}-
+
+    - name: Install dependencies
+      id: install
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INSTALL_COMMAND: ${{ inputs.install-command }}
+        UV_VERSION: ${{ inputs.uv-version }}
+        UV_SHA256: ${{ inputs.uv-sha256 }}
+        POETRY_VERSION: ${{ inputs.poetry-version }}
+      run: |
+        set -euo pipefail
+        VENV="${RUNNER_TEMP}/pytest-venv"
+        if [ -n "${INSTALL_COMMAND}" ]; then
+          echo "install: custom command"
+          python -m venv "${VENV}"; export PATH="${VENV}/bin:${PATH}"
+          bash -euo pipefail -c "${INSTALL_COMMAND}"
+          PY="${VENV}/bin/python"
+        elif [ -f uv.lock ]; then
+          echo "install: uv ${UV_VERSION} (uv.lock)"
+          tgz="${RUNNER_TEMP}/uv.tar.gz"
+          curl -sSfL -o "${tgz}" "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${UV_SHA256}  ${tgz}" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/uv"; tar -xzf "${tgz}" -C "${RUNNER_TEMP}/uv" --strip-components=1
+          "${RUNNER_TEMP}/uv/uv" sync --frozen --python "$(command -v python)"
+          PY="$(pwd)/.venv/bin/python"
+          "${PY}" -c 'import pytest, coverage' 2>/dev/null || "${RUNNER_TEMP}/uv/uv" pip install --python "${PY}" pytest coverage
+        elif [ -f poetry.lock ]; then
+          echo "install: poetry ${POETRY_VERSION} (poetry.lock)"
+          python -m pip install --quiet "poetry==${POETRY_VERSION}"
+          poetry env use "$(command -v python)" >/dev/null
+          poetry install --no-interaction
+          PY="$(poetry env info --executable)"
+          "${PY}" -c 'import pytest, coverage' 2>/dev/null || "${PY}" -m pip install --quiet pytest coverage
+        elif compgen -G 'requirements*.txt' > /dev/null; then
+          echo "install: pip (requirements*.txt)"
+          python -m venv "${VENV}"; PY="${VENV}/bin/python"
+          for f in requirements*.txt; do "${PY}" -m pip install --quiet -r "${f}"; done
+          if [ -f pyproject.toml ] || [ -f setup.py ]; then "${PY}" -m pip install --quiet -e .; fi
+          "${PY}" -c 'import pytest, coverage' 2>/dev/null || "${PY}" -m pip install --quiet pytest coverage
+        else
+          echo "::error title=pytest::no uv.lock, poetry.lock or requirements*.txt in $(pwd); set the install-command input"
+          exit 1
+        fi
+        echo "python=${PY}" >> "${GITHUB_OUTPUT}"
+        "${PY}" -m pytest --version
+
+    - name: Run pytest under coverage
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PY: ${{ steps.install.outputs.python }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
+        COVERAGE_SOURCE: ${{ inputs.coverage-source }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/pytest"; mkdir -p "${OUT}"
+        read -ra extra <<< "${EXTRA_ARGS}"
+        src=(); [ -n "${COVERAGE_SOURCE}" ] && src=(--source "${COVERAGE_SOURCE}")
+        # junit_family=xunit1 keeps file/line attributes for annotations.
+        # The exit code is not fatal here: report.py decides from the XML so
+        # the artifact and summary are always produced.
+        rc=0
+        "${PY}" -m coverage run "${src[@]}" -m pytest -o junit_family=xunit1 --junitxml="${OUT}/junit.xml" "${extra[@]}" || rc=$?
+        echo "pytest exit code ${rc}"
+        "${PY}" -m coverage xml -o "${OUT}/coverage.xml" || echo "::warning title=coverage::no coverage data collected"
+        "${PY}" -m coverage report || true
+
+    - name: Upload JUnit and coverage XML
+      if: ${{ always() }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/pytest/*.xml
+        retention-days: 14
+        if-no-files-found: warn
+
+    - name: Upload coverage to Codecov
+      if: ${{ inputs.codecov-upload == 'true' }}
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
+      with:
+        files: ${{ runner.temp }}/pytest/coverage.xml
+        use_oidc: true
+        fail_ci_if_error: true
+
+    - name: Annotate and enforce gate
+      id: report
+      shell: bash
+      env:
+        JUNIT_XML: ${{ runner.temp }}/pytest/junit.xml
+        COVERAGE_XML: ${{ runner.temp }}/pytest/coverage.xml
+        COVERAGE_THRESHOLD: ${{ inputs.coverage-threshold }}
+      run: python3 -I "${{ github.action_path }}/report.py"

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="3" time="0.047" timestamp="2026-10-07T10:13:11.878205-07:00" hostname="mehul-laptop"><testcase classname="tests.test_calc" name="test_add" file="tests/test_calc.py" line="5" time="0.001"><failure message="assert 5 == 6&#10; +  where 5 = add(2, 3)">def test_add():
+&gt;       assert add(2, 3) == 6
+E       assert 5 == 6
+E        +  where 5 = add(2, 3)
+
+tests/test_calc.py:7: AssertionError</failure></testcase><testcase classname="tests.test_calc" name="test_divide" file="tests/test_calc.py" line="9" time="0.000" /><testcase classname="tests.test_calc" name="test_error" file="tests/test_calc.py" line="13" time="0.000"><failure message="RuntimeError: setup exploded">def test_error():
+&gt;       raise RuntimeError("setup exploded")
+E       RuntimeError: setup exploded
+
+tests/test_calc.py:15: RuntimeError</failure></testcase></testsuite></testsuites>

@@ -41,6 +41,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Pytest Coverage Gate | [`pytest`](.github/actions/pytest/action.yml) | Runs pytest under coverage.py; fails on test failures or line coverage below the threshold. Inline annotations for failed tests, counts and coverage in the step summary, JUnit + coverage XML kept as an artifact. Detects uv.lock (checksum-verified uv), poetry.lock (poetry) or requirements*.txt (pip) | `working-directory` (default: `.`), `python-version` (default: `""` — `.python-version`, then `requires-python`, then `3.12`), `coverage-threshold` (default: `80`; `0` disables), `coverage-source` (default: `""`), `extra-args` (default: `""`), `install-command` (default: `""`), `codecov-upload` (default: `false`), `artifact-name` (default: `pytest-results`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +374,33 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Test (Python)
+
+The PR-stage test gate for Python repositories: `pytest` under `coverage.py`, blocking on any failed test and on line coverage below `coverage-threshold`. Shares the per-runtime test contract (`working-directory`, `runtime-version`, `coverage-threshold`, `extra-args`) with the Node and Go test workflows, so a caller swaps runtimes by changing only the workflow path.
+
+```yaml
+# .github/workflows/test.yml
+name: Test
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  python:
+    uses: sparkgeo/github-actions/.github/workflows/test-python.yml@<SHA>
+    with:
+      actions-ref: <SHA>          # pin to the SAME SHA so the composite is immutable too
+      coverage-threshold: 80      # default
+      # working-directory: services/api
+      # runtime-version: '3.12'   # default: .python-version, then requires-python, then 3.12
+      # extra-args: '-m "not slow" --maxfail=5'
+```
+
+**Install detection.** `uv.lock` → `uv sync --frozen` (uv from a checksum-verified release tarball); `poetry.lock` → `poetry install`; otherwise every `requirements*.txt` into a fresh venv plus `pip install -e .` when a `pyproject.toml`/`setup.py` exists. `pytest` and `coverage` are added when the project does not declare them. Anything else: set `install-command` (runs inside a fresh venv already on `PATH`). Downloads are cached on the lockfile hash.
+
+**Outputs.** Failed tests appear as inline PR annotations (`junit_family=xunit1` keeps file and line). The step summary shows total/failed/skipped and the coverage percentage; `junit.xml` and `coverage.xml` are uploaded as the `pytest-results` artifact for 14 days. Coverage measurement follows the project's `[tool.coverage.run]` config; set `coverage-source` to override.
+
+**Codecov (optional).** `codecov-upload: true` uploads `coverage.xml` tokenless via OIDC; the caller job must grant `id-token: write`.
 
 ## Consuming repo CI setup
 
