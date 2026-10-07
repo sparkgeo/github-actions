@@ -1,0 +1,413 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "alpine:3.18.0",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "OS": {
+      "Family": "alpine",
+      "Name": "3.18.0",
+      "EOSL": true
+    }
+  },
+  "Results": [
+    {
+      "Target": "alpine:3.18.0 (alpine 3.18.0)",
+      "Class": "os-pkgs",
+      "Type": "alpine",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2022-48174",
+          "PkgName": "busybox",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r1",
+          "Severity": "CRITICAL",
+          "Title": "busybox: stack overflow vulnerability in ash.c leads to arbitrary code execution"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42363",
+          "PkgName": "busybox",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r7",
+          "Severity": "MEDIUM",
+          "Title": "busybox: use-after-free in awk"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42364",
+          "PkgName": "busybox",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r7",
+          "Severity": "MEDIUM",
+          "Title": "busybox: use-after-free"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42365",
+          "PkgName": "busybox",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r7",
+          "Severity": "MEDIUM",
+          "Title": "busybox: use-after-free"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42366",
+          "PkgName": "busybox",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r6",
+          "Severity": "MEDIUM",
+          "Title": "busybox: A heap-buffer-overflow"
+        },
+        {
+          "VulnerabilityID": "CVE-2022-48174",
+          "PkgName": "busybox-binsh",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r1",
+          "Severity": "CRITICAL",
+          "Title": "busybox: stack overflow vulnerability in ash.c leads to arbitrary code execution"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42363",
+          "PkgName": "busybox-binsh",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r7",
+          "Severity": "MEDIUM",
+          "Title": "busybox: use-after-free in awk"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42364",
+          "PkgName": "busybox-binsh",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r7",
+          "Severity": "MEDIUM",
+          "Title": "busybox: use-after-free"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42365",
+          "PkgName": "busybox-binsh",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r7",
+          "Severity": "MEDIUM",
+          "Title": "busybox: use-after-free"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42366",
+          "PkgName": "busybox-binsh",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r6",
+          "Severity": "MEDIUM",
+          "Title": "busybox: A heap-buffer-overflow"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-5363",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r0",
+          "Severity": "HIGH",
+          "Title": "openssl: Incorrect cipher key and IV length processing"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-6119",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.7-r0",
+          "Severity": "HIGH",
+          "Title": "openssl: Possible denial of service in X.509 name checks"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-2650",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.1-r0",
+          "Severity": "MEDIUM",
+          "Title": "openssl: Possible DoS translating ASN.1 object identifiers"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-2975",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.1-r2",
+          "Severity": "MEDIUM",
+          "Title": "openssl: AES-SIV cipher implementation contains a bug that causes it to ignore empty associated data entries"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-3446",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.1-r3",
+          "Severity": "MEDIUM",
+          "Title": "openssl: Excessive time spent checking DH keys and parameters"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-3817",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.2-r0",
+          "Severity": "MEDIUM",
+          "Title": "OpenSSL: Excessive time spent checking DH q parameter value"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-5678",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r1",
+          "Severity": "MEDIUM",
+          "Title": "openssl: Generating excessively long X9.42 DH keys or checking excessively long X9.42 DH keys or parameters may be very slow"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-6129",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r3",
+          "Severity": "MEDIUM",
+          "Title": "openssl: POLY1305 MAC implementation corrupts vector registers on PowerPC"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-0727",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r5",
+          "Severity": "MEDIUM",
+          "Title": "openssl: denial of service via null dereference"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-6237",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r4",
+          "Severity": "LOW",
+          "Title": "openssl: Excessive time spent checking invalid RSA public keys"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-13176",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.8-r0",
+          "Severity": "LOW",
+          "Title": "openssl: Timing side-channel in ECDSA signature computation"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-2511",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r6",
+          "Severity": "LOW",
+          "Title": "openssl: Unbounded memory growth with session handling in TLSv1.3"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-4603",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.5-r0",
+          "Severity": "LOW",
+          "Title": "openssl: Excessive time spent checking DSA keys and parameters"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-4741",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.6-r0",
+          "Severity": "LOW",
+          "Title": "openssl: Use After Free with SSL_free_buffers"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-5535",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.6-r0",
+          "Severity": "LOW",
+          "Title": "openssl: SSL_select_next_proto buffer overread"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-9143",
+          "PkgName": "libcrypto3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.7-r1",
+          "Severity": "LOW",
+          "Title": "openssl: Low-level invalid GF(2^m) parameters lead to OOB memory access"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-5363",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r0",
+          "Severity": "HIGH",
+          "Title": "openssl: Incorrect cipher key and IV length processing"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-6119",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.7-r0",
+          "Severity": "HIGH",
+          "Title": "openssl: Possible denial of service in X.509 name checks"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-2650",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.1-r0",
+          "Severity": "MEDIUM",
+          "Title": "openssl: Possible DoS translating ASN.1 object identifiers"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-2975",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.1-r2",
+          "Severity": "MEDIUM",
+          "Title": "openssl: AES-SIV cipher implementation contains a bug that causes it to ignore empty associated data entries"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-3446",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.1-r3",
+          "Severity": "MEDIUM",
+          "Title": "openssl: Excessive time spent checking DH keys and parameters"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-3817",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.2-r0",
+          "Severity": "MEDIUM",
+          "Title": "OpenSSL: Excessive time spent checking DH q parameter value"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-5678",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r1",
+          "Severity": "MEDIUM",
+          "Title": "openssl: Generating excessively long X9.42 DH keys or checking excessively long X9.42 DH keys or parameters may be very slow"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-6129",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r3",
+          "Severity": "MEDIUM",
+          "Title": "openssl: POLY1305 MAC implementation corrupts vector registers on PowerPC"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-0727",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r5",
+          "Severity": "MEDIUM",
+          "Title": "openssl: denial of service via null dereference"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-6237",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r4",
+          "Severity": "LOW",
+          "Title": "openssl: Excessive time spent checking invalid RSA public keys"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-13176",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.8-r0",
+          "Severity": "LOW",
+          "Title": "openssl: Timing side-channel in ECDSA signature computation"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-2511",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.4-r6",
+          "Severity": "LOW",
+          "Title": "openssl: Unbounded memory growth with session handling in TLSv1.3"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-4603",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.5-r0",
+          "Severity": "LOW",
+          "Title": "openssl: Excessive time spent checking DSA keys and parameters"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-4741",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.6-r0",
+          "Severity": "LOW",
+          "Title": "openssl: Use After Free with SSL_free_buffers"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-5535",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.6-r0",
+          "Severity": "LOW",
+          "Title": "openssl: SSL_select_next_proto buffer overread"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-9143",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.1.0-r4",
+          "FixedVersion": "3.1.7-r1",
+          "Severity": "LOW",
+          "Title": "openssl: Low-level invalid GF(2^m) parameters lead to OOB memory access"
+        },
+        {
+          "VulnerabilityID": "CVE-2025-26519",
+          "PkgName": "musl",
+          "InstalledVersion": "1.2.4-r0",
+          "FixedVersion": "1.2.4-r3",
+          "Severity": "HIGH",
+          "Title": "musl libc 0.9.13 through 1.2.5 before 1.2.6 has an out-of-bounds write ..."
+        },
+        {
+          "VulnerabilityID": "CVE-2025-26519",
+          "PkgName": "musl-utils",
+          "InstalledVersion": "1.2.4-r0",
+          "FixedVersion": "1.2.4-r3",
+          "Severity": "HIGH",
+          "Title": "musl libc 0.9.13 through 1.2.5 before 1.2.6 has an out-of-bounds write ..."
+        },
+        {
+          "VulnerabilityID": "CVE-2022-48174",
+          "PkgName": "ssl_client",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r1",
+          "Severity": "CRITICAL",
+          "Title": "busybox: stack overflow vulnerability in ash.c leads to arbitrary code execution"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42363",
+          "PkgName": "ssl_client",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r7",
+          "Severity": "MEDIUM",
+          "Title": "busybox: use-after-free in awk"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42364",
+          "PkgName": "ssl_client",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r7",
+          "Severity": "MEDIUM",
+          "Title": "busybox: use-after-free"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42365",
+          "PkgName": "ssl_client",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r7",
+          "Severity": "MEDIUM",
+          "Title": "busybox: use-after-free"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-42366",
+          "PkgName": "ssl_client",
+          "InstalledVersion": "1.36.0-r9",
+          "FixedVersion": "1.36.1-r6",
+          "Severity": "MEDIUM",
+          "Title": "busybox: A heap-buffer-overflow"
+        }
+      ]
+    }
+  ]
+}

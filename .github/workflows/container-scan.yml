@@ -1,0 +1,91 @@
+name: Container Scan
+
+# Reusable PR/CI gate for built container images. Runs trivy for OS and
+# language-package vulnerabilities and embedded secrets. The image is passed
+# either as a registry reference (image-ref) or as a workflow artifact holding
+# a `docker save` tarball (image-artifact). Findings are annotated, summarised
+# and uploaded as SARIF; the job blocks per fail-on-severity.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      image-ref:
+        description: 'Image reference to scan (registry or local daemon); ignored when image-artifact is set'
+        default: ''
+        type: string
+      image-artifact:
+        description: 'Name of a workflow artifact holding a docker-save tarball to scan'
+        default: ''
+        type: string
+      image-tar:
+        description: 'Tarball filename inside image-artifact'
+        default: 'image.tar'
+        type: string
+      scanners:
+        description: 'Comma-separated trivy scanners: vuln,secret,misconfig,license'
+        default: 'vuln,secret'
+        type: string
+      fail-on-severity:
+        description: 'Lowest severity that fails the build: critical, high, medium, low, or none'
+        default: 'critical'
+        type: string
+      ignore-unfixed:
+        description: 'Ignore vulnerabilities with no fixed version yet'
+        default: false
+        type: boolean
+      trivyignore-path:
+        description: 'Path to a .trivyignore file (applied only if it exists)'
+        default: '.trivyignore'
+        type: string
+      sarif-upload:
+        description: 'Upload SARIF results to the GitHub Security tab'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the trivy
+          composite from. Pin this to the SAME SHA you pinned
+          container-scan.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always), `actions: read`
+# when image-artifact is used, and `security-events: write` only when it
+# wants SARIF upload. See README.
+
+jobs:
+  trivy:
+    name: Trivy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout trivy composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/trivy
+        with:
+          image-ref: ${{ inputs.image-ref }}
+          image-artifact: ${{ inputs.image-artifact }}
+          image-tar: ${{ inputs.image-tar }}
+          scanners: ${{ inputs.scanners }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          ignore-unfixed: ${{ inputs.ignore-unfixed }}
+          trivyignore-path: ${{ inputs.trivyignore-path }}
+          sarif-upload: ${{ inputs.sarif-upload }}
