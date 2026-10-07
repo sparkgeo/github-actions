@@ -1,0 +1,112 @@
+name: Security exception request
+description: Request a time-boxed exception (90 days maximum) for a security finding that cannot be fixed inside its SLA.
+title: "[exception] <finding reference>"
+labels: ["exception", "security-finding"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Exceptions are written, time-boxed (90 days maximum), require a compensating control, and are signed off by the SecOps lead. They are re-reviewed at expiry. No finding receives a second exception without escalation to the accountable executive. **Secret / credential findings are not eligible: revoke and rotate within 24 hours.**
+
+        SLA rows and the workflow mapping: `CONTRIBUTING.md`, section "Findings and SLAs".
+  - type: input
+    id: finding
+    attributes:
+      label: Finding reference
+      description: Tracking issue, advisory ID (CVE / GHSA), rule ID, or the CI run URL that reported it.
+      placeholder: "CVE-2026-12345 in org/repo#123"
+    validations:
+      required: true
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: Reporting workflow
+      options:
+        - dep-scan-app.yml (osv-scanner)
+        - dependency-review (dependency-review-action)
+        - container-scan.yml (trivy image)
+        - container-lint.yml (hadolint)
+        - iac-scan.yml (checkov)
+        - k8s-scan.yml (trivy)
+        - k8s-policy.yml (conftest)
+        - sast-precommit.yml (semgrep)
+        - sast-scan.yml (CodeQL)
+        - other (name it in the justification)
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity (SLA row)
+      options:
+        - Critical
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Production
+        - Non-production (staging / dev)
+    validations:
+      required: true
+  - type: input
+    id: sla-deadline
+    attributes:
+      label: SLA deadline
+      description: Date the remediation window expires, counted from triage (YYYY-MM-DD).
+      placeholder: "2026-11-15"
+    validations:
+      required: true
+  - type: input
+    id: expiry
+    attributes:
+      label: Requested exception expiry
+      description: At most 90 days from approval (YYYY-MM-DD). The finding is re-reviewed on this date.
+      placeholder: "2027-01-15"
+    validations:
+      required: true
+  - type: textarea
+    id: justification
+    attributes:
+      label: Justification
+      description: Why the finding cannot be fixed inside its window (upstream fix pending, breaking change, false positive under review, ...).
+    validations:
+      required: true
+  - type: textarea
+    id: compensating-control
+    attributes:
+      label: Compensating control
+      description: What reduces the risk while the exception is open, and where it is enforced (network policy, WAF rule, feature flag, monitoring, ...).
+    validations:
+      required: true
+  - type: textarea
+    id: remediation-plan
+    attributes:
+      label: Remediation plan
+      description: How and when the finding will be fixed for good, and who owns it.
+    validations:
+      required: true
+  - type: input
+    id: secops-lead
+    attributes:
+      label: SecOps lead sign-off
+      description: GitHub handle of the SecOps lead. The lead records approval as a comment on this issue; the exception is not active until that comment exists.
+      placeholder: "@handle"
+    validations:
+      required: true
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Acknowledgements
+      options:
+        - label: This is the first exception requested for this finding (a second one needs escalation to the accountable executive).
+          required: true
+        - label: The compensating control is in place before approval, not after.
+          required: true
+        - label: The requested expiry is at most 90 days from approval and the finding will be re-reviewed on that date.
+          required: true
