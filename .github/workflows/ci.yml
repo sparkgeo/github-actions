@@ -76,6 +76,46 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # CodeQL on this repo's own workflow files (language: actions), then the
+  # gate composite on the resulting SARIF; the gate script is unit-tested
+  # against CodeQL-shaped fixtures first.
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write  # Code Scanning upload
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Gate script fixtures
+        shell: bash
+        run: bash tests/sast-scan/run.sh
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@88585263c0627ee42c0e1c5143a112c8d6f4aa18  # v4.38.2
+        with:
+          languages: actions
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@88585263c0627ee42c0e1c5143a112c8d6f4aa18  # v4.38.2
+        with:
+          category: /language:actions
+          output: ${{ runner.temp }}/codeql-sarif
+
+      - uses: ./.github/actions/codeql-gate
+        with:
+          sarif-dir: ${{ runner.temp }}/codeql-sarif
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

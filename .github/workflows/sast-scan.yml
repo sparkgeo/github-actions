@@ -1,0 +1,171 @@
+name: SAST Scan
+
+# Reusable deep-SAST gate: CodeQL data-flow and taint analysis on every PR.
+# One analysis job per language (CodeQL's recommended layout), languages
+# auto-detected from the repository when not given, `build-mode: none` so no
+# build step is required. Alerts land in Code Scanning; the gate job turns
+# the SARIF into a pass/fail check per fail-on-severity. The fast pattern
+# tier is sast-precommit.yml (semgrep, #18).
+#
+# Private repositories need GitHub Code Security for Code Scanning uploads;
+# set sarif-upload: false there and the gate still runs on the local SARIF.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      languages:
+        description: >-
+          Comma-separated CodeQL languages (actions, cpp, csharp, go,
+          java-kotlin, javascript-typescript, python, ruby, swift, rust).
+          Empty auto-detects from the repository language list plus
+          `actions` when workflow files exist.
+        default: ''
+        type: string
+      queries:
+        description: 'CodeQL query suite: security-extended | security-and-quality | default'
+        default: 'security-extended'
+        type: string
+      build-mode:
+        description: 'CodeQL build mode for compiled languages: none | autobuild | manual'
+        default: 'none'
+        type: string
+      config-file:
+        description: 'Optional CodeQL config file path (paths, paths-ignore, query filters)'
+        default: ''
+        type: string
+      fail-on-severity:
+        description: 'Lowest severity that fails the build: critical, high, medium, low, or none'
+        default: 'high'
+        type: string
+      sarif-upload:
+        description: 'Upload results to Code Scanning (needs security-events: write; Code Security on private repos)'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the codeql-gate
+          composite from. Pin this to the SAME SHA you pinned sast-scan.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`, `actions: read`, and
+# `security-events: write` (upload). See README.
+
+jobs:
+  detect:
+    name: Detect languages
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve language matrix
+        id: detect
+        env:
+          LANGUAGES: ${{ inputs.languages }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -n "${LANGUAGES}" ]; then
+            list="${LANGUAGES}"
+          else
+            # Map GitHub's language names onto CodeQL identifiers.
+            mapped="$(gh api "repos/${REPO}/languages" --jq 'keys[]' | awk '
+              /^(Python)$/ {print "python"}
+              /^(JavaScript|TypeScript|Vue|Svelte)$/ {print "javascript-typescript"}
+              /^(Go)$/ {print "go"}
+              /^(Java|Kotlin)$/ {print "java-kotlin"}
+              /^(Ruby)$/ {print "ruby"}
+              /^(C#)$/ {print "csharp"}
+              /^(C|C\+\+)$/ {print "cpp"}
+              /^(Swift)$/ {print "swift"}
+              /^(Rust)$/ {print "rust"}' | sort -u | paste -sd, -)"
+            if compgen -G ".github/workflows/*.yml" > /dev/null || compgen -G ".github/workflows/*.yaml" > /dev/null; then
+              mapped="${mapped:+${mapped},}actions"
+            fi
+            list="${mapped}"
+          fi
+          if [ -z "${list}" ]; then
+            echo "::error title=codeql::no CodeQL-supported language detected; set the languages input"
+            exit 1
+          fi
+          matrix="$(printf '%s' "${list}" | tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' | sort -u | jq -R . | jq -sc .)"
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          echo "languages: ${matrix}"
+
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    needs: detect
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@88585263c0627ee42c0e1c5143a112c8d6f4aa18  # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ inputs.build-mode }}
+          queries: ${{ inputs.queries }}
+          config-file: ${{ inputs.config-file }}
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@88585263c0627ee42c0e1c5143a112c8d6f4aa18  # v4.38.2
+        with:
+          category: /language:${{ matrix.language }}
+          output: ${{ runner.temp }}/codeql-sarif
+          upload: ${{ inputs.sarif-upload && 'always' || 'never' }}
+          upload-database: ${{ inputs.sarif-upload }}
+
+      - name: Keep SARIF for the gate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: codeql-sarif-${{ matrix.language }}
+          path: ${{ runner.temp }}/codeql-sarif/*.sarif
+          retention-days: 7
+          if-no-files-found: warn
+
+  gate:
+    name: CodeQL gate
+    needs: analyze
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download SARIF
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: codeql-sarif-*
+          path: ${{ runner.temp }}/codeql-sarif
+          merge-multiple: true
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout codeql-gate composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/codeql-gate
+        with:
+          sarif-dir: ${{ runner.temp }}/codeql-sarif
+          fail-on-severity: ${{ inputs.fail-on-severity }}

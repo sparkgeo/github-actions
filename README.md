@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| SAST Scan | [`sast-scan.yml`](.github/workflows/sast-scan.yml) | `workflow_call` | Reusable CodeQL gate — data-flow and taint analysis, one job per language, auto-detected; alerts to Code Scanning; blocks on `fail-on-severity` via the SARIF |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| CodeQL Gate | [`codeql-gate`](.github/actions/codeql-gate/action.yml) | Turns `codeql-action/analyze` SARIF into a pass/fail check: inline annotations, step-summary counts, gate on each rule's `security-severity` | `sarif-dir` (required), `fail-on-severity` (default: `high`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,38 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### SAST Scan (CodeQL)
+
+The deep SAST tier. [CodeQL](https://codeql.github.com/) builds a database of the code and runs data-flow and taint queries that follow untrusted input across files and function calls, which pattern matching (`sast-precommit.yml`) cannot do. Alerts appear in the Security tab under Code scanning; the `codeql-gate` composite makes them a blocking check.
+
+```yaml
+# .github/workflows/sast.yml  (in each consuming repo)
+name: SAST
+on: [pull_request]
+jobs:
+  codeql:
+    uses: sparkgeo/github-actions/.github/workflows/sast-scan.yml@<SHA>
+    permissions:
+      contents: read
+      actions: read
+      security-events: write   # Code Scanning upload
+    with:
+      actions-ref: <SHA>
+      # languages: python,javascript-typescript   # empty auto-detects
+      queries: security-extended
+      fail-on-severity: high
+```
+
+**Languages.** One analysis job per language. Empty `languages` maps the repository's GitHub language list onto CodeQL identifiers and adds `actions` whenever `.github/workflows` has files, so workflow injection queries always run. Supported: `actions`, `cpp`, `csharp`, `go`, `java-kotlin`, `javascript-typescript`, `python`, `ruby`, `swift`, `rust`. `build-mode: none` (default) needs no build step for any of them; use `autobuild` or `manual` only when none produces too few results on a compiled language.
+
+**Query suites.** `security-extended` (default; OWASP Top 10 plus extended CWE coverage), `security-and-quality` (adds maintainability queries, which the gate reports but never blocks on), `default` (core, fastest).
+
+**Severity.** CodeQL attaches a CVSS-like `security-severity` to every security query. The gate maps it per the gate policy: `critical` ≥ 9.0, `high` ≥ 7.0 (default threshold), `medium` ≥ 4.0, `low` above 0, `none` reports only. Quality findings have no score and never block.
+
+**Accepted risk.** Dismiss the alert in the Security tab with a reason (false positive, used in tests, won't fix); dismissals are audited. Scope with a CodeQL config file (`paths-ignore`, `query-filters`) passed as `config-file`.
+
+**Private repositories.** Code Scanning upload needs GitHub Code Security. Set `sarif-upload: false`; the gate still runs on the SARIF kept as a workflow artifact.
 
 ## Consuming repo CI setup
 
