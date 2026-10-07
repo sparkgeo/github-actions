@@ -88,6 +88,7 @@ jobs:
     uses: ./.github/workflows/lint-app.yml
     with:
       default-branch: main
+      flavor: documentation  # covers ACTION, BASH, JSON, MARKDOWN, YAML; ~1/3 of the full image
 
   # Run this repo's own .pre-commit-config.yaml hooks via the composite.
   pre-commit:
