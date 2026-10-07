@@ -1,0 +1,75 @@
+name: Container Lint
+
+# Reusable PR gate for Dockerfiles. Runs hadolint (AST rules, CIS Docker
+# Benchmark practices, shellcheck on RUN lines) and requires every base image
+# to be pinned by digest. No image build needed. Findings appear as inline PR
+# annotations and as SARIF in the Security tab; the job blocks per
+# fail-on-severity, and on any unpinned FROM when require-digest-pin is true.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile-pattern:
+        description: 'Comma-separated globs of Dockerfiles to lint'
+        default: '**/Dockerfile*,**/*.dockerfile'
+        type: string
+      fail-on-severity:
+        description: 'Lowest severity that fails the build: critical, high, medium, low, or none'
+        default: 'high'
+        type: string
+      ignore-rules:
+        description: 'Comma-separated hadolint rule IDs to ignore (prefer inline "# hadolint ignore=")'
+        default: ''
+        type: string
+      require-digest-pin:
+        description: 'Fail on any FROM without @sha256:...'
+        default: true
+        type: boolean
+      sarif-upload:
+        description: 'Upload SARIF results to the GitHub Security tab'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the hadolint
+          composite from. Pin this to the SAME SHA you pinned
+          container-lint.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always) and adds
+# `security-events: write` only when it wants SARIF upload. See README.
+
+jobs:
+  hadolint:
+    name: Hadolint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout hadolint composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/hadolint
+        with:
+          dockerfile-pattern: ${{ inputs.dockerfile-pattern }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          ignore-rules: ${{ inputs.ignore-rules }}
+          require-digest-pin: ${{ inputs.require-digest-pin }}
+          sarif-upload: ${{ inputs.sarif-upload }}
