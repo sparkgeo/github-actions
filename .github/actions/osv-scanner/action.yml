@@ -51,15 +51,34 @@ runs:
         OSV="${RUNNER_TEMP}/osv-scanner"
         SARIF="${RUNNER_TEMP}/osv.sarif"
         JSON="${RUNNER_TEMP}/osv.json"
-        # osv-scanner exits non-zero when vulnerabilities are found; we gate on
-        # severity ourselves below, so tolerate that exit here.
-        "${OSV}" scan source -r --format sarif --output-file "${SARIF}" "${DIRECTORY}" || true
-        "${OSV}" scan source -r --format json --output-file "${JSON}" "${DIRECTORY}" || true
+        # osv-scanner exit codes (v2): 0 clean, 1 vulnerabilities found (output
+        # still written), 128 no package sources found (nothing written). We
+        # gate on severity ourselves below, so 0 and 1 both continue. 128 means
+        # the repo has no lockfiles: emit an empty result so the gate passes
+        # and skip the SARIF upload. Anything else is a real error.
+        run_scan() {
+          local fmt="$1" out="$2" rc=0
+          "${OSV}" scan source -r --format "${fmt}" --output-file "${out}" "${DIRECTORY}" || rc=$?
+          case "${rc}" in
+            0|1) ;;
+            128) echo "::notice title=osv-scanner::no package sources found under '${DIRECTORY}'; nothing to scan" ;;
+            *) echo "::error title=osv-scanner::scan failed with exit code ${rc}"; return "${rc}" ;;
+          esac
+          return 0
+        }
+        run_scan sarif "${SARIF}"
+        run_scan json "${JSON}"
+        if [ ! -s "${JSON}" ]; then
+          echo '{"results":[]}' > "${JSON}"
+          SARIF=""
+        fi
         echo "sarif=${SARIF}" >> "${GITHUB_OUTPUT}"
         echo "json=${JSON}" >> "${GITHUB_OUTPUT}"
 
     - name: Upload SARIF to GitHub Security tab
-      if: ${{ inputs.sarif-upload != 'false' && hashFiles(steps.scan.outputs.sarif) != '' }}
+      # hashFiles() only resolves paths inside GITHUB_WORKSPACE; the SARIF lives
+      # in RUNNER_TEMP, so gate on the step output (empty when nothing was scanned).
+      if: ${{ inputs.sarif-upload != 'false' && steps.scan.outputs.sarif != '' }}
       uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
       with:
         sarif_file: ${{ steps.scan.outputs.sarif }}
