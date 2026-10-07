@@ -1,0 +1,84 @@
+name: K8s Scan
+
+# Reusable PR gate for Helm charts and Kustomize overlays. Runs trivy for
+# Kubernetes misconfigurations, secrets in chart sources, and CVEs in every
+# image the rendered manifests reference. Findings are annotated, summarised
+# and uploaded as SARIF; the job blocks per fail-on-severity. Schema
+# validation of the same charts is lint-helm.yml (kubeconform, #11).
+#
+# Private registries: a reusable workflow is a whole job, so a caller cannot
+# insert a registry login before the scan. Use the composite directly in a
+# job of your own (login step, then the k8s-scan action). See README.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      charts-dir:
+        description: 'Directory of Helm charts (or a single chart); empty to skip'
+        default: 'charts'
+        type: string
+      kustomize-dir:
+        description: 'Directory of Kustomize overlays (or a single overlay); empty to skip'
+        default: ''
+        type: string
+      fail-on-severity:
+        description: 'Lowest severity that fails the build: critical, high, medium, low, or none'
+        default: 'high'
+        type: string
+      scan-images:
+        description: 'Scan every container image referenced by the rendered manifests'
+        default: true
+        type: boolean
+      ignore-unfixed:
+        description: 'Ignore image vulnerabilities with no fixed version yet'
+        default: false
+        type: boolean
+      sarif-upload:
+        description: 'Upload SARIF to the Security tab (needs security-events: write)'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the k8s-scan
+          composite from. Pin this to the SAME SHA you pinned k8s-scan.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` and `security-events:
+# write` (SARIF upload). See README.
+
+jobs:
+  trivy:
+    name: trivy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout k8s-scan composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/k8s-scan
+        with:
+          charts-dir: ${{ inputs.charts-dir }}
+          kustomize-dir: ${{ inputs.kustomize-dir }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          scan-images: ${{ inputs.scan-images }}
+          ignore-unfixed: ${{ inputs.ignore-unfixed }}
+          sarif-upload: ${{ inputs.sarif-upload }}
