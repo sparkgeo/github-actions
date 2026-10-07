@@ -1,2 +1,4 @@
 gha-creds-*.json
 .envrc
+# MegaLinter output (local docker runs)
+megalinter-reports/

@@ -9,9 +9,13 @@ name: Lint App
 #
 # Image size dominates run time (full image ~4.8 GB compressed, ~3 min to
 # pull; flavors 1.5-2.7 GB). Pick the smallest `flavor` that covers your
-# languages: https://megalinter.io/latest/flavors/. `uses:` cannot take an
-# expression, so one SHA-pinned step per supported flavor is declared and
-# selected with `if:`.
+# languages: https://megalinter.io/latest/flavors/.
+#
+# MegaLinter is run with `docker run` rather than `uses:` because the image
+# name must come from the `flavor` input (`uses:` cannot take an expression)
+# and because GitHub pre-pulls the image of every Docker-based `uses:` step
+# at job start, `if:` or not. The upstream action is itself just a Docker
+# action with no arguments, so this is equivalent. Version pin below.
 #
 # No composite wrapper: MegaLinter must run as a job step so the SARIF upload
 # can use continue-on-error + if:always (composite steps support neither),
@@ -54,6 +58,10 @@ on:
 # permissions. The caller grants `contents: read` (always) and adds
 # `security-events: write` only when it wants SARIF upload. See README.
 
+env:
+  # Bump deliberately; keep in sync with docs/approved-actions.md.
+  MEGALINTER_VERSION: v9.6.0
+
 jobs:
   megalinter:
     name: MegaLinter
@@ -66,16 +74,17 @@ jobs:
           fetch-depth: 0  # MegaLinter needs history to diff against the base
 
       - name: Resolve MegaLinter settings
+        id: settings
         env:
           FLAVOR: ${{ inputs.flavor }}
           VALIDATE_ALL: ${{ inputs.validate-all-codebase }}
           EVENT: ${{ github.event_name }}
-          DEFAULT_BRANCH: ${{ inputs.default-branch }}
-          FILTER_REGEX_EXCLUDE: ${{ inputs.filter-regex-exclude }}
         run: |
           set -euo pipefail
           case "${FLAVOR}" in
-            full|cupcake|documentation|ci_light|python|javascript|terraform|go) ;;
+            full)    IMAGE="ghcr.io/oxsecurity/megalinter:${MEGALINTER_VERSION}" ;;
+            cupcake|documentation|ci_light|python|javascript|terraform|go)
+                     IMAGE="ghcr.io/oxsecurity/megalinter-${FLAVOR}:${MEGALINTER_VERSION}" ;;
             *) echo "::error::unsupported flavor '${FLAVOR}' (full|cupcake|documentation|ci_light|python|javascript|terraform|go)"; exit 1 ;;
           esac
           case "${VALIDATE_ALL}" in
@@ -83,83 +92,38 @@ jobs:
             true|false) ;;
             *) echo "::error::validate-all-codebase must be auto, true or false"; exit 1 ;;
           esac
-          # Docker actions inherit the job environment, so settings shared by
-          # every flavor step are exported once here.
-          {
-            echo "DEFAULT_BRANCH=${DEFAULT_BRANCH}"
-            echo "FILTER_REGEX_EXCLUDE=${FILTER_REGEX_EXCLUDE}"
-            echo "VALIDATE_ALL_CODEBASE=${VALIDATE_ALL}"
-            echo "APPLY_FIXES=none"
-            echo "SARIF_REPORTER=true"
-            echo "GITHUB_COMMENT_REPORTER=false"
-            echo "GITHUB_STATUS_REPORTER=false"
-          } >> "${GITHUB_ENV}"
-          echo "flavor=${FLAVOR} validate-all-codebase=${VALIDATE_ALL}"
+          echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+          echo "validate-all=${VALIDATE_ALL}" >> "${GITHUB_OUTPUT}"
+          echo "image=${IMAGE} validate-all-codebase=${VALIDATE_ALL}"
 
-      # One step per flavor, same upstream commit. Exactly one runs.
-      - name: MegaLinter (full)
-        id: ml_full
-        if: ${{ inputs.flavor == 'full' }}
-        uses: oxsecurity/megalinter@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
+      - name: MegaLinter
+        id: megalinter
         continue-on-error: true  # let the SARIF upload run before we gate
         env:
+          IMAGE: ${{ steps.settings.outputs.image }}
+          DEFAULT_BRANCH: ${{ inputs.default-branch }}
+          FILTER_REGEX_EXCLUDE: ${{ inputs.filter-regex-exclude }}
+          VALIDATE_ALL_CODEBASE: ${{ steps.settings.outputs.validate-all }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: MegaLinter (cupcake)
-        id: ml_cupcake
-        if: ${{ inputs.flavor == 'cupcake' }}
-        uses: oxsecurity/megalinter/flavors/cupcake@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: MegaLinter (documentation)
-        id: ml_documentation
-        if: ${{ inputs.flavor == 'documentation' }}
-        uses: oxsecurity/megalinter/flavors/documentation@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: MegaLinter (ci_light)
-        id: ml_ci_light
-        if: ${{ inputs.flavor == 'ci_light' }}
-        uses: oxsecurity/megalinter/flavors/ci_light@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: MegaLinter (python)
-        id: ml_python
-        if: ${{ inputs.flavor == 'python' }}
-        uses: oxsecurity/megalinter/flavors/python@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: MegaLinter (javascript)
-        id: ml_javascript
-        if: ${{ inputs.flavor == 'javascript' }}
-        uses: oxsecurity/megalinter/flavors/javascript@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: MegaLinter (terraform)
-        id: ml_terraform
-        if: ${{ inputs.flavor == 'terraform' }}
-        uses: oxsecurity/megalinter/flavors/terraform@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: MegaLinter (go)
-        id: ml_go
-        if: ${{ inputs.flavor == 'go' }}
-        uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Same contract as the upstream Docker action: workspace mounted,
+          # settings passed as environment. Only the listed variables cross
+          # into the container.
+          docker run --rm \
+            --volume "${GITHUB_WORKSPACE}:/tmp/lint" \
+            --env DEFAULT_WORKSPACE=/tmp/lint \
+            --env DEFAULT_BRANCH \
+            --env FILTER_REGEX_EXCLUDE \
+            --env VALIDATE_ALL_CODEBASE \
+            --env APPLY_FIXES=none \
+            --env SARIF_REPORTER=true \
+            --env GITHUB_COMMENT_REPORTER=false \
+            --env GITHUB_STATUS_REPORTER=false \
+            --env GITHUB_TOKEN \
+            --env GITHUB_REPOSITORY --env GITHUB_SHA --env GITHUB_REF \
+            --env GITHUB_RUN_ID --env GITHUB_EVENT_NAME --env CI=true \
+            "${IMAGE}"
 
       # Decide whether to upload: codeql-action rejects a SARIF whose `runs`
       # array is empty ("1 item required; only 0 were supplied"). MegaLinter
@@ -188,12 +152,10 @@ jobs:
       - name: Enforce gate
         if: ${{ always() }}
         env:
-          # Skipped flavor steps report 'skipped'; the one that ran reports
-          # success or failure. Any failure in the job fails the gate.
-          FAILED: ${{ contains(steps.*.outcome, 'failure') }}
+          OUTCOME: ${{ steps.megalinter.outcome }}
         run: |
           set -euo pipefail
-          if [ "${FAILED}" = "true" ]; then
+          if [ "${OUTCOME}" != "success" ]; then
             echo "::error::MegaLinter reported lint errors — see the annotations and the Security tab."
             exit 1
           fi
