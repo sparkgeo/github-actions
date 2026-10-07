@@ -28,7 +28,16 @@ Every PR that adds or modifies a workflow or composite action must satisfy all o
 [ ] All `run:` steps declare `shell:` explicitly (shell: bash on Linux/macOS, shell: pwsh on Windows)
 
 [ ] actionlint and zizmor pass locally before pushing (see Local setup below)
+
+[ ] Every job in ci.yml runs step-security/harden-runner with egress-policy: block.
+    A step that needs a new outbound host adds it to that job's allowed-endpoints
+    AND to docs/egress-allowlist.md in the same PR. Prefer disabling a tool's
+    telemetry over allowlisting its telemetry host.
 ```
+
+## Self-hosted runners
+
+None today. Policy for any future runner is in [docs/egress-allowlist.md](docs/egress-allowlist.md#self-hosted-runners): ephemeral, no fork workflows, no production credentials, agent installed, isolated account.
 
 ## Local setup
 
