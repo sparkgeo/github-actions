@@ -1,0 +1,33 @@
+<?xml version="1.0" ?>
+<!DOCTYPE coverage SYSTEM "http://cobertura.sourceforge.net/xml/coverage-04.dtd">
+<coverage lines-valid="4" lines-covered="4" line-rate="1" branches-valid="2" branches-covered="2" branch-rate="1" timestamp="1791393990730" complexity="0" version="0.1">
+  <sources>
+    <source>/home/mehul/Documents/Sparkgeo/Projects/github-actions/tests/test-node/fixtures/project</source>
+  </sources>
+  <packages>
+    <package name="main" line-rate="1" branch-rate="1">
+      <classes>
+        <class name="calc.js" filename="src/calc.js" line-rate="1" branch-rate="1">
+          <methods>
+            <method name="add" hits="1" signature="()V">
+              <lines>
+                <line number="1" hits="1"/>
+              </lines>
+            </method>
+            <method name="divide" hits="2" signature="()V">
+              <lines>
+                <line number="5" hits="2"/>
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="2" hits="1" branch="false"/>
+            <line number="6" hits="2" branch="true" condition-coverage="100% (2/2)"/>
+            <line number="7" hits="1" branch="false"/>
+            <line number="9" hits="1" branch="false"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

@@ -1,0 +1,172 @@
+name: "Node Test Coverage Gate"
+description: |
+  Runs a Node.js project's test suite with vitest or jest under coverage
+  and gates on test failures and a minimum line-coverage percentage. Failed
+  tests become inline annotations; counts and coverage land in the step
+  summary and as outputs; JUnit and cobertura XML are kept as an artifact.
+
+  Package manager is detected from the lockfile (pnpm-lock.yaml, yarn.lock,
+  package-lock.json / npm-shrinkwrap.json) and the install is cached on it.
+  The runner is detected from package.json: vitest (needs
+  @vitest/coverage-v8 or @vitest/coverage-istanbul) or jest (needs
+  jest-junit). Set install-command / test-command to override.
+
+  Required permissions on calling job: contents: read.
+inputs:
+  working-directory:
+    description: "Project directory (the one holding package.json and the lockfile)."
+    default: "."
+  node-version:
+    description: "Node version. Empty reads .nvmrc, then .node-version, then 22."
+    default: ""
+  coverage-threshold:
+    description: "Minimum line coverage percentage; the job fails below it. 0 disables the coverage gate."
+    default: "80"
+  extra-args:
+    description: "Extra arguments passed to vitest / jest."
+    default: ""
+  install-command:
+    description: "Override dependency install (runs inside working-directory after setup-node)."
+    default: ""
+  test-command:
+    description: "Override the test run. Must write JUnit XML to $JUNIT_XML and cobertura XML to $COVERAGE_XML (both env vars are set)."
+    default: ""
+  pnpm-version:
+    description: "pnpm version when pnpm-lock.yaml is present and package.json has no packageManager field."
+    default: ""
+  artifact-name:
+    description: "Name of the uploaded artifact holding junit.xml and coverage.xml."
+    default: "node-test-results"
+outputs:
+  tests-total:
+    description: "Number of test cases."
+    value: ${{ steps.report.outputs.tests-total }}
+  tests-failed:
+    description: "Number of failed or errored test cases."
+    value: ${{ steps.report.outputs.tests-failed }}
+  coverage-percent:
+    description: "Line coverage percentage, one decimal."
+    value: ${{ steps.report.outputs.coverage-percent }}
+runs:
+  using: "composite"
+  steps:
+    - name: Detect Node version, package manager and test runner
+      id: detect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        REQUESTED: ${{ inputs.node-version }}
+        INSTALL_COMMAND: ${{ inputs.install-command }}
+        TEST_COMMAND: ${{ inputs.test-command }}
+      run: |
+        set -euo pipefail
+        v="${REQUESTED}"
+        if [ -z "${v}" ] && [ -f .nvmrc ]; then v="$(head -n1 .nvmrc | tr -d '[:space:]v')"; fi
+        if [ -z "${v}" ] && [ -f .node-version ]; then v="$(head -n1 .node-version | tr -d '[:space:]v')"; fi
+        v="${v:-22}"
+        if [ -f pnpm-lock.yaml ]; then pm=pnpm; lock=pnpm-lock.yaml
+        elif [ -f yarn.lock ]; then pm=yarn; lock=yarn.lock
+        elif [ -f package-lock.json ]; then pm=npm; lock=package-lock.json
+        elif [ -f npm-shrinkwrap.json ]; then pm=npm; lock=npm-shrinkwrap.json
+        elif [ -n "${INSTALL_COMMAND}" ]; then pm=""; lock=""
+        else
+          echo "::error title=node-test::no pnpm-lock.yaml, yarn.lock or package-lock.json in $(pwd); set the install-command input"
+          exit 1
+        fi
+        runner=""
+        if [ -z "${TEST_COMMAND}" ]; then
+          deps="$(node -e 'const p=require("./package.json");console.log(Object.keys({...p.dependencies,...p.devDependencies}).join("\n"))')"
+          if grep -qx vitest <<< "${deps}"; then runner=vitest
+            grep -qE '^@vitest/coverage-(v8|istanbul)$' <<< "${deps}" || { echo "::error title=node-test::vitest needs @vitest/coverage-v8 (or -istanbul) in devDependencies"; exit 1; }
+          elif grep -qx jest <<< "${deps}"; then runner=jest
+            grep -qx jest-junit <<< "${deps}" || { echo "::error title=node-test::jest needs jest-junit in devDependencies"; exit 1; }
+          else
+            echo "::error title=node-test::neither vitest nor jest in package.json; set the test-command input"; exit 1
+          fi
+        fi
+        { echo "version=${v}"; echo "pm=${pm}"; echo "lockfile=${lock}"; echo "runner=${runner}"; } >> "${GITHUB_OUTPUT}"
+        echo "node ${v}; package manager ${pm:-custom} (${lock:-no lockfile}); runner ${runner:-custom}"
+
+    - name: Install pnpm
+      if: ${{ steps.detect.outputs.pm == 'pnpm' }}
+      uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b  # v6.1.0
+      with:
+        version: ${{ inputs.pnpm-version }}
+        run_install: false
+
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      with:
+        node-version: ${{ steps.detect.outputs.version }}
+        cache: ${{ steps.detect.outputs.pm }}
+        cache-dependency-path: ${{ steps.detect.outputs.lockfile != '' && format('{0}/{1}', inputs.working-directory, steps.detect.outputs.lockfile) || '' }}
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PM: ${{ steps.detect.outputs.pm }}
+        INSTALL_COMMAND: ${{ inputs.install-command }}
+      run: |
+        set -euo pipefail
+        if [ -n "${INSTALL_COMMAND}" ]; then bash -euo pipefail -c "${INSTALL_COMMAND}"
+        else
+          case "${PM}" in
+            npm)  npm ci --no-audit --no-fund ;;
+            pnpm) pnpm install --frozen-lockfile ;;
+            yarn) corepack enable 2>/dev/null || true
+                  if yarn --version | grep -q '^1\.'; then yarn install --frozen-lockfile; else yarn install --immutable; fi ;;
+          esac
+        fi
+
+    - name: Run tests under coverage
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TEST_RUNNER: ${{ steps.detect.outputs.runner }}
+        TEST_COMMAND: ${{ inputs.test-command }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
+        JUNIT_XML: ${{ runner.temp }}/node-test/junit.xml
+        COVERAGE_XML: ${{ runner.temp }}/node-test/coverage.xml
+        CI: "true"
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/node-test"; mkdir -p "${OUT}/coverage"
+        read -ra extra <<< "${EXTRA_ARGS}"
+        # Exit codes are not fatal here: report.py decides from the XML so
+        # the artifact and summary are always produced.
+        rc=0
+        if [ -n "${TEST_COMMAND}" ]; then
+          bash -euo pipefail -c "${TEST_COMMAND}" || rc=$?
+        elif [ "${TEST_RUNNER}" = vitest ]; then
+          ./node_modules/.bin/vitest run --coverage --coverage.reportOnFailure \
+            --coverage.reporter=cobertura --coverage.reporter=text --coverage.reportsDirectory="${OUT}/coverage" \
+            --reporter=default --reporter=junit --outputFile.junit="${JUNIT_XML}" "${extra[@]}" || rc=$?
+          [ -f "${OUT}/coverage/cobertura-coverage.xml" ] && mv "${OUT}/coverage/cobertura-coverage.xml" "${COVERAGE_XML}"
+        else
+          JEST_JUNIT_OUTPUT_FILE="${JUNIT_XML}" JEST_JUNIT_ADD_FILE_ATTRIBUTE=true \
+            ./node_modules/.bin/jest --ci --coverage --coverageReporters=cobertura --coverageReporters=text \
+            --coverageDirectory="${OUT}/coverage" --reporters=default --reporters=jest-junit "${extra[@]}" || rc=$?
+          [ -f "${OUT}/coverage/cobertura-coverage.xml" ] && mv "${OUT}/coverage/cobertura-coverage.xml" "${COVERAGE_XML}"
+        fi
+        echo "${TEST_RUNNER:-test} exit code ${rc}"
+
+    - name: Upload JUnit and coverage XML
+      if: ${{ always() }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/node-test/*.xml
+        retention-days: 14
+        if-no-files-found: warn
+
+    - name: Annotate and enforce gate
+      id: report
+      shell: bash
+      env:
+        REPORT_TOOL: ${{ steps.detect.outputs.runner || 'node-test' }}
+        JUNIT_XML: ${{ runner.temp }}/node-test/junit.xml
+        COVERAGE_XML: ${{ runner.temp }}/node-test/coverage.xml
+        COVERAGE_THRESHOLD: ${{ inputs.coverage-threshold }}
+      # Shared with the pytest composite: both read JUnit plus a line-rate
+      # coverage XML (coverage.py / cobertura).
+      run: python3 -I "${{ github.action_path }}/../pytest/report.py"
