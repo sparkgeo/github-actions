@@ -122,7 +122,7 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        RUNNER_NAME: ${{ steps.detect.outputs.runner }}
+        TEST_RUNNER: ${{ steps.detect.outputs.runner }}
         TEST_COMMAND: ${{ inputs.test-command }}
         EXTRA_ARGS: ${{ inputs.extra-args }}
         JUNIT_XML: ${{ runner.temp }}/node-test/junit.xml
@@ -137,7 +137,7 @@ runs:
         rc=0
         if [ -n "${TEST_COMMAND}" ]; then
           bash -euo pipefail -c "${TEST_COMMAND}" || rc=$?
-        elif [ "${RUNNER_NAME}" = vitest ]; then
+        elif [ "${TEST_RUNNER}" = vitest ]; then
           ./node_modules/.bin/vitest run --coverage --coverage.reportOnFailure \
             --coverage.reporter=cobertura --coverage.reporter=text --coverage.reportsDirectory="${OUT}/coverage" \
             --reporter=default --reporter=junit --outputFile.junit="${JUNIT_XML}" "${extra[@]}" || rc=$?
@@ -148,7 +148,7 @@ runs:
             --coverageDirectory="${OUT}/coverage" --reporters=default --reporters=jest-junit "${extra[@]}" || rc=$?
           [ -f "${OUT}/coverage/cobertura-coverage.xml" ] && mv "${OUT}/coverage/cobertura-coverage.xml" "${COVERAGE_XML}"
         fi
-        echo "${RUNNER_NAME:-test} exit code ${rc}"
+        echo "${TEST_RUNNER:-test} exit code ${rc}"
 
     - name: Upload JUnit and coverage XML
       if: ${{ always() }}
