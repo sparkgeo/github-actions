@@ -7,6 +7,12 @@ name: Lint App
 #
 # Configured entirely via a .mega-linter.yml in the consuming repo (optional).
 #
+# Image size dominates run time (full image ~4.8 GB compressed, ~3 min to
+# pull; flavors 1.5-2.7 GB). Pick the smallest `flavor` that covers your
+# languages: https://megalinter.io/latest/flavors/. `uses:` cannot take an
+# expression, so one SHA-pinned step per supported flavor is declared and
+# selected with `if:`.
+#
 # No composite wrapper: MegaLinter must run as a job step so the SARIF upload
 # can use continue-on-error + if:always (composite steps support neither),
 # guaranteeing findings reach the Security tab even when the lint gate fails.
@@ -30,6 +36,19 @@ on:
         description: 'Upload SARIF results to the GitHub Security tab'
         default: true
         type: boolean
+      flavor:
+        description: >-
+          MegaLinter flavor image: full (default, all linters), cupcake,
+          documentation, ci_light, python, javascript, terraform, go.
+          Smaller flavors pull much faster; see https://megalinter.io/latest/flavors/
+        default: 'full'
+        type: string
+      validate-all-codebase:
+        description: >-
+          Lint every file (true) or only files changed against default-branch
+          (false). Default 'auto': false on pull_request, true otherwise.
+        default: 'auto'
+        type: string
 
 # No permissions block: a reusable workflow inherits the caller job's granted
 # permissions. The caller grants `contents: read` (always) and adds
@@ -46,17 +65,100 @@ jobs:
           persist-credentials: false
           fetch-depth: 0  # MegaLinter needs history to diff against the base
 
-      - name: MegaLinter
-        id: megalinter
+      - name: Resolve MegaLinter settings
+        env:
+          FLAVOR: ${{ inputs.flavor }}
+          VALIDATE_ALL: ${{ inputs.validate-all-codebase }}
+          EVENT: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ inputs.default-branch }}
+          FILTER_REGEX_EXCLUDE: ${{ inputs.filter-regex-exclude }}
+        run: |
+          set -euo pipefail
+          case "${FLAVOR}" in
+            full|cupcake|documentation|ci_light|python|javascript|terraform|go) ;;
+            *) echo "::error::unsupported flavor '${FLAVOR}' (full|cupcake|documentation|ci_light|python|javascript|terraform|go)"; exit 1 ;;
+          esac
+          case "${VALIDATE_ALL}" in
+            auto) [ "${EVENT}" = "pull_request" ] && VALIDATE_ALL=false || VALIDATE_ALL=true ;;
+            true|false) ;;
+            *) echo "::error::validate-all-codebase must be auto, true or false"; exit 1 ;;
+          esac
+          # Docker actions inherit the job environment, so settings shared by
+          # every flavor step are exported once here.
+          {
+            echo "DEFAULT_BRANCH=${DEFAULT_BRANCH}"
+            echo "FILTER_REGEX_EXCLUDE=${FILTER_REGEX_EXCLUDE}"
+            echo "VALIDATE_ALL_CODEBASE=${VALIDATE_ALL}"
+            echo "APPLY_FIXES=none"
+            echo "SARIF_REPORTER=true"
+            echo "GITHUB_COMMENT_REPORTER=false"
+            echo "GITHUB_STATUS_REPORTER=false"
+          } >> "${GITHUB_ENV}"
+          echo "flavor=${FLAVOR} validate-all-codebase=${VALIDATE_ALL}"
+
+      # One step per flavor, same upstream commit. Exactly one runs.
+      - name: MegaLinter (full)
+        id: ml_full
+        if: ${{ inputs.flavor == 'full' }}
         uses: oxsecurity/megalinter@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
         continue-on-error: true  # let the SARIF upload run before we gate
         env:
-          DEFAULT_BRANCH: ${{ inputs.default-branch }}
-          FILTER_REGEX_EXCLUDE: ${{ inputs.filter-regex-exclude }}
-          APPLY_FIXES: none
-          SARIF_REPORTER: true
-          GITHUB_COMMENT_REPORTER: false
-          GITHUB_STATUS_REPORTER: false
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: MegaLinter (cupcake)
+        id: ml_cupcake
+        if: ${{ inputs.flavor == 'cupcake' }}
+        uses: oxsecurity/megalinter/flavors/cupcake@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: MegaLinter (documentation)
+        id: ml_documentation
+        if: ${{ inputs.flavor == 'documentation' }}
+        uses: oxsecurity/megalinter/flavors/documentation@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: MegaLinter (ci_light)
+        id: ml_ci_light
+        if: ${{ inputs.flavor == 'ci_light' }}
+        uses: oxsecurity/megalinter/flavors/ci_light@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: MegaLinter (python)
+        id: ml_python
+        if: ${{ inputs.flavor == 'python' }}
+        uses: oxsecurity/megalinter/flavors/python@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: MegaLinter (javascript)
+        id: ml_javascript
+        if: ${{ inputs.flavor == 'javascript' }}
+        uses: oxsecurity/megalinter/flavors/javascript@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: MegaLinter (terraform)
+        id: ml_terraform
+        if: ${{ inputs.flavor == 'terraform' }}
+        uses: oxsecurity/megalinter/flavors/terraform@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: MegaLinter (go)
+        id: ml_go
+        if: ${{ inputs.flavor == 'go' }}
+        uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc  # v9.6.0
+        continue-on-error: true
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Decide whether to upload: codeql-action rejects a SARIF whose `runs`
@@ -86,10 +188,12 @@ jobs:
       - name: Enforce gate
         if: ${{ always() }}
         env:
-          OUTCOME: ${{ steps.megalinter.outcome }}
+          # Skipped flavor steps report 'skipped'; the one that ran reports
+          # success or failure. Any failure in the job fails the gate.
+          FAILED: ${{ contains(steps.*.outcome, 'failure') }}
         run: |
           set -euo pipefail
-          if [ "${OUTCOME}" != "success" ]; then
+          if [ "${FAILED}" = "true" ]; then
             echo "::error::MegaLinter reported lint errors — see the annotations and the Security tab."
             exit 1
           fi
