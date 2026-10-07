@@ -1,0 +1,73 @@
+name: Test (Python)
+
+# Reusable Python test gate: pytest under coverage.py with a minimum
+# line-coverage threshold. Shares the per-runtime test contract
+# (working-directory, runtime-version, coverage-threshold, extra-args) with
+# test-node.yml and test-go.yml so a caller can swap runtimes unchanged.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Project directory holding pyproject.toml / the lockfile'
+        default: '.'
+        type: string
+      runtime-version:
+        description: 'Python version; empty reads .python-version, then requires-python, then 3.12'
+        default: ''
+        type: string
+      coverage-threshold:
+        description: 'Minimum line coverage percentage; job fails below it (0 disables)'
+        default: 80
+        type: number
+      extra-args:
+        description: 'Extra arguments passed to pytest'
+        default: ''
+        type: string
+      install-command:
+        description: 'Override dependency install (runs in a fresh venv on PATH)'
+        default: ''
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the pytest
+          composite from. Pin this to the SAME SHA you pinned test-python.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`. See README.
+
+jobs:
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout pytest composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/pytest
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          python-version: ${{ inputs.runtime-version }}
+          coverage-threshold: ${{ inputs.coverage-threshold }}
+          extra-args: ${{ inputs.extra-args }}
+          install-command: ${{ inputs.install-command }}
