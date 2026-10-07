@@ -220,7 +220,16 @@ jobs:
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
           # MegaLinter is AGPL-3.0. It runs inside CI and is not redistributed,
           # so the copyleft terms do not apply; exempt it from the licence gate.
-          allow-dependencies-licenses: pkg:githubactions/oxsecurity/megalinter
+          # Each flavor in lint-app.yml is a distinct purl, so list them all.
+          allow-dependencies-licenses: >-
+            pkg:githubactions/oxsecurity/megalinter,
+            pkg:githubactions/oxsecurity/megalinter/flavors/cupcake,
+            pkg:githubactions/oxsecurity/megalinter/flavors/documentation,
+            pkg:githubactions/oxsecurity/megalinter/flavors/ci_light,
+            pkg:githubactions/oxsecurity/megalinter/flavors/python,
+            pkg:githubactions/oxsecurity/megalinter/flavors/javascript,
+            pkg:githubactions/oxsecurity/megalinter/flavors/terraform,
+            pkg:githubactions/oxsecurity/megalinter/flavors/go
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
