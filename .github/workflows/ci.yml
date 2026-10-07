@@ -26,10 +26,16 @@ jobs:
       contents: read
       checks: write
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -45,10 +51,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -65,10 +75,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -97,10 +111,18 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            proxy.golang.org:443
+            sum.golang.org:443
+            storage.googleapis.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -117,10 +139,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -139,10 +165,15 @@ jobs:
       contents: read
       security-events: write  # SARIF upload to the Security tab
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -159,10 +190,16 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -181,10 +218,20 @@ jobs:
       actions: read
       security-events: write
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            api.deps.dev:443
+            api.osv.dev:443
+            www.bestpractices.dev:443
+            oss-fuzz-build-logs.storage.googleapis.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -205,10 +252,14 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -227,10 +278,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            get.opentofu.org:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -238,6 +294,12 @@ jobs:
           fetch-depth: 0  # terramate --changed requires full git history
 
       - uses: ./.github/actions/terramate-opentofu-setup
+        env:
+          # Telemetry hosts (analytics.terramate.io, checkpoint-api.mineiros.io)
+          # are not on the allowlist; tell both CLIs not to call them.
+          CHECKPOINT_DISABLE: "1"
+          TM_DISABLE_CHECKPOINT: "1"
+          TM_DISABLE_TELEMETRY: "1"
 
   # Verify the storage optimizer composite action runs without error.
   # Runs on push to main (demonstration) and workflow_dispatch (on-demand).
@@ -248,10 +310,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
