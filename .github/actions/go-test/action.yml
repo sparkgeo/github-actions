@@ -1,0 +1,113 @@
+name: "Go Test Coverage Gate"
+description: |
+  Runs a Go module's tests with `go test -race -json -covermode=atomic
+  -coverprofile` and gates on test failures and a minimum statement-coverage
+  percentage (from `go tool cover -func`). Failed tests become inline
+  annotations at the first `file_test.go:N:` line of their output; counts
+  and coverage land in the step summary and as outputs; the JUnit XML
+  (converted from the go test JSON stream) and the coverprofile are kept as
+  an artifact.
+
+  No third-party tooling: the JSON-to-JUnit conversion is a stdlib Python
+  script next to this action. Module and build caches are keyed on go.sum
+  by setup-go.
+
+  Required permissions on calling job: contents: read.
+inputs:
+  working-directory:
+    description: "Module directory (the one holding go.mod)."
+    default: "."
+  go-version:
+    description: "Go version. Empty reads the go directive (and toolchain) from go.mod."
+    default: ""
+  coverage-threshold:
+    description: "Minimum statement coverage percentage; the job fails below it. 0 disables the coverage gate."
+    default: "80"
+  packages:
+    description: "Package pattern(s) passed to go test."
+    default: "./..."
+  extra-args:
+    description: "Extra arguments passed to go test (e.g. -tags integration -timeout 10m)."
+    default: ""
+  race:
+    description: "Run with the race detector."
+    default: "true"
+  artifact-name:
+    description: "Name of the uploaded artifact holding junit.xml, gotest.json and coverage.out."
+    default: "go-test-results"
+outputs:
+  tests-total:
+    description: "Number of test cases."
+    value: ${{ steps.report.outputs.tests-total }}
+  tests-failed:
+    description: "Number of failed test cases."
+    value: ${{ steps.report.outputs.tests-failed }}
+  coverage-percent:
+    description: "Statement coverage percentage, one decimal."
+    value: ${{ steps.report.outputs.coverage-percent }}
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      with:
+        go-version: ${{ inputs.go-version }}
+        go-version-file: ${{ inputs.go-version == '' && format('{0}/go.mod', inputs.working-directory) || '' }}
+        cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+        check-latest: false
+
+    - name: Run go test under coverage
+      id: test
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
+        RACE: ${{ inputs.race }}
+        FILE_PREFIX: ${{ inputs.working-directory != '.' && inputs.working-directory || '' }}
+        CONVERT: ${{ github.action_path }}/gotest2junit.py
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/go-test"; mkdir -p "${OUT}"
+        read -ra extra <<< "${EXTRA_ARGS}"
+        read -ra pkgs <<< "${PACKAGES}"
+        race=(); [ "${RACE}" = "true" ] && race=(-race)
+        # Exit code is not fatal here: report.py decides from the JUnit so
+        # the artifact and summary are always produced. Build failures show
+        # up as a synthetic failing "(package)" case.
+        rc=0
+        go test "${race[@]}" -json -covermode=atomic -coverprofile="${OUT}/coverage.out" "${extra[@]}" "${pkgs[@]}" > "${OUT}/gotest.json" || rc=$?
+        echo "go test exit code ${rc}"
+        # Failed and skipped tests, for the job log.
+        grep -E '"Action":"(fail|skip)".*"Test":' "${OUT}/gotest.json" | sed 's/.*"Action":"\([a-z]*\)".*"Package":"\([^"]*\)".*"Test":"\([^"]*\)".*/  \1 \2 \3/' | sort -u || true
+        MODULE_PATH="$(go list -m 2>/dev/null | head -n1)" python3 -I "${CONVERT}" "${OUT}/gotest.json" "${OUT}/junit.xml"
+        pct=""
+        if [ -s "${OUT}/coverage.out" ]; then
+          go tool cover -func="${OUT}/coverage.out" | tail -n 25
+          pct="$(go tool cover -func="${OUT}/coverage.out" | awk '/^total:/ {sub("%","",$NF); print $NF}')"
+        else
+          echo "::warning title=coverage::no coverage profile written (build failure or panic)"
+        fi
+        echo "coverage-percent=${pct}" >> "${GITHUB_OUTPUT}"
+
+    - name: Upload JUnit, go test JSON and coverprofile
+      if: ${{ always() }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ runner.temp }}/go-test/junit.xml
+          ${{ runner.temp }}/go-test/gotest.json
+          ${{ runner.temp }}/go-test/coverage.out
+        retention-days: 14
+        if-no-files-found: warn
+
+    - name: Annotate and enforce gate
+      id: report
+      shell: bash
+      env:
+        REPORT_TOOL: go
+        JUNIT_XML: ${{ runner.temp }}/go-test/junit.xml
+        COVERAGE_PERCENT: ${{ steps.test.outputs.coverage-percent }}
+        COVERAGE_THRESHOLD: ${{ inputs.coverage-threshold }}
+      # Shared with the pytest and node-test composites.
+      run: python3 -I "${{ github.action_path }}/../pytest/report.py"

@@ -43,6 +43,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | Pytest Coverage Gate | [`pytest`](.github/actions/pytest/action.yml) | Runs pytest under coverage.py; fails on test failures or line coverage below the threshold. Inline annotations for failed tests, counts and coverage in the step summary, JUnit + coverage XML kept as an artifact. Detects uv.lock (checksum-verified uv), poetry.lock (poetry) or requirements*.txt (pip) | `working-directory` (default: `.`), `python-version` (default: `""` — `.python-version`, then `requires-python`, then `3.12`), `coverage-threshold` (default: `80`; `0` disables), `coverage-source` (default: `""`), `extra-args` (default: `""`), `install-command` (default: `""`), `artifact-name` (default: `pytest-results`) |
 | Node Test Coverage Gate | [`node-test`](.github/actions/node-test/action.yml) | Runs vitest or jest (auto-detected from package.json) under coverage; fails on test failures or line coverage below the threshold. Inline annotations for failed tests, counts and coverage in the step summary, JUnit + cobertura XML kept as an artifact. Detects pnpm / yarn / npm from the lockfile and caches on it | `working-directory` (default: `.`), `node-version` (default: `""` — `.nvmrc`, then `.node-version`, then `22`), `coverage-threshold` (default: `80`; `0` disables), `extra-args` (default: `""`), `install-command` (default: `""`), `test-command` (default: `""`), `pnpm-version` (default: `""`), `artifact-name` (default: `node-test-results`) |
+| Go Test Coverage Gate | [`go-test`](.github/actions/go-test/action.yml) | Runs `go test -race -json -covermode=atomic -coverprofile`; fails on test failures or statement coverage below the threshold. Inline annotations at the failing `_test.go:N` line, counts and coverage in the step summary, JUnit (converted from the JSON stream) + coverprofile kept as an artifact. Module/build cache keyed on `go.sum` | `working-directory` (default: `.`), `go-version` (default: `""` — `go.mod`), `coverage-threshold` (default: `80`; `0` disables), `packages` (default: `./...`), `extra-args` (default: `""`), `race` (default: `true`), `artifact-name` (default: `go-test-results`) |
 
 ### GitHub Actionlint
 
@@ -441,6 +442,33 @@ jobs:
 **Install detection.** `pnpm-lock.yaml` → `pnpm install --frozen-lockfile` (pnpm from `packageManager` in `package.json`, or the `pnpm-version` input); `yarn.lock` → `yarn install --frozen-lockfile` (v1) or `--immutable` (berry via corepack); `package-lock.json` / `npm-shrinkwrap.json` → `npm ci`. `setup-node` caches the package-manager store on the lockfile hash. Anything else: `install-command`, and `test-command` for a custom runner (it must write JUnit to `$JUNIT_XML` and cobertura XML to `$COVERAGE_XML`).
 
 **Outputs.** Failed tests appear as inline PR annotations on the test file (line 1: neither runner reports line numbers in JUnit). The step summary shows total/failed/skipped and the coverage percentage; `junit.xml` and `coverage.xml` are uploaded as the `node-test-results` artifact for 14 days.
+
+### Test (Go)
+
+The PR-stage test gate for Go modules: `go test -race` with `-covermode=atomic -coverprofile`, blocking on any failed test and on statement coverage (`go tool cover -func` total) below `coverage-threshold`. Same contract as [Test (Python)](#test-python) and [Test (Node)](#test-node).
+
+```yaml
+# .github/workflows/test.yml
+name: Test
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  go:
+    uses: sparkgeo/github-actions/.github/workflows/test-go.yml@<SHA>
+    with:
+      actions-ref: <SHA>          # pin to the SAME SHA so the composite is immutable too
+      coverage-threshold: 80      # default
+      # working-directory: services/api
+      # runtime-version: '1.24'   # default: the go directive in go.mod
+      # packages: './internal/...'
+      # extra-args: '-tags integration -timeout 10m'
+      # race: false               # e.g. CGO unavailable
+```
+
+**No third-party tooling.** `go test -json` is converted to JUnit by a stdlib Python script next to the composite; coverage comes from `go tool cover -func`. `setup-go` caches the module and build caches on `go.sum`. A build failure or a panic outside any test becomes a synthetic failing `(package)` case so it is never silently dropped.
+
+**Outputs.** Failed tests appear as inline PR annotations at the first `file_test.go:N:` line of the test's output (job-level when there is none, e.g. a panic). The step summary shows total/failed/skipped and the coverage percentage; `junit.xml`, `gotest.json` and `coverage.out` are uploaded as the `go-test-results` artifact for 14 days.
 
 ## Consuming repo CI setup
 

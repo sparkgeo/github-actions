@@ -1,0 +1,17 @@
+{"Time":"2026-10-07T10:43:56.247026041-07:00","Action":"start","Package":"example.com/calc/calc"}
+{"Time":"2026-10-07T10:43:56.2541997-07:00","Action":"run","Package":"example.com/calc/calc","Test":"TestAdd"}
+{"Time":"2026-10-07T10:43:56.254258688-07:00","Action":"output","Package":"example.com/calc/calc","Test":"TestAdd","Output":"=== RUN   TestAdd\n","OutputType":"frame"}
+{"Time":"2026-10-07T10:43:56.254279803-07:00","Action":"output","Package":"example.com/calc/calc","Test":"TestAdd","Output":"--- PASS: TestAdd (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-07T10:43:56.254284806-07:00","Action":"pass","Package":"example.com/calc/calc","Test":"TestAdd","Elapsed":0}
+{"Time":"2026-10-07T10:43:56.254290663-07:00","Action":"run","Package":"example.com/calc/calc","Test":"TestDivide"}
+{"Time":"2026-10-07T10:43:56.254294911-07:00","Action":"output","Package":"example.com/calc/calc","Test":"TestDivide","Output":"=== RUN   TestDivide\n","OutputType":"frame"}
+{"Time":"2026-10-07T10:43:56.254323007-07:00","Action":"output","Package":"example.com/calc/calc","Test":"TestDivide","Output":"--- PASS: TestDivide (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-07T10:43:56.254328621-07:00","Action":"pass","Package":"example.com/calc/calc","Test":"TestDivide","Elapsed":0}
+{"Time":"2026-10-07T10:43:56.254339663-07:00","Action":"run","Package":"example.com/calc/calc","Test":"TestDivideByZero"}
+{"Time":"2026-10-07T10:43:56.254342166-07:00","Action":"output","Package":"example.com/calc/calc","Test":"TestDivideByZero","Output":"=== RUN   TestDivideByZero\n","OutputType":"frame"}
+{"Time":"2026-10-07T10:43:56.254368627-07:00","Action":"output","Package":"example.com/calc/calc","Test":"TestDivideByZero","Output":"--- PASS: TestDivideByZero (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-07T10:43:56.254378675-07:00","Action":"pass","Package":"example.com/calc/calc","Test":"TestDivideByZero","Elapsed":0}
+{"Time":"2026-10-07T10:43:56.254394372-07:00","Action":"output","Package":"example.com/calc/calc","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-10-07T10:43:56.255439405-07:00","Action":"output","Package":"example.com/calc/calc","Output":"coverage: 100.0% of statements\n"}
+{"Time":"2026-10-07T10:43:57.259419367-07:00","Action":"output","Package":"example.com/calc/calc","Output":"ok  \texample.com/calc/calc\t1.012s\tcoverage: 100.0% of statements\n"}
+{"Time":"2026-10-07T10:43:57.275197057-07:00","Action":"pass","Package":"example.com/calc/calc","Elapsed":1.028}
