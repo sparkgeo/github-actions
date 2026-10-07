@@ -32,7 +32,8 @@ for file in "$@"; do
         ;;
       FROM)
         rest="${stripped#* }"
-        # Drop --platform=... and other flags.
+        # Drop --platform=... and other flags. Word splitting is the point here.
+        # shellcheck disable=SC2086
         set -- ${rest}
         while [ $# -gt 0 ] && [ "${1#--}" != "$1" ]; do shift; done
         image="${1:-}"

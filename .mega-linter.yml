@@ -34,3 +34,7 @@ DISABLE_ERRORS_LINTERS:
 SHOW_ELAPSED_TIME: true
 FLAVOR_SUGGESTIONS: false
 PRINT_ALPACA: false
+
+# Test fixtures that are deliberately wrong (linted by their own CI jobs with
+# the expected outcome asserted) must not fail the repo-wide lint gate.
+DOCKERFILE_HADOLINT_FILTER_REGEX_EXCLUDE: 'tests/container-lint/fixtures/bad/'
