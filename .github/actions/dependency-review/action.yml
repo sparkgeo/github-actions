@@ -2,7 +2,7 @@ name: "Dependency Review"
 description: "Blocks PRs that introduce dependencies with known vulnerabilities or non-permitted licenses; posts a summary comment on the PR."
 inputs:
   fail-on-severity:
-    description: "Minimum vulnerability severity to fail: critical|high|moderate|low"
+    description: "Lowest vulnerability severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md). `moderate` accepted as an alias for medium."
     default: "high"
   allow-licenses:
     description: "Comma-separated list of SPDX license identifiers that are permitted. Dependencies using any other license will fail the check."
@@ -31,10 +31,27 @@ runs:
       run: |
         echo "::error::dependency-review: base-ref and head-ref must both be set or both be empty. Got base-ref='${BASE_REF}' head-ref='${HEAD_REF}'."
         exit 1
+    - name: Map severity vocabulary
+      id: sev
+      shell: bash
+      env:
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+      run: |
+        set -euo pipefail
+        # Canonical vocabulary (docs/gate-policy.md) to upstream values.
+        case "${FAIL_ON}" in
+          critical|high|low) up="${FAIL_ON}"; check=true ;;
+          medium|moderate)   up="moderate";   check=true ;;
+          none)              up="low";        check=false ;;
+          *) echo "::error title=dependency-review::invalid fail-on-severity '${FAIL_ON}'"; exit 1 ;;
+        esac
+        echo "upstream=${up}" >> "${GITHUB_OUTPUT}"
+        echo "vulnerability-check=${check}" >> "${GITHUB_OUTPUT}"
     - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
       if: ${{ inputs.base-ref == '' }}
       with:
-        fail-on-severity: ${{ inputs.fail-on-severity }}
+        fail-on-severity: ${{ steps.sev.outputs.upstream }}
+        vulnerability-check: ${{ steps.sev.outputs.vulnerability-check }}
         allow-licenses: ${{ inputs.allow-licenses }}
         allow-dependencies-licenses: ${{ inputs.allow-dependencies-licenses }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
@@ -43,7 +60,8 @@ runs:
       with:
         base-ref: ${{ inputs.base-ref }}
         head-ref: ${{ inputs.head-ref }}
-        fail-on-severity: ${{ inputs.fail-on-severity }}
+        fail-on-severity: ${{ steps.sev.outputs.upstream }}
+        vulnerability-check: ${{ steps.sev.outputs.vulnerability-check }}
         allow-licenses: ${{ inputs.allow-licenses }}
         allow-dependencies-licenses: ${{ inputs.allow-dependencies-licenses }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}

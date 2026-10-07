@@ -19,7 +19,7 @@ inputs:
     description: "Directory to scan (recursively)."
     default: "."
   fail-on-severity:
-    description: "Lowest CVSS severity that fails the build: critical, high, medium, or low."
+    description: "Lowest severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md)."
     default: "critical"
   sarif-upload:
     description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
@@ -87,31 +87,9 @@ runs:
     - name: Annotate and enforce gate
       shell: bash
       env:
-        JSON: ${{ steps.scan.outputs.json }}
+        FINDINGS_FILE: ${{ steps.scan.outputs.json }}
+        FORMAT: osv-json
         FAIL_ON: ${{ inputs.fail-on-severity }}
-      run: |
-        set -euo pipefail
-        case "${FAIL_ON}" in
-          critical) THRESH=9.0 ;;
-          high)     THRESH=7.0 ;;
-          medium)   THRESH=4.0 ;;
-          low)      THRESH=0.1 ;;
-          *) echo "::error::invalid fail-on-severity '${FAIL_ON}'"; exit 1 ;;
-        esac
-
-        # Emit one annotation per affected package (job-level: lockfiles have no
-        # reliable source-line mapping). max_severity is a numeric CVSS score.
-        jq -r '.results[]?.packages[]?
-          | .package.name as $p
-          | ([.groups[]?.max_severity | select(. != null) | tonumber] | max // 0) as $s
-          | "\($s)\t\($p)\t" + ([.vulnerabilities[]?.id] | join(","))' "${JSON}" \
-          | while IFS=$'\t' read -r sev pkg ids; do
-              echo "::warning title=osv-scanner::${pkg}: ${ids} (max CVSS ${sev})"
-            done
-
-        MAX="$(jq '[.results[]?.packages[]?.groups[]?.max_severity | select(. != null) | tonumber] | max // 0' "${JSON}")"
-        echo "Highest CVSS severity found: ${MAX} (threshold ${THRESH} for '${FAIL_ON}')"
-        if awk "BEGIN{exit !(${MAX} >= ${THRESH})}"; then
-          echo "::error::Dependency vulnerabilities at or above '${FAIL_ON}' severity (CVSS ${MAX})."
-          exit 1
-        fi
+      # Shared gate (docs/gate-policy.md). Referenced by path rather than
+      # `uses:` so it resolves wherever this repo is checked out.
+      run: bash "${{ github.action_path }}/../severity-gate/gate.sh"
