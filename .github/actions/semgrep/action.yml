@@ -1,0 +1,110 @@
+name: "Semgrep SAST Scan"
+description: |
+  Fast pattern-based static analysis with semgrep. Language-agnostic: the
+  registry packs (default `p/default`) cover Python, JavaScript/TypeScript,
+  Go, Java, Ruby, PHP, Kotlin, Rust and more; a local rules path works
+  offline.
+
+  semgrep ships no standalone binary, so it is installed from PyPI with
+  `pip install --require-hashes` against the hash-locked requirements.txt
+  next to this action. Metrics and the version check are off. One run writes
+  JSON (gate, annotations, summary) and SARIF (optionally uploaded to the
+  Security tab). Gate semantics follow docs/gate-policy.md: ERROR = high,
+  WARNING = medium, INFO = low; `none` reports only.
+
+  Inline suppression: append `# nosemgrep: <rule-id>` to the line, with a
+  reason in a comment.
+
+  Required permissions on calling job: contents: read (plus security-events:
+  write when sarif-upload is true).
+inputs:
+  config:
+    description: "semgrep config: a registry pack (p/default, p/python, p/owasp-top-ten, ...), `auto`, or a path to local rules. Comma-separated for several."
+    default: "p/default"
+  directory:
+    description: "Directory to scan."
+    default: "."
+  fail-on-severity:
+    description: "Lowest severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md)."
+    default: "high"
+  exclude:
+    description: "Comma-separated glob patterns to skip (in addition to .semgrepignore)."
+    default: ""
+  python-version:
+    description: "Python used to install semgrep."
+    default: "3.12"
+  sarif-upload:
+    description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
+    default: "true"
+outputs:
+  max-severity:
+    description: "Highest severity found: high, medium, low, or none."
+    value: ${{ steps.gate.outputs.max-severity }}
+  error-count:
+    description: "Number of ERROR findings."
+    value: ${{ steps.gate.outputs.error-count }}
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: ${{ github.action_path }}/requirements.txt
+
+    - name: Install semgrep
+      shell: bash
+      env:
+        REQ: ${{ github.action_path }}/requirements.txt
+      run: |
+        set -euo pipefail
+        python -m venv "${RUNNER_TEMP}/semgrep-venv"
+        # --require-hashes: every wheel, including transitive dependencies,
+        # must match the sha256 recorded in requirements.txt.
+        "${RUNNER_TEMP}/semgrep-venv/bin/python" -m pip install --quiet --require-hashes -r "${REQ}"
+        "${RUNNER_TEMP}/semgrep-venv/bin/semgrep" --version
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        CONFIG: ${{ inputs.config }}
+        DIRECTORY: ${{ inputs.directory }}
+        EXCLUDE: ${{ inputs.exclude }}
+        SEMGREP_SEND_METRICS: "off"
+        SEMGREP_ENABLE_VERSION_CHECK: "0"
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/semgrep-out"; mkdir -p "${OUT}"
+        args=(scan --metrics off --disable-version-check --quiet
+              --json-output "${OUT}/results.json" --sarif-output "${OUT}/results.sarif")
+        IFS=',' read -ra CFGS <<< "${CONFIG}"
+        for c in "${CFGS[@]}"; do args+=(--config "${c}"); done
+        if [ -n "${EXCLUDE}" ]; then
+          IFS=',' read -ra EXS <<< "${EXCLUDE}"
+          for e in "${EXS[@]}"; do args+=(--exclude "${e}"); done
+        fi
+        # No --error: the gate below decides from the JSON. Exit codes >1 are
+        # real failures (bad config, rule fetch failure) and propagate.
+        "${RUNNER_TEMP}/semgrep-venv/bin/semgrep" "${args[@]}" "${DIRECTORY}"
+        echo "json=${OUT}/results.json" >> "${GITHUB_OUTPUT}"
+        if [ "$(jq '.runs | length' "${OUT}/results.sarif")" -gt 0 ]; then
+          echo "sarif=${OUT}/results.sarif" >> "${GITHUB_OUTPUT}"
+        else
+          echo "sarif=" >> "${GITHUB_OUTPUT}"
+        fi
+
+    - name: Upload SARIF to GitHub Security tab
+      if: ${{ inputs.sarif-upload != 'false' && steps.scan.outputs.sarif != '' }}
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif }}
+        category: semgrep
+
+    - name: Annotate and enforce gate
+      id: gate
+      shell: bash
+      env:
+        RESULTS_JSON: ${{ steps.scan.outputs.json }}
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+      run: bash "${{ github.action_path }}/gate.sh"

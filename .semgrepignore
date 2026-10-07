@@ -1,0 +1,10 @@
+# Semgrep's built-in ignore list skips every tests/ directory. This repo keeps
+# scanner fixtures under tests/, some of them deliberately insecure, so the
+# defaults are replaced here: honour .gitignore, skip .git, and skip every
+# fixture tree except the one the SAST dogfood job scans on purpose.
+:include .gitignore
+.git/
+tests/iac-scan/
+tests/container-lint/
+tests/container-scan/
+tests/severity-gate/

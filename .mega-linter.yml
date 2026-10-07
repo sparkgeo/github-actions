@@ -34,3 +34,8 @@ DISABLE_ERRORS_LINTERS:
 SHOW_ELAPSED_TIME: true
 FLAVOR_SUGGESTIONS: false
 PRINT_ALPACA: false
+
+# Scanner test fixtures (some deliberately insecure) are linted by their own
+# CI jobs with the expected outcome asserted; keep them out of the repo-wide
+# lint gate.
+FILTER_REGEX_EXCLUDE: 'tests/[^/]+/fixtures/'

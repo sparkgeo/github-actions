@@ -1,0 +1,74 @@
+{
+  "version": "1.179.0",
+  "results": [
+    {
+      "check_id": "python.lang.security.audit.subprocess-shell-true.subprocess-shell-true",
+      "path": "tests/sast-precommit/fixtures/insecure/app.py",
+      "start": {
+        "line": 11,
+        "col": 39
+      },
+      "end": {
+        "line": 11
+      },
+      "extra": {
+        "severity": "ERROR",
+        "message": "Found 'subprocess' function 'call' with 'shell=True'. This is dangerous because this call will spawn the command using a shell process. Doing so propagates current shell settings and variables, which makes it much easier for a malicious actor to execute commands. Use 'shell=False' instead.",
+        "metadata": {
+          "category": "security",
+          "cwe": [
+            "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+          ]
+        }
+      }
+    },
+    {
+      "check_id": "python.lang.security.deserialization.pickle.avoid-pickle",
+      "path": "tests/sast-precommit/fixtures/insecure/app.py",
+      "start": {
+        "line": 16,
+        "col": 12
+      },
+      "end": {
+        "line": 16
+      },
+      "extra": {
+        "severity": "WARNING",
+        "message": "Avoid using `pickle`, which is known to lead to code execution vulnerabilities. When unpickling, the serialized data could be manipulated to run arbitrary code. Instead, consider serializing the relevant data as JSON or a similar text-based serialization format.",
+        "metadata": {
+          "category": "security",
+          "cwe": [
+            "CWE-502: Deserialization of Untrusted Data"
+          ]
+        }
+      }
+    },
+    {
+      "check_id": "python.lang.security.audit.eval-detected.eval-detected",
+      "path": "tests/sast-precommit/fixtures/insecure/app.py",
+      "start": {
+        "line": 25,
+        "col": 12
+      },
+      "end": {
+        "line": 25
+      },
+      "extra": {
+        "severity": "WARNING",
+        "message": "Detected the use of eval(). eval() can be dangerous if used to evaluate dynamic content. If this content can be input from outside the program, this may be a code injection vulnerability. Ensure evaluated content is not definable by external sources.",
+        "metadata": {
+          "category": "security",
+          "cwe": [
+            "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code ('Eval Injection')"
+          ]
+        }
+      }
+    }
+  ],
+  "errors": [],
+  "paths": {
+    "scanned": [
+      "tests/sast-precommit/fixtures/insecure/app.py"
+    ]
+  }
+}

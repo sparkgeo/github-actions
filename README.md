@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| SAST Pre-commit | [`sast-precommit.yml`](.github/workflows/sast-precommit.yml) | `workflow_call` | Reusable semgrep gate — fast pattern-based SAST for any language via registry packs; inline PR annotations; SARIF to Security tab; blocks on `fail-on-severity` |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Semgrep | [`semgrep`](.github/actions/semgrep/action.yml) | Pattern-based SAST (semgrep registry packs or local rules); inline annotations, step-summary counts, SARIF; gate per `fail-on-severity`. Installed from PyPI with `--require-hashes` against a committed lock file | `config` (default: `p/default`), `directory` (default: `.`), `fail-on-severity` (default: `high`), `exclude` (default: `""`), `python-version` (default: `3.12`), `sarif-upload` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,45 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### SAST Pre-commit (semgrep)
+
+The fast SAST tier. [semgrep](https://semgrep.dev) matches code against rule packs in seconds: the same rules run as a pre-commit hook on the developer machine and in CI so a PR from someone without the hook is still gated. The deep data-flow tier is CodeQL (`sast-scan.yml`, #19).
+
+```yaml
+# .github/workflows/sast.yml  (in each consuming repo)
+name: SAST
+on: [pull_request]
+jobs:
+  semgrep:
+    uses: sparkgeo/github-actions/.github/workflows/sast-precommit.yml@<SHA>
+    permissions:
+      contents: read
+      security-events: write   # required for SARIF upload
+    with:
+      actions-ref: <SHA>
+      config: p/default        # or p/python, p/owasp-top-ten, a local rules path, comma-separated
+      fail-on-severity: high   # semgrep ERROR; 'medium' adds WARNING
+```
+
+**Rule packs.** `p/default` auto-selects by language and is the default. Targeted packs: `p/python`, `p/javascript`, `p/typescript`, `p/golang`, `p/java`, `p/django`, `p/flask`, `p/react`, `p/owasp-top-ten`. Registry packs are fetched from `semgrep.dev` at scan time (metrics and the version check are off); a path to local rules works offline. `auto` logs the project URL with the registry; prefer a named pack.
+
+**Severity.** semgrep has three levels: `high` blocks on ERROR, `medium` on WARNING too, `low` on INFO too, `none` reports only. `critical` behaves as `high` (nothing outranks ERROR).
+
+**Ignoring.** Semgrep's built-in ignore list skips `tests/`, `vendor/`, `node_modules/`, minified files and more. A `.semgrepignore` at the repo root replaces those defaults, so start it with `:include .gitignore`. Inline: append `# nosemgrep: <rule-id>` to the line with a reason in a comment.
+
+**Pre-commit hook.** Same tool and pack locally:
+
+```yaml
+repos:
+  - repo: https://github.com/semgrep/pre-commit
+    rev: v1.179.0
+    hooks:
+      - id: semgrep
+        args: [--config, p/default, --error, --metrics, "off", --skip-unknown-extensions]
+```
+
+**Install.** semgrep publishes no standalone binary, so the composite installs from PyPI with `pip install --require-hashes` against `.github/actions/semgrep/requirements.txt`, a fully pinned lock of semgrep and its dependencies. Bump by regenerating the lock (`pip-compile --generate-hashes`).
 
 ## Consuming repo CI setup
 
