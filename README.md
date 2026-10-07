@@ -419,7 +419,7 @@ python3 -I .github/actions/threat-feeds/normalize.py --feed kev \
   --input <(curl -sSfL https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json) --output kev.json
 ```
 
-The mirror job's upstream hosts are listed in [`docs/egress-allowlist.md`](docs/egress-allowlist.md); no other job may reach them. Feed terms of use, the expiry policy rationale and the MISP graduation criteria are documented in #112.
+The mirror job's upstream hosts are listed in [`docs/egress-allowlist.md`](docs/egress-allowlist.md); no other job may reach them. Feed terms of use and attribution, the expiry policy rationale, the per-feed quality log and the MISP graduation criteria are in [`docs/threat-feeds.md`](docs/threat-feeds.md).
 
 ## Consuming repo CI setup
 

@@ -33,6 +33,12 @@ Every PR that adds or modifies a workflow or composite action must satisfy all o
     A step that needs a new outbound host adds it to that job's allowed-endpoints
     AND to docs/egress-allowlist.md in the same PR. Prefer disabling a tool's
     telemetry over allowlisting its telemetry host.
+
+[ ] External threat intelligence (IOC lists, exploit scores, exploited-CVE catalogues)
+    is read from the daily mirror through the threat-feeds composite, never fetched
+    live from the feed host. The mirror job is the only path to those hosts
+    (docs/threat-feeds.md). Per-package lookups (deps.dev, OSV) are queries, not
+    feeds, and are allowlisted for their own job.
 ```
 
 ## Self-hosted runners
