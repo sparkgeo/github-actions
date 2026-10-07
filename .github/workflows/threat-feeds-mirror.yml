@@ -1,0 +1,183 @@
+name: Threat Feeds Mirror
+
+# Daily mirror of the free threat-intelligence feeds that CI gates consume
+# (SecOps plan Step 27, issue #109). Fetches CISA KEV, FIRST EPSS, and the
+# abuse.ch ThreatFox, Feodo Tracker and URLhaus exports, normalises each to
+# one JSON envelope with the IOC expiry policy applied, and publishes the set
+# with SHA256SUMS as assets on a dated release (threat-feeds-YYYY-MM-DD) and
+# a rolling `threat-feeds-latest` release. Consuming workflows read the mirror
+# through the `threat-feeds` composite and never talk to the upstream hosts.
+#
+# Any upstream fetch failure, parse failure, or a feed losing more than half
+# its entries day over day fails the run without publishing and opens (or
+# comments on) a tracking issue.
+#
+# Runs only in this repo on a schedule: no user-controlled input reaches a
+# run: block. contents: write is needed to create releases and tags.
+
+on:
+  schedule:
+    - cron: '17 5 * * *'  # daily, 05:17 UTC (KEV and EPSS update overnight US time)
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: threat-feeds-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror feeds
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # releases and tags
+      issues: write    # failure tracking issue
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            www.cisa.gov:443
+            epss.empiricalsecurity.com:443
+            threatfox.abuse.ch:443
+            feodotracker.abuse.ch:443
+            urlhaus.abuse.ch:443
+            github.com:443
+            api.github.com:443
+            uploads.github.com:443
+            release-assets.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch upstream feeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="${RUNNER_TEMP}/raw"
+          mkdir -p "${RAW}"
+          fetch() {  # <name> <url>
+            echo "::group::${1}"
+            curl -sSfL --max-time 180 --retry 3 --retry-delay 10 -o "${RAW}/${1}" "${2}"
+            ls -la "${RAW}/${1}"
+            echo "::endgroup::"
+          }
+          fetch kev.json      https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+          fetch epss.csv.gz   https://epss.empiricalsecurity.com/epss_scores-current.csv.gz
+          fetch threatfox.json https://threatfox.abuse.ch/export/json/recent/
+          fetch feodo.json    https://feodotracker.abuse.ch/downloads/ipblocklist.json
+          fetch urlhaus.csv   https://urlhaus.abuse.ch/downloads/csv_recent/
+
+      - name: Download previous snapshot
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/prev"
+          if ! gh release download threat-feeds-latest -R "${REPO}" -D "${RUNNER_TEMP}/prev" -p '*.json'; then
+            echo "::notice title=threat-feeds::no previous snapshot; day-over-day drop check skipped"
+          fi
+
+      - name: Normalise
+        id: normalise
+        shell: bash
+        run: |
+          set -uo pipefail
+          RAW="${RUNNER_TEMP}/raw"; PREV="${RUNNER_TEMP}/prev"; OUT="${RUNNER_TEMP}/feeds"
+          mkdir -p "${OUT}"
+          {
+            echo "## Threat feeds mirror"
+            echo
+            echo "| Feed | Entries | Expired (dropped) | Skipped |"
+            echo "|---|---|---|---|"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          failed=0
+          : > "${RUNNER_TEMP}/notes.md"
+          for spec in kev:kev.json epss:epss.csv.gz threatfox:threatfox.json feodo:feodo.json urlhaus:urlhaus.csv; do
+            feed="${spec%%:*}"; file="${spec#*:}"
+            args=(--feed "${feed}" --input "${RAW}/${file}" --output "${OUT}/${feed}.json")
+            [ -f "${PREV}/${feed}.json" ] && args+=(--previous "${PREV}/${feed}.json")
+            if python3 -I .github/actions/threat-feeds/normalize.py "${args[@]}" | tee -a "${RUNNER_TEMP}/notes.md"; then
+              :
+            else
+              failed=1
+            fi
+          done
+          echo "date=$(date -u +%F)" >> "${GITHUB_OUTPUT}"
+          exit "${failed}"
+
+      - name: Checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/feeds"
+          sha256sum ./*.json | sed "s#\./##" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish dated and latest releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DATE: ${{ steps.normalise.outputs.date }}
+          TARGET: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}"
+          {
+            echo "Threat feed snapshot ${DATE} (UTC). Normalised by \`.github/actions/threat-feeds/normalize.py\` at ${TARGET}."
+            echo
+            echo '```'
+            cat notes.md
+            echo '```'
+            echo
+            echo "Consume with the \`threat-feeds\` composite; verify with \`sha256sum -c SHA256SUMS\`."
+          } > release-notes.md
+          publish() {  # <tag> <title>; recreate so a rerun on the same day, or the rolling tag, is replaced
+            gh release delete "${1}" -R "${REPO}" --cleanup-tag --yes 2>/dev/null || true
+            gh release create "${1}" -R "${REPO}" --target "${TARGET}" --title "${2}" \
+              --notes-file release-notes.md --latest=false feeds/*
+          }
+          publish "threat-feeds-${DATE}" "Threat feeds ${DATE}"
+          publish "threat-feeds-latest" "Threat feeds (latest: ${DATE})"
+
+      - name: Prune dated releases beyond 90
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release list -R "${REPO}" --limit 500 --json tagName \
+            --jq '.[].tagName | select(test("^threat-feeds-[0-9]{4}-[0-9]{2}-[0-9]{2}$"))' \
+            | sort -r | tail -n +91 \
+            | while IFS= read -r tag; do
+                echo "pruning ${tag}"
+                gh release delete "${tag}" -R "${REPO}" --cleanup-tag --yes
+              done
+
+      - name: Open or update the tracking issue
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="Threat feeds mirror failed"
+          BODY="$(printf '%s\n\n%s' \
+            "The daily mirror failed on $(date -u +%F): ${RUN_URL}" \
+            "An upstream feed could not be fetched or parsed, or lost more than half its entries day over day. Consumers keep reading the last good snapshot (threat-feeds-latest) until this is fixed.")"
+          existing="$(gh issue list -R "${REPO}" --state open --search "\"${TITLE}\" in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" -R "${REPO}" --body "${BODY}"
+          else
+            gh issue create -R "${REPO}" --title "${TITLE}" --label security --body "${BODY}"
+          fi
