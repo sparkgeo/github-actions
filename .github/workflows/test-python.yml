@@ -32,10 +32,6 @@ on:
         description: 'Override dependency install (runs in a fresh venv on PATH)'
         default: ''
         type: string
-      codecov-upload:
-        description: 'Upload coverage to Codecov via OIDC (caller grants id-token: write)'
-        default: false
-        type: boolean
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the pytest
@@ -45,8 +41,7 @@ on:
         type: string
 
 # No permissions block: a reusable workflow inherits the caller job's granted
-# permissions. The caller grants `contents: read` (plus `id-token: write` for
-# codecov-upload). See README.
+# permissions. The caller grants `contents: read`. See README.
 
 jobs:
   pytest:
@@ -76,4 +71,3 @@ jobs:
           coverage-threshold: ${{ inputs.coverage-threshold }}
           extra-args: ${{ inputs.extra-args }}
           install-command: ${{ inputs.install-command }}
-          codecov-upload: ${{ inputs.codecov-upload }}

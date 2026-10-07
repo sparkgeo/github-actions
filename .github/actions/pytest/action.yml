@@ -11,8 +11,7 @@ description: |
   override. pytest and coverage are added to the environment when the
   project does not declare them.
 
-  Required permissions on calling job: contents: read (plus id-token: write
-  when codecov-upload is true, for tokenless OIDC upload).
+  Required permissions on calling job: contents: read.
 inputs:
   working-directory:
     description: "Project directory (the one holding pyproject.toml / the lockfile)."
@@ -44,9 +43,6 @@ inputs:
   artifact-name:
     description: "Name of the uploaded artifact holding junit.xml and coverage.xml."
     default: "pytest-results"
-  codecov-upload:
-    description: "Upload coverage.xml to Codecov via OIDC (needs id-token: write)."
-    default: "false"
 outputs:
   tests-total:
     description: "Number of test cases."
@@ -167,14 +163,6 @@ runs:
         path: ${{ runner.temp }}/pytest/*.xml
         retention-days: 14
         if-no-files-found: warn
-
-    - name: Upload coverage to Codecov
-      if: ${{ inputs.codecov-upload == 'true' }}
-      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
-      with:
-        files: ${{ runner.temp }}/pytest/coverage.xml
-        use_oidc: true
-        fail_ci_if_error: true
 
     - name: Annotate and enforce gate
       id: report

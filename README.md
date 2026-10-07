@@ -41,7 +41,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
-| Pytest Coverage Gate | [`pytest`](.github/actions/pytest/action.yml) | Runs pytest under coverage.py; fails on test failures or line coverage below the threshold. Inline annotations for failed tests, counts and coverage in the step summary, JUnit + coverage XML kept as an artifact. Detects uv.lock (checksum-verified uv), poetry.lock (poetry) or requirements*.txt (pip) | `working-directory` (default: `.`), `python-version` (default: `""` — `.python-version`, then `requires-python`, then `3.12`), `coverage-threshold` (default: `80`; `0` disables), `coverage-source` (default: `""`), `extra-args` (default: `""`), `install-command` (default: `""`), `codecov-upload` (default: `false`), `artifact-name` (default: `pytest-results`) |
+| Pytest Coverage Gate | [`pytest`](.github/actions/pytest/action.yml) | Runs pytest under coverage.py; fails on test failures or line coverage below the threshold. Inline annotations for failed tests, counts and coverage in the step summary, JUnit + coverage XML kept as an artifact. Detects uv.lock (checksum-verified uv), poetry.lock (poetry) or requirements*.txt (pip) | `working-directory` (default: `.`), `python-version` (default: `""` — `.python-version`, then `requires-python`, then `3.12`), `coverage-threshold` (default: `80`; `0` disables), `coverage-source` (default: `""`), `extra-args` (default: `""`), `install-command` (default: `""`), `artifact-name` (default: `pytest-results`) |
 
 ### GitHub Actionlint
 
@@ -400,7 +400,19 @@ jobs:
 
 **Outputs.** Failed tests appear as inline PR annotations (`junit_family=xunit1` keeps file and line). The step summary shows total/failed/skipped and the coverage percentage; `junit.xml` and `coverage.xml` are uploaded as the `pytest-results` artifact for 14 days. Coverage measurement follows the project's `[tool.coverage.run]` config; set `coverage-source` to override.
 
-**Codecov (optional).** `codecov-upload: true` uploads `coverage.xml` tokenless via OIDC; the caller job must grant `id-token: write`.
+**Codecov (optional).** Not built in: `codecov/codecov-action` is not on the org allowlist, and GitHub resolves every `uses:` in a composite before `if:` runs, so even a disabled step would fail. Upload from a follow-on job in the caller using the artifact once `codecov/*` is allowlisted:
+
+```yaml
+  codecov:
+    needs: python
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }
+    steps:
+      - uses: actions/download-artifact@<SHA>
+        with: { name: pytest-results }
+      - uses: codecov/codecov-action@<SHA>
+        with: { files: coverage.xml, use_oidc: true }
+```
 
 ## Consuming repo CI setup
 
