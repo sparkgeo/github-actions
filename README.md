@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| IaC Scan | [`iac-scan.yml`](.github/workflows/iac-scan.yml) | `workflow_call` | Reusable checkov gate — Terraform/OpenTofu/CloudFormation misconfiguration scan, cloud-agnostic, PR annotations, SARIF to Security tab; blocks on `fail-on-severity` |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -40,6 +41,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TruffleHog Verified Scan | [`trufflehog`](.github/actions/trufflehog/action.yml) | Verified active-secret detection; hard-fails on verified secrets, unverified matches are warnings. Converts findings to SARIF and uploads to the Security tab. Installs a checksum-verified TruffleHog binary | `version` (default: `3.95.5`), `only-verified` (default: `true`), `sarif-upload` (default: `true`) |
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
+| Checkov | [`checkov`](.github/actions/checkov/action.yml) | IaC misconfiguration scan (Terraform, OpenTofu, CloudFormation, Kubernetes, Helm, …); PR annotations + SARIF; gate per `fail-on-severity`. Installs the pinned checkov release binary verified against a recorded sha256 | `version` (default: `3.3.25`), `version-sha256`, `directory` (default: `.`), `frameworks` (default: `terraform,terraform_json,cloudformation`), `fail-on-severity` (default: `high`), `skip-checks` (default: `""`), `download-external-modules` (default: `false`), `sarif-upload` (default: `true`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 
 ### GitHub Actionlint
@@ -347,6 +349,39 @@ For the local fast-feedback stage, copy [`examples/iac.pre-commit-config.yaml`](
 
 - **OpenTofu:** works on Terraform-compatible `.tf` files. tflint does **not** read `.tofu` files and does not understand OpenTofu-only syntax (e.g. the state/plan `encryption` block, 1.7+). Standard `.tf` OpenTofu code lints fine; keep OpenTofu-specific config out of `.tf` if you hit false positives.
 - **Terramate:** tflint ignores `.tm.hcl` stack files (only `.tf` is linted). If you **commit** terramate-generated `.tf` (`_terramate_generated_*.tf`), `tflint --recursive` lints those too — they often trip rules like `terraform_required_providers` or `terraform_unused_declarations` that you can't hand-fix. Either fix the generate templates, disable those rules in `.tflint.hcl`, or rely on the default `error` severity floor (these are `Warning`-level, so they annotate but do not block).
+
+### IaC Scan (checkov)
+
+The PR-stage security gate for Terraform / OpenTofu (and CloudFormation, Kubernetes, Helm via `frameworks`). [checkov](https://github.com/bridgecrewio/checkov) ships AWS, GCP, and Azure policies, so one workflow serves every cloud. Complements `lint-iac.yml`: tflint checks style and provider-specific correctness; checkov checks security posture (public buckets, open security groups, missing encryption, …).
+
+```yaml
+# .github/workflows/iac-scan.yml  (in each consuming repo)
+name: IaC Scan
+on: [pull_request]
+jobs:
+  checkov:
+    uses: sparkgeo/github-actions/.github/workflows/iac-scan.yml@<SHA>
+    permissions:
+      contents: read
+      security-events: write   # required for SARIF upload
+    with:
+      actions-ref: <SHA>
+      directory: infra            # default '.'
+      fail-on-severity: high      # default; 'none' to report without blocking
+```
+
+**Severity.** The community checkov CLI attaches no severity to findings (that needs a Prisma Cloud API key), so every failed check counts as `high`: `high`, `medium`, and `low` block on any finding, `critical` and `none` never block. Use `none` for an advisory rollout on a repo with existing findings, then switch to `high`.
+
+**Suppressing a finding.** Put the skip comment inside the resource block, with a reason; it is reviewed like code:
+
+```hcl
+resource "aws_s3_bucket" "site" {
+  # checkov:skip=CKV_AWS_18:Static site bucket; access logs are collected at the CDN
+  bucket = "example-site"
+}
+```
+
+`skip-checks` disables a check ID for the whole run; prefer the inline form. On a private repo without a Code Security licence, set `sarif-upload: false` (annotations and the log still work).
 
 ### Lint Helm (kubeconform)
 

@@ -1,0 +1,80 @@
+name: IaC Scan
+
+# Reusable PR security gate for Infrastructure as Code. Runs checkov against
+# Terraform / OpenTofu (and CloudFormation, Kubernetes, Helm, … via the
+# `frameworks` input); cloud-agnostic. Findings appear as PR annotations and
+# as SARIF in the Security tab; the job blocks per fail-on-severity. Pairs
+# with lint-iac.yml (tflint: style and provider-specific correctness).
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      directory:
+        description: 'Directory to scan (recursively)'
+        default: '.'
+        type: string
+      frameworks:
+        description: 'Comma-separated checkov frameworks'
+        default: 'terraform,terraform_json,cloudformation'
+        type: string
+      fail-on-severity:
+        description: 'Lowest severity that fails the build: critical, high, medium, low, or none'
+        default: 'high'
+        type: string
+      skip-checks:
+        description: 'Comma-separated check IDs to skip for the whole run (prefer inline checkov:skip)'
+        default: ''
+        type: string
+      download-external-modules:
+        description: 'Let checkov download remote Terraform modules'
+        default: false
+        type: boolean
+      sarif-upload:
+        description: 'Upload SARIF results to the GitHub Security tab'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the checkov
+          composite from. Pin this to the SAME SHA you pinned iac-scan.yml to,
+          so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always) and adds
+# `security-events: write` only when it wants SARIF upload. See README.
+
+jobs:
+  checkov:
+    name: Checkov
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout checkov composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/checkov
+        with:
+          directory: ${{ inputs.directory }}
+          frameworks: ${{ inputs.frameworks }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          skip-checks: ${{ inputs.skip-checks }}
+          download-external-modules: ${{ inputs.download-external-modules }}
+          sarif-upload: ${{ inputs.sarif-upload }}
