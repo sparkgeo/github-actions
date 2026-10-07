@@ -218,9 +218,6 @@ jobs:
         with:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
-          # MegaLinter is AGPL-3.0. It runs inside CI and is not redistributed,
-          # so the copyleft terms do not apply; exempt it from the licence gate.
-          allow-dependencies-licenses: pkg:githubactions/oxsecurity/megalinter
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
