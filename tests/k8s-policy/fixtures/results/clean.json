@@ -1,0 +1,15 @@
+[
+  {
+    "filename": "rendered/charts/web/helm.yaml",
+    "namespace": "main",
+    "successes": 15,
+    "warnings": [
+      {"msg": "Deployment/web: no app.kubernetes.io/name label"}
+    ]
+  },
+  {
+    "filename": "rendered/kustomize/overlays/dev/kustomize.yaml",
+    "namespace": "main",
+    "successes": 15
+  }
+]

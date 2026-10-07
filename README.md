@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| K8s Policy | [`k8s-policy.yml`](.github/workflows/k8s-policy.yml) | `workflow_call` | Reusable conftest gate — renders Helm charts / Kustomize overlays and enforces Sparkgeo org policy (approved registries, pinned images, resource requests/limits, non-root, no privileged) with the bundled Rego; blocks on any deny |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| K8s Policy | [`k8s-policy`](.github/actions/k8s-policy/action.yml) | Renders Helm charts / Kustomize overlays and evaluates them with conftest against the bundled org policy set ([`policies/`](.github/actions/k8s-policy/policies)); error annotations + job summary per violation. Installs a checksum-verified conftest binary | `version` (default: `0.71.1`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `policy-path` (default: `""`), `data-path` (default: `""`), `fail-on-warn` (default: `false`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,53 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### K8s Policy (conftest)
+
+The PR-stage org-policy gate for Helm charts and Kustomize overlays. `kubeconform` (above) checks that manifests are valid; `trivy config` checks generic hardening; this gate enforces rules that are specific to Sparkgeo and cannot be expressed in either. Each chart under `charts-dir` is rendered with `helm template`, each overlay under `kustomize-dir` with `kustomize build`, and the rendered manifests are evaluated with [conftest](https://www.conftest.dev/) (OPA/Rego). Any `deny` fails the job; every deny is an error annotation and a row in the job summary. See [ADR 0001](docs/adr/0001-k8s-policy-engine.md) for the conftest vs. kyverno decision.
+
+```yaml
+# .github/workflows/lint.yml (add to the same file)
+  k8s-policy:
+    uses: sparkgeo/github-actions/.github/workflows/k8s-policy.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      charts-dir: charts            # default; '' to skip Helm
+      kustomize-dir: ''             # optional; path to Kustomize overlays root
+```
+
+**Bundled policies** ([`.github/actions/k8s-policy/policies/`](.github/actions/k8s-policy/policies)) apply to every container, including init containers, of `Pod`, `Deployment`, `StatefulSet`, `DaemonSet`, `ReplicaSet`, `Job` and `CronJob`:
+
+| Policy | Rule |
+|---|---|
+| Approved registries | Image registry must match one of `ghcr.io`, `cgr.dev`, `public.ecr.aws`, `*.dkr.ecr.*.amazonaws.com`. Bare names (`nginx`) resolve to `docker.io` and are denied |
+| Pinned images | Image must carry a tag other than `latest`, or a digest |
+| Resources | `resources.requests.cpu`, `resources.requests.memory` and `resources.limits.memory` must be set (a CPU limit is left to the team) |
+| Non-root | `securityContext.runAsNonRoot: true` on the pod or the container (container-level `false` overrides); `runAsUser: 0` is denied |
+| Not privileged | `securityContext.privileged: true` is denied |
+
+**Overriding the registry list:** add a data file in the calling repo and point `data-path` at its directory. Entries are glob patterns matched against the registry host.
+
+```yaml
+# .k8s-policy/config.yaml
+k8s_policy:
+  allowed_registries:
+    - ghcr.io
+    - "*.dkr.ecr.*.amazonaws.com"
+```
+
+```yaml
+    with:
+      data-path: .k8s-policy
+```
+
+**Adding repo-specific rules:** put Rego files in a directory and set `policy-path`. They are evaluated alongside the bundled set in every namespace (`--all-namespaces`), so any `package` name works. `deny contains msg if { ... }` blocks; `warn contains msg if { ... }` annotates only, unless `fail-on-warn: true`.
+
+**Local run:** `conftest test --all-namespaces -p <path-to>/.github/actions/k8s-policy/policies <(helm template release charts/my-chart)`.
+
+The bundle is versioned with this repo: `actions-ref` selects both the composite and the policies, so a consumer pinned to a SHA never picks up a new rule unnoticed. If the rules later need to be applied in-cluster (Gatekeeper/Kyverno) or by other tooling, extract `policies/` to its own repo and keep the same package layout.
+
+Findings are emitted as job-level error annotations naming the chart/overlay and the `Kind/name container <name>` — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 ## Consuming repo CI setup
 

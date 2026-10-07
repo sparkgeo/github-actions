@@ -1,0 +1,20 @@
+[
+  {
+    "filename": "rendered/charts/web/helm.yaml",
+    "namespace": "main",
+    "successes": 12,
+    "warnings": [
+      {"msg": "Deployment/web: no app.kubernetes.io/name label"}
+    ],
+    "failures": [
+      {"msg": "Deployment/web container app: image \"nginx:latest\" is not from an allowed registry"},
+      {"msg": "Deployment/web container app: image \"nginx:latest\" uses the latest tag; pin a tag or digest"},
+      {"msg": "Deployment/web container app: securityContext.privileged must not be true"}
+    ]
+  },
+  {
+    "filename": "rendered/kustomize/overlays/dev/kustomize.yaml",
+    "namespace": "main",
+    "successes": 15
+  }
+]

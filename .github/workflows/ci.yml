@@ -76,6 +76,34 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Dogfood the conftest policy gate on the fixture chart/overlay (must pass the
+  # bundled policies), then check the Rego bundle and gate.sh against recorded
+  # fixtures with the conftest binary the composite installed.
+  k8s-policy:
+    name: K8s Policy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/k8s-policy
+        with:
+          charts-dir: tests/k8s-policy/fixtures/charts
+          kustomize-dir: tests/k8s-policy/fixtures/kustomize/overlays
+
+      - name: Policy bundle and gate script fixtures
+        env:
+          CONFTEST: ${{ runner.temp }}/conftest
+        run: tests/k8s-policy/run.sh
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

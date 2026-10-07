@@ -1,0 +1,146 @@
+name: "Helm/Kustomize Policy Gate (conftest)"
+description: |
+  Renders Helm charts and Kustomize overlays and evaluates the rendered
+  manifests against Sparkgeo's org policies with conftest (OPA/Rego). The
+  bundled policy set (policies/ next to this action) denies images from
+  non-approved registries, unpinned or `latest` images, containers without
+  resource requests/limits, containers not running as non-root, and
+  privileged containers. Consumers can add their own Rego under `policy-path`
+  and override the allowed registries through a `data-path` file.
+
+  Installs a pinned, checksum-verified conftest binary directly. helm and
+  kustomize are preinstalled on GitHub-hosted runners. Every `deny` is an
+  error annotation and a job-summary row; the step fails on any deny (and on
+  `warn` results when fail-on-warn is true). Rendered output has no source
+  line mapping, so annotations are job-level.
+
+  Required permissions on calling job: contents: read
+inputs:
+  version:
+    description: "conftest version to install (no leading 'v')."
+    default: "0.71.1"
+  charts-dir:
+    description: "Directory containing Helm charts (each chart = a dir with Chart.yaml). Empty to skip."
+    default: "charts"
+  kustomize-dir:
+    description: "Directory containing Kustomize overlays (each = a dir with kustomization.yaml). Empty to skip."
+    default: ""
+  policy-path:
+    description: "Extra directory of Rego policies in the consuming repo, evaluated alongside the bundled set. Empty for bundled only."
+    default: ""
+  data-path:
+    description: "Directory of YAML/JSON data files loaded into `data` (e.g. k8s_policy.allowed_registries). Empty for defaults."
+    default: ""
+  fail-on-warn:
+    description: "Also fail the step on `warn` results."
+    default: "false"
+outputs:
+  deny-count:
+    description: "Number of policy denies across all rendered targets."
+    value: ${{ steps.gate.outputs.deny-count }}
+  warn-count:
+    description: "Number of policy warnings across all rendered targets."
+    value: ${{ steps.gate.outputs.warn-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install conftest
+      shell: bash
+      env:
+        CONFTEST_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}"
+        ASSET="conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+        curl -sSfL -o "${TMP}/${ASSET}" "${BASE}/${ASSET}"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/checksums.txt"
+        # Verify the downloaded archive against the published checksum before use.
+        ( cd "${TMP}" && grep " ${ASSET}\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${TMP}/${ASSET}" -C "${TMP}" conftest
+        # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
+        install "${TMP}/conftest" "${RUNNER_TEMP}/conftest"
+
+    - name: Render charts and overlays
+      id: render
+      shell: bash
+      env:
+        CHARTS_DIR: ${{ inputs.charts-dir }}
+        KUSTOMIZE_DIR: ${{ inputs.kustomize-dir }}
+      run: |
+        set -euo pipefail
+        RENDER_DIR="${RUNNER_TEMP}/k8s-policy/rendered"
+        mkdir -p "${RENDER_DIR}"
+        failed=0
+
+        # Each target renders to <RENDER_DIR>/<source path>/{helm,kustomize}.yaml
+        # so gate.sh can recover the chart/overlay path from the conftest filename.
+        if [ -n "${CHARTS_DIR}" ] && [ -d "${CHARTS_DIR}" ]; then
+          while IFS= read -r chart; do
+            dir="$(dirname "${chart}")"
+            echo "::group::helm chart ${dir}"
+            if grep -qE '^[[:space:]]*dependencies:' "${chart}"; then
+              helm dependency build "${dir}"
+            fi
+            mkdir -p "${RENDER_DIR}/${dir}"
+            if helm template release "${dir}" > "${RENDER_DIR}/${dir}/helm.yaml"; then
+              echo "${dir}: rendered"
+            else
+              echo "::error title=helm template::helm template failed for chart ${dir}"
+              rm -f "${RENDER_DIR}/${dir}/helm.yaml"
+              failed=1
+            fi
+            echo "::endgroup::"
+            # -mindepth 1 prune skips vendored subchart dirs (<chart>/charts/*).
+          done < <(find "${CHARTS_DIR}" -mindepth 1 -type d -name charts -prune -o -name Chart.yaml -print)
+        fi
+
+        if [ -n "${KUSTOMIZE_DIR}" ] && [ -d "${KUSTOMIZE_DIR}" ]; then
+          while IFS= read -r kfile; do
+            dir="$(dirname "${kfile}")"
+            echo "::group::kustomize overlay ${dir}"
+            mkdir -p "${RENDER_DIR}/${dir}"
+            if kustomize build "${dir}" > "${RENDER_DIR}/${dir}/kustomize.yaml"; then
+              echo "${dir}: rendered"
+            else
+              echo "::error title=kustomize build::kustomize build failed for overlay ${dir}"
+              rm -f "${RENDER_DIR}/${dir}/kustomize.yaml"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done < <(find "${KUSTOMIZE_DIR}" \( -name kustomization.yaml -o -name kustomization.yml -o -name Kustomization \) -print)
+        fi
+
+        echo "render-dir=${RENDER_DIR}" >> "${GITHUB_OUTPUT}"
+        exit "${failed}"
+
+    - name: Evaluate policies
+      shell: bash
+      env:
+        RENDER_DIR: ${{ steps.render.outputs.render-dir }}
+        BUNDLED_POLICIES: ${{ github.action_path }}/policies
+        POLICY_PATH: ${{ inputs.policy-path }}
+        DATA_PATH: ${{ inputs.data-path }}
+      run: |
+        set -euo pipefail
+        ARGS=(--all-namespaces -p "${BUNDLED_POLICIES}")
+        [ -n "${POLICY_PATH}" ] && ARGS+=(-p "${POLICY_PATH}")
+        [ -n "${DATA_PATH}" ] && ARGS+=(-d "${DATA_PATH}")
+        mapfile -t TARGETS < <(find "${RENDER_DIR}" \( -name helm.yaml -o -name kustomize.yaml \) -print | sort)
+        if [ "${#TARGETS[@]}" -eq 0 ]; then
+          echo "::notice title=k8s-policy::no charts or overlays found; nothing to evaluate"
+          echo "[]" > "${RENDER_DIR}/../results.json"
+          exit 0
+        fi
+        "${RUNNER_TEMP}/conftest" test "${ARGS[@]}" -o json --no-fail "${TARGETS[@]}" > "${RENDER_DIR}/../results.json"
+        # Human-readable run for the log; the JSON above drives the gate.
+        "${RUNNER_TEMP}/conftest" test "${ARGS[@]}" --no-fail "${TARGETS[@]}" || true
+
+    - name: Gate on policy results
+      id: gate
+      shell: bash
+      env:
+        RESULTS: ${{ steps.render.outputs.render-dir }}/../results.json
+        RENDER_DIR: ${{ steps.render.outputs.render-dir }}
+        FAIL_ON_WARN: ${{ inputs.fail-on-warn }}
+      run: bash "${{ github.action_path }}/gate.sh"
