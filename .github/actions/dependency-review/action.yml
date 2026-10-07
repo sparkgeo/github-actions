@@ -7,6 +7,9 @@ inputs:
   allow-licenses:
     description: "Comma-separated list of SPDX license identifiers that are permitted. Dependencies using any other license will fail the check."
     default: "MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, CC0-1.0"
+  allow-dependencies-licenses:
+    description: "Comma-separated purls exempt from the license check (e.g. pkg:githubactions/owner/repo). Use for tools run in CI but not redistributed, where a copyleft licence does not apply."
+    default: ""
   comment-summary-in-pr:
     description: "Post a summary comment on the PR: always|on-failure|never"
     default: "on-failure"
@@ -33,6 +36,7 @@ runs:
       with:
         fail-on-severity: ${{ inputs.fail-on-severity }}
         allow-licenses: ${{ inputs.allow-licenses }}
+        allow-dependencies-licenses: ${{ inputs.allow-dependencies-licenses }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
     - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
       if: ${{ inputs.base-ref != '' }}
@@ -41,4 +45,5 @@ runs:
         head-ref: ${{ inputs.head-ref }}
         fail-on-severity: ${{ inputs.fail-on-severity }}
         allow-licenses: ${{ inputs.allow-licenses }}
+        allow-dependencies-licenses: ${{ inputs.allow-dependencies-licenses }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
