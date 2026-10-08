@@ -1,0 +1,84 @@
+name: SBOM Scan
+
+# Reusable PR/CI gate that downloads the SBOM artefact produced by
+# sbom-generate.yml and matches it against the grype vulnerability database.
+# Blocks on matches at or above fail-on-severity; uploads SARIF to the
+# Security tab.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      sbom-artifact:
+        description: 'Name of the workflow artefact containing the SBOM (from sbom-generate.yml)'
+        default: 'sbom'
+        type: string
+      sbom-file:
+        description: 'SBOM file inside the artefact to scan'
+        default: 'sbom.cyclonedx.json'
+        type: string
+      fail-on-severity:
+        description: 'Minimum severity to fail: negligible|low|medium|high|critical'
+        default: 'critical'
+        type: string
+      only-fixed:
+        description: 'Ignore matches that have no fix available yet'
+        default: false
+        type: boolean
+      sarif-upload:
+        description: 'Upload SARIF results to GitHub Security tab'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the grype
+          composite from. Pin this to the SAME SHA you pinned sbom-scan.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      match-count:
+        description: 'Number of vulnerability matches'
+        value: ${{ jobs.grype.outputs.match-count }}
+      blocking-count:
+        description: 'Number of matches at or above fail-on-severity'
+        value: ${{ jobs.grype.outputs.blocking-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always) and adds
+# `security-events: write` only when it wants SARIF upload.
+jobs:
+  grype:
+    name: Grype
+    runs-on: ubuntu-latest
+    outputs:
+      match-count: ${{ steps.grype.outputs.match-count }}
+      blocking-count: ${{ steps.grype.outputs.blocking-count }}
+    steps:
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout grype composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Download SBOM artefact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: ${{ inputs.sbom-artifact }}
+          path: sbom
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/grype
+        id: grype
+        with:
+          sbom: sbom/${{ inputs.sbom-file }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          only-fixed: ${{ inputs.only-fixed }}
+          sarif-upload: ${{ inputs.sarif-upload }}
