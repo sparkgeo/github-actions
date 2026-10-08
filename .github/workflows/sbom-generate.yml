@@ -1,0 +1,85 @@
+name: SBOM Generate
+
+# Reusable build-stage workflow that generates an SBOM with syft, uploads it
+# as a workflow artefact on every run, and attaches it to the GitHub release
+# when the caller runs on a `release` event. Feed the artefact to
+# sbom-scan.yml (grype, issue #63) for vulnerability matching.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: 'Scan target: a directory (default ".") or an image reference (e.g. ghcr.io/org/image@sha256:...)'
+        default: '.'
+        type: string
+      formats:
+        description: 'Comma-separated output formats: cyclonedx-json,spdx-json'
+        default: 'cyclonedx-json,spdx-json'
+        type: string
+      artifact-name:
+        description: 'Name of the workflow artefact the SBOM files are uploaded under'
+        default: 'sbom'
+        type: string
+      attach-to-release:
+        description: 'Upload SBOM files as release assets when triggered by a release event (caller must grant contents: write)'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the syft
+          composite from. Pin this to the SAME SHA you pinned sbom-generate.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      artifact-name:
+        description: 'Name of the uploaded SBOM artefact'
+        value: ${{ inputs.artifact-name }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always, for checkout) and
+# `contents: write` only on release workflows that want assets attached.
+jobs:
+  syft:
+    name: Syft
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout syft composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/syft
+        with:
+          target: ${{ inputs.target }}
+          formats: ${{ inputs.formats }}
+          output-dir: sbom
+
+      - name: Upload SBOM artefact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: sbom/
+          if-no-files-found: error
+
+      - name: Attach SBOM to release
+        if: inputs.attach-to-release && github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "${TAG}" sbom/* --clobber

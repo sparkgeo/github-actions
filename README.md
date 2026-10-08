@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| SBOM Generate | [`sbom-generate.yml`](.github/workflows/sbom-generate.yml) | `workflow_call` | Reusable syft build step — generates CycloneDX and SPDX SBOMs, uploads them as a workflow artefact, attaches them to the GitHub release on `release` events |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Syft SBOM | [`syft`](.github/actions/syft/action.yml) | Generates a Software Bill of Materials (CycloneDX JSON, SPDX JSON) from a directory or an image reference; writes `sbom/sbom.cyclonedx.json` and `sbom/sbom.spdx.json`. Installs a checksum-verified syft binary | `version` (default: `1.54.1`), `target` (default: `.`), `formats` (default: `cyclonedx-json,spdx-json`), `output-dir` (default: `sbom`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,31 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### SBOM Generate (syft)
+
+The build-stage inventory. [syft](https://github.com/anchore/syft) scans a source directory (lockfiles, vendored packages) or a container image reference and writes one SBOM per format: `sbom/sbom.cyclonedx.json` and `sbom/sbom.spdx.json`. The workflow uploads the directory as a workflow artefact (`sbom` by default) on every run and, on a `release` event, attaches the files to that release as assets. Feed the artefact to the grype gate (`sbom-scan.yml`, issue #63) so the inventory that is published is the one that was scanned.
+
+```yaml
+# .github/workflows/release.yml
+on:
+  release:
+    types: [published]
+  pull_request:
+
+jobs:
+  sbom:
+    uses: sparkgeo/github-actions/.github/workflows/sbom-generate.yml@<SHA>
+    permissions:
+      contents: write   # read is enough when attach-to-release is false
+    with:
+      actions-ref: <SHA>
+      target: ghcr.io/sparkgeo/app@sha256:...   # or a directory; default '.'
+      formats: cyclonedx-json,spdx-json         # default
+      attach-to-release: true                   # default; only acts on release events
+```
+
+For an image target the runner pulls from the registry directly; log in first (`docker/login-action`) for private registries. Scanning a directory needs no credentials. Package counts per file are written to the job summary.
 
 ## Consuming repo CI setup
 
