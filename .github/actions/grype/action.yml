@@ -1,0 +1,102 @@
+name: "Grype SBOM Scan"
+description: |
+  Matches an SBOM produced by the syft composite against the grype
+  vulnerability database and gates on severity. Scanning the SBOM rather
+  than the artefact means the inventory that is published is the one that
+  was checked.
+
+  Installs a pinned, checksum-verified grype binary; grype pulls its database
+  on first run. Writes JSON and SARIF results to RUNNER_TEMP, uploads the
+  SARIF to the Security tab when sarif-upload is true, then runs gate.sh:
+  matches at or above fail-on-severity are ::error annotations and fail the
+  step, the rest are ::warning annotations. Counts per severity land in the
+  job summary.
+
+  fail-on-severity maps onto the Remediation SLA Table (SecOps plan Step 25):
+  the gate blocks on the rows whose SLA you want enforced in CI
+  (critical = 48 h rows only, high = 48 h and 7 d rows, ...). Same mapping as
+  dep-scan-app.yml (issue #5).
+
+  Required permissions on calling job: contents: read, plus
+  security-events: write when sarif-upload is true.
+inputs:
+  version:
+    description: "grype version to install (no leading 'v')."
+    default: "0.120.1"
+  sbom:
+    description: "Path to the SBOM file to scan (CycloneDX or SPDX JSON from the syft composite)."
+    default: "sbom/sbom.cyclonedx.json"
+  fail-on-severity:
+    description: "Minimum severity that fails the step: negligible, low, medium, high, critical."
+    default: "critical"
+  only-fixed:
+    description: "Ignore matches that have no fix available yet."
+    default: "false"
+  sarif-upload:
+    description: "Upload SARIF results to the GitHub Security tab."
+    default: "true"
+outputs:
+  match-count:
+    description: "Number of vulnerability matches."
+    value: ${{ steps.gate.outputs.match-count }}
+  blocking-count:
+    description: "Number of matches at or above fail-on-severity."
+    value: ${{ steps.gate.outputs.blocking-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install grype
+      shell: bash
+      env:
+        GRYPE_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}"
+        TARBALL="grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+        curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/grype_${GRYPE_VERSION}_checksums.txt"
+        # Verify the downloaded binary against the published checksum before use.
+        ( cd "${TMP}" && grep " ${TARBALL}\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${TMP}/${TARBALL}" -C "${TMP}" grype
+        # Install to RUNNER_TEMP and invoke by absolute path; avoids GITHUB_PATH.
+        install "${TMP}/grype" "${RUNNER_TEMP}/grype"
+
+    - name: Scan SBOM
+      id: scan
+      shell: bash
+      env:
+        SBOM: ${{ inputs.sbom }}
+        ONLY_FIXED: ${{ inputs.only-fixed }}
+        GRYPE_CHECK_FOR_APP_UPDATE: "false"
+      run: |
+        set -euo pipefail
+        if [ ! -f "${SBOM}" ]; then
+          echo "::error title=grype::SBOM file not found: ${SBOM}"
+          exit 2
+        fi
+        RESULTS="${RUNNER_TEMP}/grype.json"
+        SARIF="${RUNNER_TEMP}/grype.sarif"
+        ARGS=(--quiet -o "json=${RESULTS}" -o "sarif=${SARIF}")
+        if [ "${ONLY_FIXED}" = "true" ]; then
+          ARGS+=(--only-fixed)
+        fi
+        # The gate decides pass/fail; grype itself never fails the step here.
+        "${RUNNER_TEMP}/grype" "sbom:${SBOM}" "${ARGS[@]}"
+        echo "results=${RESULTS}" >> "${GITHUB_OUTPUT}"
+        echo "sarif=${SARIF}" >> "${GITHUB_OUTPUT}"
+
+    - name: Upload SARIF to GitHub Security tab
+      if: ${{ inputs.sarif-upload == 'true' }}
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif }}
+        category: grype
+
+    - name: Enforce gate
+      id: gate
+      shell: bash
+      env:
+        RESULTS: ${{ steps.scan.outputs.results }}
+        FAIL_ON_SEVERITY: ${{ inputs.fail-on-severity }}
+      run: bash "${GITHUB_ACTION_PATH}/gate.sh"

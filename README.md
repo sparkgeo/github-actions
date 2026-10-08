@@ -18,6 +18,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 | SBOM Generate | [`sbom-generate.yml`](.github/workflows/sbom-generate.yml) | `workflow_call` | Reusable syft build step — generates CycloneDX and SPDX SBOMs, uploads them as a workflow artefact, attaches them to the GitHub release on `release` events |
+| SBOM Scan | [`sbom-scan.yml`](.github/workflows/sbom-scan.yml) | `workflow_call` | Reusable grype gate — downloads the SBOM artefact, matches it against the vulnerability database, blocks at or above `fail-on-severity`, uploads SARIF to the Security tab |
 
 ## Composite Actions
 
@@ -43,6 +44,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | Syft SBOM | [`syft`](.github/actions/syft/action.yml) | Generates a Software Bill of Materials (CycloneDX JSON, SPDX JSON) from a directory or an image reference; writes `sbom/sbom.cyclonedx.json` and `sbom/sbom.spdx.json`. Installs a checksum-verified syft binary | `version` (default: `1.54.1`), `target` (default: `.`), `formats` (default: `cyclonedx-json,spdx-json`), `output-dir` (default: `sbom`) |
+| Grype SBOM Scan | [`grype`](.github/actions/grype/action.yml) | Matches an SBOM file against the grype vulnerability database; blocks at or above `fail-on-severity`, annotates every match, uploads SARIF. Installs a checksum-verified grype binary | `version` (default: `0.120.1`), `sbom` (default: `sbom/sbom.cyclonedx.json`), `fail-on-severity` (default: `critical`), `only-fixed` (default: `false`), `sarif-upload` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -400,6 +402,28 @@ jobs:
 ```
 
 For an image target the runner pulls from the registry directly; log in first (`docker/login-action`) for private registries. Scanning a directory needs no credentials. Package counts per file are written to the job summary.
+
+### SBOM Scan (grype)
+
+The PR/CI counterpart to SBOM Generate. [grype](https://github.com/anchore/grype) matches the SBOM artefact against its vulnerability database, so the inventory that is published is the one that was checked. Matches at or above `fail-on-severity` fail the job as `error` annotations; lower ones are `warning` annotations. Every match goes to the Security tab as SARIF (category `grype`). Counts per severity land in the job summary.
+
+```yaml
+# .github/workflows/release.yml (add to the same file as the sbom job)
+  sbom-scan:
+    needs: sbom
+    uses: sparkgeo/github-actions/.github/workflows/sbom-scan.yml@<SHA>
+    permissions:
+      contents: read
+      security-events: write   # SARIF upload; drop when sarif-upload is false
+    with:
+      actions-ref: <SHA>
+      sbom-artifact: sbom              # default; must match sbom-generate's artifact-name
+      sbom-file: sbom.cyclonedx.json   # default
+      fail-on-severity: critical       # default
+      only-fixed: false                # true ignores matches with no fix yet
+```
+
+`fail-on-severity` follows the Remediation SLA Table: `critical` enforces the 48 h row in CI, `high` adds the 7 d row, `medium` the 30 d row, and so on. The same mapping is used by the dependency scan gate. grype also reports `Unknown` for advisories with no score; those never block on their own.
 
 ## Consuming repo CI setup
 
