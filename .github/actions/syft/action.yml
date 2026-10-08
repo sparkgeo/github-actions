@@ -1,0 +1,67 @@
+name: "Syft SBOM"
+description: |
+  Generates a Software Bill of Materials with syft. Scans a directory
+  (source tree, lockfiles) or a container image reference and writes one
+  file per requested format into output-dir:
+
+    cyclonedx-json  ->  <output-dir>/sbom.cyclonedx.json
+    spdx-json       ->  <output-dir>/sbom.spdx.json
+
+  Installs a pinned, checksum-verified syft binary. Image targets are pulled
+  from the registry directly; no Docker daemon is needed. Private registries
+  need a prior docker login (or REGISTRY_AUTH_* env) in the calling job.
+
+  The SBOM is the input to the grype gate (sbom-scan.yml, issue #63).
+
+  Required permissions on calling job: contents: read
+inputs:
+  version:
+    description: "syft version to install (no leading 'v')."
+    default: "1.54.1"
+  target:
+    description: "Scan target: a directory (default '.') or an image reference such as ghcr.io/org/image@sha256:..."
+    default: "."
+  formats:
+    description: "Comma-separated output formats: cyclonedx-json, spdx-json."
+    default: "cyclonedx-json,spdx-json"
+  output-dir:
+    description: "Directory the SBOM files are written to."
+    default: "sbom"
+outputs:
+  sbom-dir:
+    description: "Directory containing the SBOM files (same as output-dir)."
+    value: ${{ steps.sbom.outputs.sbom-dir }}
+  files:
+    description: "Comma-separated SBOM file names inside sbom-dir."
+    value: ${{ steps.sbom.outputs.files }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install syft
+      shell: bash
+      env:
+        SYFT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}"
+        TARBALL="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+        curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/syft_${SYFT_VERSION}_checksums.txt"
+        # Verify the downloaded binary against the published checksum before use.
+        ( cd "${TMP}" && grep " ${TARBALL}\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${TMP}/${TARBALL}" -C "${TMP}" syft
+        # Install to RUNNER_TEMP and invoke by absolute path; avoids GITHUB_PATH.
+        install "${TMP}/syft" "${RUNNER_TEMP}/syft"
+
+    - name: Generate SBOM
+      id: sbom
+      shell: bash
+      env:
+        SYFT: ${{ runner.temp }}/syft
+        TARGET: ${{ inputs.target }}
+        FORMATS: ${{ inputs.formats }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        # Do not phone home for update checks.
+        SYFT_CHECK_FOR_APP_UPDATE: "false"
+      run: bash "${GITHUB_ACTION_PATH}/sbom.sh"
