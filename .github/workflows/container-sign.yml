@@ -71,19 +71,18 @@ jobs:
 
       - name: Log in to GHCR
         if: steps.login.outputs.method == 'ghcr'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+        env:
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ github.token }}
+        run: echo "${REGISTRY_PASSWORD}" | docker login ghcr.io --username "${REGISTRY_USERNAME}" --password-stdin
 
       - name: Log in to registry
         if: steps.login.outputs.method == 'secrets'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
-        with:
-          registry: ${{ steps.login.outputs.host }}
-          username: ${{ secrets.registry-username }}
-          password: ${{ secrets.registry-password }}
+        env:
+          REGISTRY_HOST: ${{ steps.login.outputs.host }}
+          REGISTRY_USERNAME: ${{ secrets.registry-username }}
+          REGISTRY_PASSWORD: ${{ secrets.registry-password }}
+        run: echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_HOST}" --username "${REGISTRY_USERNAME}" --password-stdin
 
       - uses: ./.sparkgeo-github-actions/.github/actions/cosign
         id: cosign
