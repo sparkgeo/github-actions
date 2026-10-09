@@ -3,8 +3,9 @@
 #
 # Env: COSIGN (binary path), MODE (sign|verify), IMAGE (digest reference,
 # registry/repo@sha256:...), IDENTITY_REGEXP and OIDC_ISSUER (verify only).
-# Outputs: identity (the signer's certificate subject on a successful verify,
-# empty otherwise).
+# Outputs: identity (the signer's certificate subject on a successful verify
+# of a legacy-format signature; empty for bundle-format signatures and on
+# failure. The identity regexp is enforced either way).
 # Exit: 0 ok, 1 signing/verification failed, 2 bad input.
 set -euo pipefail
 
@@ -56,13 +57,23 @@ if [ "${rc}" -ne 0 ]; then
   exit 1
 fi
 
+# cosign only includes the certificate subject in its output for legacy
+# (pre-bundle) signatures; for the Sigstore bundle format cosign v3 signs
+# with by default, the subject is absent, although the identity regexp was
+# still enforced above. Report what we have.
 IDENTITY="$(jq -r '.[0].optional.Subject // ""' <<< "${RESULT}")"
-echo "Verified: signed by ${IDENTITY}"
+if [ -n "${IDENTITY}" ]; then
+  SIGNER="${IDENTITY}"
+  echo "Verified: signed by ${IDENTITY}"
+else
+  SIGNER="an identity matching ${IDENTITY_REGEXP} (subject not reported for bundle-format signatures)"
+  echo "Verified: signed by ${SIGNER}"
+fi
 {
   echo "### Container verify (cosign)"
   echo
   echo "| Image | Signer | Issuer |"
   echo "|-------|--------|--------|"
-  echo "| \`${IMAGE}\` | \`${IDENTITY}\` | \`${OIDC_ISSUER}\` |"
+  echo "| \`${IMAGE}\` | \`${SIGNER}\` | \`${OIDC_ISSUER}\` |"
 } >> "${GITHUB_STEP_SUMMARY}"
 echo "identity=${IDENTITY}" >> "${GITHUB_OUTPUT}"

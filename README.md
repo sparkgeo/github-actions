@@ -414,7 +414,7 @@ jobs:
     # ...
 ```
 
-Both workflows log in to GHCR with the job token automatically. For another registry (ECR, Docker Hub) pass `registry-username` and `registry-password` as workflow secrets; for ECR obtain them in a prior job with `aws-oidc-auth` and `aws ecr get-login-password`. Only digest references are accepted; a tag can be re-pointed after signing, so signing a tag proves nothing. Keep the identity regexp anchored to the repo, workflow file, and branch; a bare `.*` accepts any GitHub Actions workflow anywhere.
+Both workflows log in to GHCR with the job token automatically. For another registry (ECR, Docker Hub) pass `registry-username` and `registry-password` as workflow secrets; for ECR obtain them in a prior job with `aws-oidc-auth` and `aws ecr get-login-password`. Only digest references are accepted; a tag can be re-pointed after signing, so signing a tag proves nothing. Keep the identity regexp anchored to the repo, workflow file, and branch; a bare `.*` accepts any GitHub Actions workflow anywhere. The verify workflow's `identity` output names the signer for legacy-format signatures only; cosign v3 signs in the Sigstore bundle format, for which cosign does not report the subject, so treat the regexp as the record of what was enforced.
 
 ## Consuming repo CI setup
 

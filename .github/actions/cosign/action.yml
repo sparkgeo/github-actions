@@ -36,7 +36,7 @@ inputs:
     default: "https://token.actions.githubusercontent.com"
 outputs:
   identity:
-    description: "verify only: the certificate identity that signed the image."
+    description: "verify only: the certificate identity that signed the image. Empty for Sigstore bundle-format signatures (the cosign v3 default), where cosign does not report the subject; the identity regexp is enforced either way."
     value: ${{ steps.run.outputs.identity }}
 runs:
   using: "composite"
