@@ -1,0 +1,92 @@
+name: Container Sign
+
+# Reusable registry-stage step that signs a pushed image digest with cosign
+# (Sigstore keyless). Call it after build-and-push on the deployment branch;
+# the signature identity is the calling workflow's own URI, which is what
+# container-verify.yml checks before deploy. See README.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      image-digest:
+        description: 'Fully qualified image digest (e.g. ghcr.io/org/image@sha256:...)'
+        required: true
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the cosign
+          composite from. Pin this to the SAME SHA you pinned this workflow
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    secrets:
+      registry-username:
+        description: 'Registry username for non-GHCR registries (GHCR uses the job token automatically)'
+        required: false
+      registry-password:
+        description: 'Registry password or token for non-GHCR registries'
+        required: false
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `id-token: write` (keyless signing) and
+# `packages: write` for GHCR images.
+jobs:
+  cosign:
+    name: Cosign Sign
+    runs-on: ubuntu-latest
+    steps:
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout cosign composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      # The secrets context is not available in step-level if conditions, so
+      # decide the login method here and expose it as a step output.
+      - name: Pick registry login
+        id: login
+        env:
+          IMAGE: ${{ inputs.image-digest }}
+          REGISTRY_PASSWORD: ${{ secrets.registry-password }}
+        run: |
+          set -euo pipefail
+          HOST="${IMAGE%%/*}"
+          echo "host=${HOST}" >> "${GITHUB_OUTPUT}"
+          if [ -n "${REGISTRY_PASSWORD}" ]; then
+            echo "method=secrets" >> "${GITHUB_OUTPUT}"
+          elif [ "${HOST}" = "ghcr.io" ]; then
+            echo "method=ghcr" >> "${GITHUB_OUTPUT}"
+          else
+            echo "method=none" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Log in to GHCR
+        if: steps.login.outputs.method == 'ghcr'
+        env:
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ github.token }}
+        run: echo "${REGISTRY_PASSWORD}" | docker login ghcr.io --username "${REGISTRY_USERNAME}" --password-stdin
+
+      - name: Log in to registry
+        if: steps.login.outputs.method == 'secrets'
+        env:
+          REGISTRY_HOST: ${{ steps.login.outputs.host }}
+          REGISTRY_USERNAME: ${{ secrets.registry-username }}
+          REGISTRY_PASSWORD: ${{ secrets.registry-password }}
+        run: echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_HOST}" --username "${REGISTRY_USERNAME}" --password-stdin
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/cosign
+        id: cosign
+        with:
+          mode: sign
+          image: ${{ inputs.image-digest }}
+
