@@ -43,6 +43,13 @@ on:
         description: 'SBOM file to attach as an SBOM attestation (CycloneDX or SPDX JSON)'
         default: 'sbom/sbom.cyclonedx.json'
         type: string
+    secrets:
+      registry-username:
+        description: 'Registry username for non-GHCR image subjects (GHCR uses the job token automatically)'
+        required: false
+      registry-password:
+        description: 'Registry password or token for non-GHCR image subjects'
+        required: false
     outputs:
       provenance-attestation-id:
         description: 'ID of the build provenance attestation'
