@@ -224,7 +224,6 @@ jobs:
     permissions:
       contents: read
       id-token: write      # Sigstore keyless signing
-      attestations: write  # store the attestation against this repo
     uses: ./.github/workflows/build-provenance.yml
     with:
       subject-artifact: release-assets
