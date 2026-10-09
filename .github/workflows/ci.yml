@@ -184,10 +184,13 @@ jobs:
           if-no-files-found: error
 
   # Package the source tree the way a release would, so the provenance jobs
-  # below have a real file subject to attest.
+  # below have a real file subject to attest. Those jobs need the OIDC token,
+  # which fork PRs do not get, so the whole chain is gated here and skipped
+  # through `needs`.
   release-assets:
     name: Release Assets
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
     steps:
@@ -213,13 +216,11 @@ jobs:
           if-no-files-found: error
 
   # Dogfood the build-provenance reusable workflow: SLSA provenance for the
-  # source archive plus an SBOM attestation from the sbom job. Needs the job's
-  # OIDC token, which fork PRs do not get. Each run stores two attestations
-  # against this repository.
+  # source archive plus an SBOM attestation from the sbom job. Each run stores
+  # two attestations against this repository.
   provenance:
     name: Build Provenance
     needs: [release-assets, sbom]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
       id-token: write      # Sigstore keyless signing
