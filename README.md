@@ -400,7 +400,7 @@ jobs:
       attach-to-release: true                   # default; only acts on release events
 ```
 
-For an image target the runner pulls from the registry directly; log in first (`docker/login-action`) for private registries. Scanning a directory needs no credentials. Package counts per file are written to the job summary.
+For an image target the runner pulls from the registry directly; log in first (`docker login`) for private registries. Scanning a directory needs no credentials. Package counts per file are written to the job summary.
 
 ### Build Provenance (SLSA)
 
