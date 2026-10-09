@@ -17,6 +17,8 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| Container Sign | [`container-sign.yml`](.github/workflows/container-sign.yml) | `workflow_call` | Reusable cosign step — signs a pushed image digest keylessly with the calling workflow's OIDC identity; signature stored in the registry |
+| Container Verify | [`container-verify.yml`](.github/workflows/container-verify.yml) | `workflow_call` | Reusable cosign pre-deploy gate — blocks unless the image digest carries a signature from the expected workflow identity |
 
 ## Composite Actions
 
@@ -41,6 +43,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Cosign Sign / Verify | [`cosign`](.github/actions/cosign/action.yml) | Signs (`mode: sign`) or verifies (`mode: verify`) a container image digest with Sigstore keyless signing; rejects tag references. Installs a checksum-verified cosign binary | `version` (default: `3.1.3`), `mode` (required), `image` (required, digest reference), `certificate-identity-regexp` (default: `""`), `certificate-oidc-issuer` (default: `https://token.actions.githubusercontent.com`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +376,45 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Container Sign / Verify (cosign)
+
+The registry stage of container security. The PR gate (`container-scan.yml`, issue #14) answers "is this image clean?"; these two answer "is the image being deployed the exact artefact that passed CI?". [cosign](https://github.com/sigstore/cosign) signs the image **digest** keylessly: the signing identity is the calling workflow's GitHub Actions OIDC token, so there is no key to store or rotate, the signature lives in the registry next to the image, and the Rekor transparency log records it. Verification before deploy blocks any image that was not signed by the expected workflow: a tampered image, an image pushed around CI, or an image from a side channel.
+
+```yaml
+# .github/workflows/deploy.yml
+jobs:
+  build-and-push:
+    # ... docker/build-push-action with outputs.digest ...
+
+  sign:
+    needs: build-and-push
+    uses: sparkgeo/github-actions/.github/workflows/container-sign.yml@<SHA>
+    permissions:
+      id-token: write   # Sigstore keyless signing
+      packages: write   # write the signature next to the image on GHCR
+    with:
+      actions-ref: <SHA>
+      image-digest: ghcr.io/sparkgeo/app@${{ needs.build-and-push.outputs.digest }}
+
+  verify:
+    needs: [build-and-push, sign]
+    uses: sparkgeo/github-actions/.github/workflows/container-verify.yml@<SHA>
+    permissions:
+      contents: read
+      packages: read
+    with:
+      actions-ref: <SHA>
+      image-digest: ghcr.io/sparkgeo/app@${{ needs.build-and-push.outputs.digest }}
+      # The signer is the workflow that called container-sign.yml, on the branch it ran from.
+      certificate-identity-regexp: '^https://github\.com/sparkgeo/app/\.github/workflows/deploy\.yml@refs/heads/main$'
+
+  deploy:
+    needs: verify
+    # ...
+```
+
+Both workflows log in to GHCR with the job token automatically. For another registry (ECR, Docker Hub) pass `registry-username` and `registry-password` as workflow secrets; for ECR obtain them in a prior job with `aws-oidc-auth` and `aws ecr get-login-password`. Only digest references are accepted; a tag can be re-pointed after signing, so signing a tag proves nothing. Keep the identity regexp anchored to the repo, workflow file, and branch; a bare `.*` accepts any GitHub Actions workflow anywhere.
 
 ## Consuming repo CI setup
 

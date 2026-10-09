@@ -151,6 +151,62 @@ jobs:
 
       - uses: ./.github/actions/trufflehog
 
+  # Sign and verify a throwaway image with cosign (Sigstore keyless) against a
+  # registry running on the runner, then run the verify checks under
+  # tests/cosign against a public Chainguard image. Keyless signing needs the
+  # job's OIDC token, which fork PRs do not get.
+  cosign:
+    name: Cosign
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write  # Sigstore keyless signing
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Start a local registry and push a scratch image
+        id: image
+        run: |
+          set -euo pipefail
+          docker run -d --name registry -p 5000:5000 \
+            ghcr.io/distribution/distribution@sha256:4ba3adf47f5c866e9a29288c758c5328ef03396cb8f5f6454463655fa8bc83e2  # 3.0.0
+          curl -sSf --retry 10 --retry-connrefused --retry-delay 1 http://localhost:5000/v2/ > /dev/null
+          BUILD="$(mktemp -d)"
+          printf 'FROM scratch\nCOPY README.md /\n' > "${BUILD}/Dockerfile"
+          cp README.md "${BUILD}/"
+          docker build -q -t localhost:5000/smoke:ci "${BUILD}"
+          docker push -q localhost:5000/smoke:ci
+          DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' localhost:5000/smoke:ci)"
+          echo "digest=${DIGEST}" >> "${GITHUB_OUTPUT}"
+          echo "Pushed ${DIGEST}"
+
+      - name: Sign
+        uses: ./.github/actions/cosign
+        with:
+          mode: sign
+          image: ${{ steps.image.outputs.digest }}
+
+      - name: Verify
+        id: verify
+        uses: ./.github/actions/cosign
+        with:
+          mode: verify
+          image: ${{ steps.image.outputs.digest }}
+          certificate-identity-regexp: '^https://github\.com/sparkgeo/github-actions/\.github/workflows/ci\.yml@'
+
+      - name: Script checks against a public signed image
+        env:
+          COSIGN: ${{ runner.temp }}/cosign
+        run: bash tests/cosign/run.sh
+
   # Security-scan workflow and action YAML files with zizmor.
   zizmor:
     name: Zizmor
