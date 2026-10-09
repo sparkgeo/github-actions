@@ -18,6 +18,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 | SBOM Generate | [`sbom-generate.yml`](.github/workflows/sbom-generate.yml) | `workflow_call` | Reusable syft build step — generates CycloneDX and SPDX SBOMs, uploads them as a workflow artefact, attaches them to the GitHub release on `release` events |
+| Build Provenance | [`build-provenance.yml`](.github/workflows/build-provenance.yml) | `workflow_call` | Reusable release step — SLSA Build L3 provenance for release files or an image digest via GitHub artifact attestations, plus an optional SBOM attestation; verified at deploy with `gh attestation verify` |
 
 ## Composite Actions
 
@@ -399,7 +400,71 @@ jobs:
       attach-to-release: true                   # default; only acts on release events
 ```
 
-For an image target the runner pulls from the registry directly; log in first (`docker/login-action`) for private registries. Scanning a directory needs no credentials. Package counts per file are written to the job summary.
+For an image target the runner pulls from the registry directly; log in first (`docker login`) for private registries. Scanning a directory needs no credentials. Package counts per file are written to the job summary.
+
+### Build Provenance (SLSA)
+
+The release-integrity step. [GitHub artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) produce [SLSA Build Level 3](https://slsa.dev/spec/v1.0/levels) provenance on hosted runners: a signed statement that *this* file or image digest was built by *this* workflow from *this* commit. Signing is keyless through Sigstore with the workflow's OIDC token, and the attestation is stored against the calling repository, so there are no keys to manage. With `sbom-artifact` set, the SBOM from `sbom-generate.yml` is attached to the same subject as an SBOM attestation. For images, cosign (`container-sign.yml`) signs the digest; provenance records how the digest was produced. Use both.
+
+Files reach the workflow as a workflow artefact; image digests need no download.
+
+```yaml
+# .github/workflows/release.yml
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    # ... build release files, upload them as the `dist` artefact ...
+
+  sbom:
+    uses: sparkgeo/github-actions/.github/workflows/sbom-generate.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+
+  provenance:
+    needs: [build, sbom]
+    uses: sparkgeo/github-actions/.github/workflows/build-provenance.yml@<SHA>
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    with:
+      subject-artifact: dist
+      subject-path: subjects/*        # the artefact is downloaded into subjects/
+      sbom-artifact: sbom
+      sbom-path: sbom/sbom.cyclonedx.json
+
+  provenance-image:
+    needs: build-and-push
+    uses: sparkgeo/github-actions/.github/workflows/build-provenance.yml@<SHA>
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      packages: write                 # push the attestation next to the image on GHCR
+    with:
+      subject-digest: ${{ needs.build-and-push.outputs.digest }}
+      subject-name: ghcr.io/sparkgeo/app
+```
+
+**Verify before deploy.** Attestations made through this reusable workflow are signed by it, so name it as the signer; `--repo` checks the source repository recorded in the certificate.
+
+```bash
+# Release file
+gh attestation verify dist/app-1.4.2.tar.gz --repo sparkgeo/app \
+  --signer-workflow sparkgeo/github-actions/.github/workflows/build-provenance.yml
+# Its SBOM attestation
+gh attestation verify dist/app-1.4.2.tar.gz --repo sparkgeo/app \
+  --signer-workflow sparkgeo/github-actions/.github/workflows/build-provenance.yml \
+  --predicate-type https://cyclonedx.org/bom
+# Container image (bundle read from the registry; needs docker login for private images)
+gh attestation verify oci://ghcr.io/sparkgeo/app@sha256:... --repo sparkgeo/app \
+  --signer-workflow sparkgeo/github-actions/.github/workflows/build-provenance.yml --bundle-from-oci
+```
+
+`gh attestation verify` fails when no attestation matches, so it is a gate on its own: put it in the deploy job before the rollout step. For another registry (ECR, Docker Hub) pass `registry-username` and `registry-password` as workflow secrets.
 
 ## Consuming repo CI setup
 

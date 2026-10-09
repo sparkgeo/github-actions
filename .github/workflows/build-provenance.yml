@@ -1,0 +1,142 @@
+name: Build Provenance
+
+# Reusable release-stage workflow that produces SLSA Build Level 3 provenance
+# for release files or a container image digest with GitHub artifact
+# attestations, and optionally attaches an SBOM attestation to the same
+# subject. Attestations are signed keylessly through Sigstore with this
+# workflow's OIDC token and stored against the calling repository, so there
+# are no keys to manage. Verify at deploy time with `gh attestation verify`
+# (see README). Complements container-sign.yml (cosign, issue #15): cosign
+# signs the image digest; provenance records how that digest was produced.
+#
+# Files must arrive as a workflow artefact (subject-artifact) because this
+# workflow runs in its own job; image digests need no download.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      subject-artifact:
+        description: 'Workflow artefact holding the files to attest; downloaded into subjects/. Leave empty when attesting an image digest.'
+        default: ''
+        type: string
+      subject-path:
+        description: 'Path glob of the files to attest (relative to the job workspace; the artefact lands in subjects/)'
+        default: 'subjects/*'
+        type: string
+      subject-digest:
+        description: 'Container image digest to attest instead of files (sha256:...)'
+        default: ''
+        type: string
+      subject-name:
+        description: 'Fully qualified image name when attesting a digest (e.g. ghcr.io/sparkgeo/my-image)'
+        default: ''
+        type: string
+      sbom-artifact:
+        description: 'Workflow artefact holding the SBOM (from sbom-generate.yml); downloaded into sbom/. Leave empty to skip the SBOM attestation.'
+        default: ''
+        type: string
+      sbom-path:
+        description: 'SBOM file to attach as an SBOM attestation (CycloneDX or SPDX JSON)'
+        default: 'sbom/sbom.cyclonedx.json'
+        type: string
+    secrets:
+      registry-username:
+        description: 'Registry username for non-GHCR image subjects (GHCR uses the job token automatically)'
+        required: false
+      registry-password:
+        description: 'Registry password or token for non-GHCR image subjects'
+        required: false
+    outputs:
+      provenance-attestation-id:
+        description: 'ID of the build provenance attestation'
+        value: ${{ jobs.attest.outputs.provenance-attestation-id }}
+      sbom-attestation-id:
+        description: 'ID of the SBOM attestation (empty when skipped)'
+        value: ${{ jobs.attest.outputs.sbom-attestation-id }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `id-token: write` (Sigstore signing),
+# `attestations: write` (store the attestation), `contents: read`, and
+# `packages: write` when an image subject is pushed to GHCR.
+jobs:
+  attest:
+    name: Attest
+    runs-on: ubuntu-latest
+    outputs:
+      provenance-attestation-id: ${{ steps.provenance.outputs.attestation-id }}
+      sbom-attestation-id: ${{ steps.sbom.outputs.attestation-id }}
+    steps:
+      - name: Download subject artefact
+        if: inputs.subject-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: ${{ inputs.subject-artifact }}
+          path: subjects
+
+      - name: Download SBOM artefact
+        if: inputs.sbom-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: ${{ inputs.sbom-artifact }}
+          path: sbom
+
+      # The secrets context is not available in step-level if conditions, so
+      # decide the registry login method here and expose it as a step output.
+      - name: Pick registry login
+        id: login
+        if: inputs.subject-digest != ''
+        env:
+          SUBJECT_NAME: ${{ inputs.subject-name }}
+          REGISTRY_PASSWORD: ${{ secrets.registry-password }}
+        run: |
+          set -euo pipefail
+          HOST="${SUBJECT_NAME%%/*}"
+          echo "host=${HOST}" >> "${GITHUB_OUTPUT}"
+          if [ -n "${REGISTRY_PASSWORD}" ]; then
+            echo "method=secrets" >> "${GITHUB_OUTPUT}"
+          elif [ "${HOST}" = "ghcr.io" ]; then
+            echo "method=ghcr" >> "${GITHUB_OUTPUT}"
+          else
+            echo "method=none" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Log in to GHCR
+        if: steps.login.outputs.method == 'ghcr'
+        env:
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ github.token }}
+        run: echo "${REGISTRY_PASSWORD}" | docker login ghcr.io --username "${REGISTRY_USERNAME}" --password-stdin
+
+      - name: Log in to registry
+        if: steps.login.outputs.method == 'secrets'
+        env:
+          REGISTRY_HOST: ${{ steps.login.outputs.host }}
+          REGISTRY_USERNAME: ${{ secrets.registry-username }}
+          REGISTRY_PASSWORD: ${{ secrets.registry-password }}
+        run: echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_HOST}" --username "${REGISTRY_USERNAME}" --password-stdin
+
+      # Exactly one of subject-path / subject-digest may be set on the attest
+      # actions, so the file inputs are blanked when a digest is given.
+      - name: Attest build provenance
+        id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: ${{ inputs.subject-digest == '' && inputs.subject-path || '' }}
+          subject-digest: ${{ inputs.subject-digest }}
+          subject-name: ${{ inputs.subject-name }}
+          push-to-registry: ${{ inputs.subject-digest != '' }}
+
+      - name: Attest SBOM
+        id: sbom
+        if: inputs.sbom-path != '' && (inputs.sbom-artifact != '' || inputs.subject-digest != '')
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e  # v4.1.0
+        with:
+          subject-path: ${{ inputs.subject-digest == '' && inputs.subject-path || '' }}
+          subject-digest: ${{ inputs.subject-digest }}
+          subject-name: ${{ inputs.subject-name }}
+          sbom-path: ${{ inputs.sbom-path }}
+          push-to-registry: ${{ inputs.subject-digest != '' }}

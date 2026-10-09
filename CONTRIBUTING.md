@@ -112,6 +112,22 @@ jobs:
 The composite actions are individually callable and require explicit job shells with
 correct permissions (see README for full usage examples).
 
+## Release integrity
+
+Every artefact a Sparkgeo repo ships carries two signed statements, both keyless through Sigstore with the GitHub Actions OIDC token, so no signing keys exist to leak or rotate:
+
+| Statement | Workflow | Issue | What it proves | Verify with |
+|---|---|---|---|---|
+| Image signature | `container-sign.yml` / `container-verify.yml` | #15 | The image digest in the registry is the one CI produced | `container-verify.yml` before deploy (`cosign verify`) |
+| Build provenance (SLSA Build L3) and SBOM attestation | `build-provenance.yml` | #64 | The file or digest was built by that workflow from that commit, and this is its inventory | `gh attestation verify … --repo <repo> --signer-workflow sparkgeo/github-actions/.github/workflows/build-provenance.yml` |
+
+Rules:
+
+- Sign and attest **digests**, never tags. A tag can be re-pointed after signing.
+- Deploy workflows verify before they roll out. A missing or non-matching signature or attestation blocks the deploy; it is not a warning.
+- Pin the verification to the signing workflow and branch (`certificate-identity-regexp`, `--signer-workflow`). A regexp of `.*` accepts any GitHub Actions workflow anywhere.
+- The SBOM that is attested is the SBOM that `sbom-scan.yml` checked; do not regenerate it between scan and release.
+
 ## Security pillars reference
 
 | Pillar | Issue | Summary |
