@@ -45,6 +45,31 @@ Data sources, `AWS::CDK::Metadata` and anything that is not a managed resource a
 
 On a push to the default branch, `asset-inventory.yml` uploads `inventory.json`, `inventory.svg`, `inventory.mmd` and `SHA256SUMS` to the rolling `asset-inventory-latest` release of the calling repository (the caller grants `contents: write`). Pull requests download that `inventory.json` as the diff base. An org-wide roll-up reads each repository's release.
 
+## Org-wide register
+
+`asset-register-rollup.yml` in `sparkgeo/github-actions` merges every repository's `asset-inventory-latest` inventory once a day (issue #116) and publishes:
+
+| File | Content |
+|---|---|
+| `assets.json` | `generated_at`, `stale_days`, `repos` (one row per repository: `generated_at`, `stack_kind`, `resources`, `violations`, `age_days`, `stale`), `counts` (`repos`, `assets`, `unowned`, `stale_repos`) and `assets`: every resource record from the inventories with `repo` and `unowned_reason` added |
+| `owners.md` | assets per owner, project and environment |
+| `unowned.md` | assets with tag violations or a `team-*` owner that is not in `policies/tags/teams.yml`; `<user>@sparkgeo.com` owners pass |
+| `data-classes.md` | confidential and restricted assets with type, owner, stack and region |
+| `register.dot`, `register.svg` | the org diagram, nodes labelled with their repository |
+| `summary.md` | the text posted to the tracking issue |
+| `SHA256SUMS` | checksums of the files above |
+
+Releases: `asset-register-latest` (rolling) and `asset-register-YYYY-MM-DD` (90 retained). An inventory older than seven days is stale and listed in the summary; a repository whose `SHA256SUMS` does not verify is skipped with a warning. The tracking issue "Asset register: unowned or stale assets" stays open until a run finds nothing.
+
+**Auditors.** A dated snapshot is the evidence for that day:
+
+```bash
+gh release download asset-register-2026-10-12 -R sparkgeo/github-actions -D register-2026-10-12
+cd register-2026-10-12 && sha256sum -c SHA256SUMS
+```
+
+**App setup (org admin).** Create a GitHub App with repository permissions `Contents: read` and `Metadata: read`, install it on all repositories, and store its id and private key as the `ASSET_REGISTER_APP_ID` and `ASSET_REGISTER_APP_PRIVATE_KEY` secrets of `sparkgeo/github-actions`. The workflow mints a short-lived token per run with `actions/create-github-app-token`; without the secrets it falls back to `GITHUB_TOKEN` and sees public repositories only.
+
 ## Topology add-ons (not wired)
 
 The register is a flat list grouped by tags; it does not draw dependencies. When a topology view is needed, two tools produce one from the same inputs and can run as an extra step in the caller:

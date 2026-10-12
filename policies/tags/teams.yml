@@ -1,0 +1,6 @@
+# Teams that may appear as `owner: team-<name>` on a resource (issue #116).
+# The asset register lists an asset as unowned when its owner is a team-*
+# value that is not in this list; `<user>@sparkgeo.com` owners are accepted by
+# the pattern in standard.yml. An empty list accepts any team-* owner; fill it
+# in with the real team names so unknown teams surface in register/unowned.md.
+teams: []

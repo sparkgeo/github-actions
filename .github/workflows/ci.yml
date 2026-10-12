@@ -259,6 +259,46 @@ jobs:
           name: asset-inventory-fixtures
           path: ${{ runner.temp }}/asset-inventory-tofu/
 
+  # Asset register (#116): roll-up fixtures, then the composite on the same
+  # fixtures. The scheduled asset-register-rollup.yml needs the org's
+  # repositories and App secrets, so it is exercised with workflow_dispatch.
+  asset-register:
+    name: Asset Register
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Roll-up fixtures
+        run: tests/asset-register/run.sh
+
+      - id: register
+        uses: ./.github/actions/asset-register
+        with:
+          inventories-dir: tests/asset-register/fixtures/inventories
+          teams-file: tests/asset-register/fixtures/teams.yml
+          output-dir: ${{ runner.temp }}/register
+
+      - name: Outputs, SVG and checksums
+        env:
+          REPOS: ${{ steps.register.outputs.repo-count }}
+          UNOWNED: ${{ steps.register.outputs.unowned-count }}
+          DIR: ${{ runner.temp }}/register
+        run: |
+          set -euo pipefail
+          [ "${REPOS}" = "3" ] || { echo "::error title=asset-register::expected 3 repos, got ${REPOS}"; exit 1; }
+          [ "${UNOWNED}" = "2" ] || { echo "::error title=asset-register::expected 2 unowned, got ${UNOWNED}"; exit 1; }
+          grep -q '<svg' "${DIR}/register.svg"
+          ( cd "${DIR}" && sha256sum -c --quiet SHA256SUMS )
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

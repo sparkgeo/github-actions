@@ -1,0 +1,82 @@
+{
+ "generated_at": "2026-10-11T05:00:00Z",
+ "repo": "sparkgeo/prescient-infra",
+ "stack_kind": "tofu",
+ "required_tags": [
+  "owner",
+  "project",
+  "environment",
+  "data-class"
+ ],
+ "counts": {
+  "resources": 3,
+  "taggable": 3,
+  "violations": 1
+ },
+ "resources": [
+  {
+   "id": "aws_s3_bucket.ingest",
+   "type": "aws_s3_bucket",
+   "name": "ingest",
+   "stack": "stacks/prod",
+   "account": null,
+   "region": "us-west-2",
+   "taggable": true,
+   "tags": {
+    "owner": "team-platform",
+    "project": "prescient",
+    "environment": "prod",
+    "data-class": "confidential"
+   },
+   "tag_violations": [],
+   "source": {
+    "repo": "sparkgeo/prescient-infra",
+    "path": null,
+    "line": null
+   }
+  },
+  {
+   "id": "aws_s3_bucket.logs",
+   "type": "aws_s3_bucket",
+   "name": "logs",
+   "stack": "stacks/prod",
+   "account": null,
+   "region": "us-west-2",
+   "taggable": true,
+   "tags": {
+    "owner": "team-platform"
+   },
+   "tag_violations": [
+    "project",
+    "environment",
+    "data-class"
+   ],
+   "source": {
+    "repo": "sparkgeo/prescient-infra",
+    "path": null,
+    "line": null
+   }
+  },
+  {
+   "id": "module.net.aws_vpc.main",
+   "type": "aws_vpc",
+   "name": "main",
+   "stack": "stacks/prod",
+   "account": null,
+   "region": "us-west-2",
+   "taggable": true,
+   "tags": {
+    "owner": "team-platform",
+    "project": "prescient",
+    "environment": "prod",
+    "data-class": "restricted"
+   },
+   "tag_violations": [],
+   "source": {
+    "repo": "sparkgeo/prescient-infra",
+    "path": null,
+    "line": null
+   }
+  }
+ ]
+}

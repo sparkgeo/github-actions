@@ -1,0 +1,39 @@
+{
+ "generated_at": "2026-10-12T00:30:00Z",
+ "repo": "sparkgeo/clean-repo",
+ "stack_kind": "tofu",
+ "required_tags": [
+  "owner",
+  "project",
+  "environment",
+  "data-class"
+ ],
+ "counts": {
+  "resources": 1,
+  "taggable": 1,
+  "violations": 0
+ },
+ "resources": [
+  {
+   "id": "google_storage_bucket.lake",
+   "type": "google_storage_bucket",
+   "name": "lake",
+   "stack": ".",
+   "account": null,
+   "region": "us-central1",
+   "taggable": true,
+   "tags": {
+    "owner": "team-data",
+    "project": "data-lake",
+    "environment": "shared",
+    "data-class": "internal"
+   },
+   "tag_violations": [],
+   "source": {
+    "repo": "sparkgeo/clean-repo",
+    "path": null,
+    "line": null
+   }
+  }
+ ]
+}
