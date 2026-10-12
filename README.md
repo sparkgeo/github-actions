@@ -12,6 +12,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
 | Asset Inventory | [`asset-inventory.yml`](.github/workflows/asset-inventory.yml) | `workflow_call` | Reusable register — builds `inventory.json` and a tag-grouped diagram from OpenTofu plan JSON or CDK synth output; diffs against the last published inventory on PRs, publishes a rolling `asset-inventory-latest` release on the default branch |
+| Asset Register Roll-up | [`asset-register-rollup.yml`](.github/workflows/asset-register-rollup.yml) | `schedule` (daily), `workflow_dispatch` | Reads every repo's `asset-inventory-latest` release with a read-only App token, merges them into the org-wide register (`assets.json`, `owners.md`, `unowned.md`, `data-classes.md`, diagram) on the rolling `asset-register-latest` release plus dated tags; tracking issue while assets are unowned or inventories stale |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -45,6 +46,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | K8s Policy | [`k8s-policy`](.github/actions/k8s-policy/action.yml) | Renders Helm charts / Kustomize overlays and evaluates them with conftest against the bundled org policy set ([`policies/`](.github/actions/k8s-policy/policies)); error annotations + job summary per violation. Installs a checksum-verified conftest binary | `version` (default: `0.71.1`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `policy-path` (default: `""`), `data-path` (default: `""`), `fail-on-warn` (default: `false`), `require-tags` (default: `true`) |
 | Asset Inventory | [`asset-inventory`](.github/actions/asset-inventory/action.yml) | One record per planned resource (id, type, stack, region, tags, missing required tags, source) from OpenTofu plan JSON or CDK templates; Graphviz DOT and SVG (installs graphviz if missing) plus Mermaid grouped project, environment, owner; diff against a base inventory. Never fails on findings | `stack` (required: `tofu` or `cdk`), `input-dir` (required), `required-tags`, `account`, `base-inventory`, `mermaid-max-nodes` (default: `60`), `output-dir` |
+| Asset Register | [`asset-register`](.github/actions/asset-register/action.yml) | Merges per-repo `inventory.json` files into the org register: `assets.json`, `owners.md`, `unowned.md` (tag violations or an owner outside `policies/tags/teams.yml`), `data-classes.md`, Graphviz diagram, `SHA256SUMS`; flags inventories older than `stale-days` | `inventories-dir` (required), `teams-file`, `stale-days` (default: `7`), `output-dir` (default: `register`) |
 
 ### GitHub Actionlint
 
@@ -481,6 +483,12 @@ jobs:
 python3 -I .github/actions/asset-inventory/inventory.py --stack tofu --input plans --repo sparkgeo/my-infra \
   --output inventory.json --svg inventory.svg --mermaid inventory.mmd --report report.md
 ```
+
+### Asset Register (org roll-up)
+
+[`asset-register-rollup.yml`](.github/workflows/asset-register-rollup.yml) runs daily in this repo and builds the org-wide register from every repository's published inventory (issue #116): one `assets.json` with the repo attached to each record, `owners.md` (assets per owner, project, environment), `unowned.md` (tag violations, or a `team-*` owner missing from [`policies/tags/teams.yml`](policies/tags/teams.yml)), `data-classes.md` (confidential and restricted assets, for the storage-location inventory of the classification policy), `register.svg`, `summary.md` and `SHA256SUMS`. Each run replaces the `asset-register-latest` release and adds `asset-register-YYYY-MM-DD` (90 kept). An "Asset register: unowned or stale assets" issue is opened or updated while any asset is unowned or any inventory is older than seven days, and closed by the next clean run.
+
+Reading private repositories needs a GitHub App with `contents: read` and `metadata: read` installed on the org, stored as the `ASSET_REGISTER_APP_ID` and `ASSET_REGISTER_APP_PRIVATE_KEY` secrets of this repo; without them the run reads public repositories only and says so. Nothing in the roll-up can write to a consuming repository. Auditors fetch a dated snapshot with `gh release download asset-register-2026-10-12 -R sparkgeo/github-actions` and check it with `sha256sum -c SHA256SUMS`; format in [`docs/asset-inventory.md`](docs/asset-inventory.md).
 
 ## Consuming repo CI setup
 

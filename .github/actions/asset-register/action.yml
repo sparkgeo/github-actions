@@ -1,0 +1,60 @@
+name: "Asset Register"
+description: |
+  Merges the per-repository inventory.json files published by
+  asset-inventory.yml into the org-wide register (issue #116): assets.json,
+  owners.md, unowned.md (tag violations or an owner outside
+  policies/tags/teams.yml), data-classes.md (confidential and restricted),
+  register.dot and register.svg, summary.md and SHA256SUMS. Flags any
+  inventory older than stale-days. Never fails on findings.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  inventories-dir:
+    description: "Directory with one subdirectory per repository, each holding a verified inventory.json."
+    required: true
+  teams-file:
+    description: "Team list (policies/tags/teams.yml). Empty uses the bundled file; an empty list accepts any team-* owner."
+    default: ""
+  stale-days:
+    description: "An inventory older than this many days is reported as stale."
+    default: "7"
+  output-dir:
+    description: "Where the register files are written."
+    default: "register"
+outputs:
+  repo-count:
+    description: "Repositories merged."
+    value: ${{ steps.build.outputs.repo-count }}
+  unowned-count:
+    description: "Assets with tag violations or an owner outside the team list."
+    value: ${{ steps.build.outputs.unowned-count }}
+  stale-count:
+    description: "Repositories whose inventory is older than stale-days."
+    value: ${{ steps.build.outputs.stale-count }}
+  summary-path:
+    description: "Markdown summary for the tracking issue."
+    value: ${{ steps.build.outputs.summary-path }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install graphviz
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v dot >/dev/null && command -v apt-get >/dev/null; then
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends graphviz
+        fi
+
+    - name: Build register
+      id: build
+      shell: bash
+      env:
+        INVENTORIES: ${{ inputs.inventories-dir }}
+        TEAMS: ${{ inputs.teams-file }}
+        STALE_DAYS: ${{ inputs.stale-days }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        BUNDLED_TEAMS: ${{ github.action_path }}/../../../policies/tags/teams.yml
+      run: |
+        set -euo pipefail
+        python3 -I "${GITHUB_ACTION_PATH}/rollup.py" --inventories "${INVENTORIES}" --output-dir "${OUTPUT_DIR}" \
+          --teams "${TEAMS:-${BUNDLED_TEAMS}}" --stale-days "${STALE_DAYS}" --svg

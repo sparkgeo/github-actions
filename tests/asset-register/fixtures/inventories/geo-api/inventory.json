@@ -1,0 +1,60 @@
+{
+ "generated_at": "2026-09-20T05:00:00Z",
+ "repo": "sparkgeo/geo-api",
+ "stack_kind": "cdk",
+ "required_tags": [
+  "owner",
+  "project",
+  "environment",
+  "data-class"
+ ],
+ "counts": {
+  "resources": 2,
+  "taggable": 2,
+  "violations": 0
+ },
+ "resources": [
+  {
+   "id": "ApiFunction1A2B",
+   "type": "AWS::Lambda::Function",
+   "name": "ApiFunction1A2B",
+   "stack": "Api",
+   "account": null,
+   "region": null,
+   "taggable": true,
+   "tags": {
+    "owner": "team-unknown",
+    "project": "geo-api",
+    "environment": "dev",
+    "data-class": "internal"
+   },
+   "tag_violations": [],
+   "source": {
+    "repo": "sparkgeo/geo-api",
+    "path": "Api/Fn/Resource",
+    "line": null
+   }
+  },
+  {
+   "id": "AssetsBucket3C4D",
+   "type": "AWS::S3::Bucket",
+   "name": "AssetsBucket3C4D",
+   "stack": "Api",
+   "account": null,
+   "region": null,
+   "taggable": true,
+   "tags": {
+    "owner": "bob@sparkgeo.com",
+    "project": "geo-api",
+    "environment": "dev",
+    "data-class": "public"
+   },
+   "tag_violations": [],
+   "source": {
+    "repo": "sparkgeo/geo-api",
+    "path": "Api/Assets/Resource",
+    "line": null
+   }
+  }
+ ]
+}

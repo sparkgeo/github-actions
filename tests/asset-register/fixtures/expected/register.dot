@@ -1,0 +1,36 @@
+digraph inventory {
+  graph [rankdir=LR, fontname="Helvetica", fontsize=11, style="rounded", color="#999999"];
+  node [shape=box, style="filled,rounded", fontname="Helvetica", fontsize=10, color="#999999"];
+  subgraph "cluster_1" { label="project: (none)";
+    subgraph "cluster_2" { label="environment: (none)";
+      subgraph "cluster_3" { label="owner: team-platform";
+        "sparkgeo/prescient-infra/stacks/prod:aws_s3_bucket.logs" [label="aws_s3_bucket\nlogs (prescient-infra)", fillcolor="#eeeeee", color="red", penwidth=2];
+      }
+    }
+  }
+  subgraph "cluster_4" { label="project: data-lake";
+    subgraph "cluster_5" { label="environment: shared";
+      subgraph "cluster_6" { label="owner: team-data";
+        "sparkgeo/clean-repo/.:google_storage_bucket.lake" [label="google_storage_bucket\nlake (clean-repo)", fillcolor="#cfe2f3"];
+      }
+    }
+  }
+  subgraph "cluster_7" { label="project: geo-api";
+    subgraph "cluster_8" { label="environment: dev";
+      subgraph "cluster_9" { label="owner: bob@sparkgeo.com";
+        "sparkgeo/geo-api/Api:AssetsBucket3C4D" [label="AWS::S3::Bucket\nAssetsBucket3C4D (geo-api)", fillcolor="#d9ead3"];
+      }
+      subgraph "cluster_10" { label="owner: team-unknown";
+        "sparkgeo/geo-api/Api:ApiFunction1A2B" [label="AWS::Lambda::Function\nApiFunction1A2B (geo-api)", fillcolor="#cfe2f3"];
+      }
+    }
+  }
+  subgraph "cluster_11" { label="project: prescient";
+    subgraph "cluster_12" { label="environment: prod";
+      subgraph "cluster_13" { label="owner: team-platform";
+        "sparkgeo/prescient-infra/stacks/prod:aws_s3_bucket.ingest" [label="aws_s3_bucket\ningest (prescient-infra)", fillcolor="#fff2cc"];
+        "sparkgeo/prescient-infra/stacks/prod:module.net.aws_vpc.main" [label="aws_vpc\nmain (prescient-infra)", fillcolor="#f4cccc"];
+      }
+    }
+  }
+}

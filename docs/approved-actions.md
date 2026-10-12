@@ -69,6 +69,7 @@ These are not GitHub Actions (no `uses:` reference) so the org allowlist does no
 
 | Tool | Used in | Pinned version | How it is installed | Review date |
 |---|---|---|---|---|
+| `actions/create-github-app-token` | `asset-register-rollup.yml` | `v3.2.0` (`bcd2ba49`) | GitHub-maintained. Mints a short-lived installation token for the read-only asset-register App (`contents: read`, `metadata: read`); nothing else in the roll-up can reach other repositories. | 2026-10-12 |
 | `gitleaks` | `gitleaks` composite action, `secrets-precommit.yml`, `.pre-commit-config.yaml` | `v8.30.1` (`83d9cd68`) | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `gitleaks/gitleaks-action` Action is deliberately avoided — it requires a paid `GITLEAKS_LICENSE` for organisation accounts. | 2026-06-10 |
 | `trufflehog` | `trufflehog` composite action, `secrets-scan.yml` | `v3.95.5` | Binary downloaded from the GitHub release and **verified against the published SHA-256 checksum** before use. The `trufflesecurity/trufflehog` Action is avoided to keep the supply chain to a single checksum-verified download; findings are converted to SARIF in-action with `jq`. | 2026-06-10 |
 | `pre-commit` | `pre-commit` composite action, `lint-precommit.yml` | `4.6.0` | Run via `pipx run --spec pre-commit==4.6.0` (pipx is preinstalled on GitHub runners) — pinned version, ephemeral env, no PATH write. Hook versions themselves are pinned (to commit SHAs) in each consuming repo's `.pre-commit-config.yaml`. | 2026-06-10 |
