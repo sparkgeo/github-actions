@@ -400,7 +400,7 @@ jobs:
       INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 ```
 
-The plan role is documented in [`docs/oidc-trust-policies.md`](docs/oidc-trust-policies.md) (read-only account access plus the state bucket and lock table). `INFRACOST_API_KEY` is an org secret (free Infracost account). Usage-based resources need an `infracost-usage.yml` at the repo root ([starter](docs/examples/infracost-usage.yml)); the comment warns when it is missing. Artefact `infracost` holds both JSONs, the gate snippet and the plan JSONs. Egress: `pricing.api.infracost.io` and `dashboard.api.infracost.io` (API key validation) besides GitHub and the cloud APIs; update checks and Infracost Cloud uploads are off.
+The plan role is documented in [`docs/oidc-trust-policies.md`](docs/oidc-trust-policies.md) (read-only account access plus the state bucket and lock table). `INFRACOST_API_KEY` is an org secret (free Infracost account). Usage-based resources need an `infracost-usage.yml` at the repo root ([starter](docs/examples/infracost-usage.yml)); the comment warns when it is missing. Artefact `infracost` holds both Infracost JSONs and the gate snippet; the plan JSONs are deleted on the runner because `tofu show -json` includes sensitive values. Egress: `pricing.api.infracost.io` and `dashboard.api.infracost.io` (API key validation) besides GitHub and the cloud APIs; update checks and Infracost Cloud uploads are off.
 
 ## Consuming repo CI setup
 

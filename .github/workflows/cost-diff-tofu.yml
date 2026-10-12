@@ -189,7 +189,17 @@ jobs:
           out-file: ${{ runner.temp }}/infracost-diff.json
           pull-request: ${{ github.event.pull_request.number }}
 
-      - name: Upload Infracost JSON and plans
+      # Plan JSON carries every planned value, sensitive ones included, so it
+      # never leaves the runner. Only the priced output is kept.
+      - name: Remove the plans
+        if: always()
+        env:
+          PLANS: ${{ runner.temp }}/plans
+        run: |
+          [ -d "${PLANS}" ] && find "${PLANS:?}" -type f -delete
+          echo "plans removed"
+
+      - name: Upload Infracost JSON
         if: always() && steps.stacks.outputs.any == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
@@ -198,5 +208,5 @@ jobs:
             ${{ runner.temp }}/infracost-base.json
             ${{ runner.temp }}/infracost-diff.json
             ${{ runner.temp }}/infracost-diff-gate.md
-            ${{ runner.temp }}/plans/
+          retention-days: 14
           if-no-files-found: ignore
