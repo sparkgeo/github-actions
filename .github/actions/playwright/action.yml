@@ -1,0 +1,230 @@
+name: "Playwright E2E"
+description: |
+  Runs a repo's Playwright suite (issue #75): Node and package manager from
+  the lockfile, dependency install cached by setup-node, browsers cached on
+  the installed @playwright/test version, then `playwright test` with the
+  github reporter (one check annotation per failure, with file and line),
+  JUnit for counts and a blob report that shards can merge. Uploads the
+  blob and JUnit always, the HTML report built from this run's blob, and
+  test-results (traces, videos, screenshots) when tests fail.
+
+  target-url is exported as BASE_URL; the repo's playwright.config reads it
+  for use.baseURL and skips its webServer when set.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  working-directory:
+    description: "Project directory holding package.json, the lockfile and playwright.config."
+    default: "."
+  target-url:
+    description: "URL under test, exported as BASE_URL. Empty uses the webServer in playwright.config."
+    default: ""
+  project:
+    description: "Playwright project name to run. Empty runs all."
+    default: ""
+  browsers:
+    description: "Space-separated browsers to install: chromium, firefox, webkit."
+    default: "chromium"
+  shard-index:
+    description: "This shard (1-based). Empty runs everything."
+    default: ""
+  shard-total:
+    description: "Total shards. Empty runs everything."
+    default: ""
+  extra-args:
+    description: "Extra arguments passed to playwright test."
+    default: ""
+  node-version:
+    description: "Node version. Empty reads .nvmrc, then .node-version, then 22."
+    default: ""
+  install-command:
+    description: "Override dependency install (runs inside working-directory after setup-node)."
+    default: ""
+  pnpm-version:
+    description: "pnpm version when pnpm-lock.yaml is present and package.json has no packageManager field."
+    default: ""
+  artifact-name:
+    description: "Artefact name prefix; the shard index is appended when sharding."
+    default: "playwright"
+outputs:
+  tests-total:
+    description: "Test cases run in this shard."
+    value: ${{ steps.summary.outputs.tests-total }}
+  tests-failed:
+    description: "Failed test cases in this shard."
+    value: ${{ steps.summary.outputs.tests-failed }}
+  tests-skipped:
+    description: "Skipped test cases in this shard."
+    value: ${{ steps.summary.outputs.tests-skipped }}
+  playwright-version:
+    description: "Installed @playwright/test version (for merge-reports)."
+    value: ${{ steps.pw.outputs.version }}
+runs:
+  using: "composite"
+  steps:
+    - name: Detect Node version and package manager
+      id: detect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        REQUESTED: ${{ inputs.node-version }}
+        INSTALL_COMMAND: ${{ inputs.install-command }}
+      run: |
+        set -euo pipefail
+        v="${REQUESTED}"
+        if [ -z "${v}" ] && [ -f .nvmrc ]; then v="$(head -n1 .nvmrc | tr -d '[:space:]v')"; fi
+        if [ -z "${v}" ] && [ -f .node-version ]; then v="$(head -n1 .node-version | tr -d '[:space:]v')"; fi
+        v="${v:-22}"
+        if [ -f pnpm-lock.yaml ]; then pm=pnpm; lock=pnpm-lock.yaml
+        elif [ -f yarn.lock ]; then pm=yarn; lock=yarn.lock
+        elif [ -f package-lock.json ]; then pm=npm; lock=package-lock.json
+        elif [ -f npm-shrinkwrap.json ]; then pm=npm; lock=npm-shrinkwrap.json
+        elif [ -n "${INSTALL_COMMAND}" ]; then pm=""; lock=""
+        else
+          echo "::error title=playwright::no pnpm-lock.yaml, yarn.lock or package-lock.json in $(pwd); set the install-command input"
+          exit 1
+        fi
+        { echo "version=${v}"; echo "pm=${pm}"; echo "lockfile=${lock}"; } >> "${GITHUB_OUTPUT}"
+        echo "node ${v}; package manager ${pm:-custom} (${lock:-no lockfile})"
+
+    - name: Install pnpm
+      if: ${{ steps.detect.outputs.pm == 'pnpm' }}
+      uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b  # v6.1.0
+      with:
+        version: ${{ inputs.pnpm-version }}
+        run_install: false
+
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      with:
+        node-version: ${{ steps.detect.outputs.version }}
+        cache: ${{ steps.detect.outputs.pm }}
+        cache-dependency-path: ${{ steps.detect.outputs.lockfile != '' && format('{0}/{1}', inputs.working-directory, steps.detect.outputs.lockfile) || '' }}
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PM: ${{ steps.detect.outputs.pm }}
+        INSTALL_COMMAND: ${{ inputs.install-command }}
+      run: |
+        set -euo pipefail
+        if [ -n "${INSTALL_COMMAND}" ]; then bash -euo pipefail -c "${INSTALL_COMMAND}"
+        else
+          case "${PM}" in
+            npm)  npm ci --no-audit --no-fund ;;
+            pnpm) pnpm install --frozen-lockfile ;;
+            yarn) corepack enable 2>/dev/null || true
+                  if yarn --version | grep -q '^1\.'; then yarn install --frozen-lockfile; else yarn install --immutable; fi ;;
+          esac
+        fi
+
+    - name: Read the installed Playwright version
+      id: pw
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        [ -x node_modules/.bin/playwright ] || { echo "::error title=playwright::@playwright/test is not installed in $(pwd); add it to devDependencies"; exit 1; }
+        v="$(node -e 'console.log(require("@playwright/test/package.json").version)')"
+        echo "version=${v}" >> "${GITHUB_OUTPUT}"
+        echo "@playwright/test ${v}"
+
+    - name: Cache browsers
+      id: browsers
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-${{ inputs.browsers }}
+
+    # On a cache hit the browser binaries are present but the OS libraries
+    # still have to be installed on a fresh runner.
+    - name: Install browsers
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BROWSERS: ${{ inputs.browsers }}
+        CACHE_HIT: ${{ steps.browsers.outputs.cache-hit }}
+      run: |
+        set -euo pipefail
+        read -ra browsers <<< "${BROWSERS}"
+        if [ "${CACHE_HIT}" = "true" ]; then
+          ./node_modules/.bin/playwright install-deps "${browsers[@]}"
+        else
+          ./node_modules/.bin/playwright install --with-deps "${browsers[@]}"
+        fi
+
+    - name: Run Playwright
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BASE_URL: ${{ inputs.target-url }}
+        PROJECT: ${{ inputs.project }}
+        SHARD_INDEX: ${{ inputs.shard-index }}
+        SHARD_TOTAL: ${{ inputs.shard-total }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
+        PLAYWRIGHT_JUNIT_OUTPUT_FILE: ${{ runner.temp }}/playwright/junit.xml
+        PLAYWRIGHT_BLOB_OUTPUT_DIR: ${{ runner.temp }}/playwright/blob
+        CI: "true"
+      run: |
+        set -euo pipefail
+        mkdir -p "${RUNNER_TEMP}/playwright"
+        args=(--reporter=github,junit,blob)
+        [ -n "${PROJECT}" ] && args+=(--project "${PROJECT}")
+        [ -n "${SHARD_INDEX}" ] && [ -n "${SHARD_TOTAL}" ] && args+=(--shard "${SHARD_INDEX}/${SHARD_TOTAL}")
+        read -ra extra <<< "${EXTRA_ARGS}"
+        # The exit code is kept for the gate step so the summary and artefacts
+        # are always produced.
+        rc=0
+        ./node_modules/.bin/playwright test "${args[@]}" "${extra[@]}" || rc=$?
+        echo "rc=${rc}" >> "${GITHUB_OUTPUT}"
+        echo "playwright test exit code ${rc}"
+
+    - name: Summarise
+      id: summary
+      shell: bash
+      env:
+        JUNIT: ${{ runner.temp }}/playwright/junit.xml
+        SHARD: ${{ inputs.shard-index != '' && format('{0}/{1}', inputs.shard-index, inputs.shard-total) || '' }}
+      run: python3 -I "${GITHUB_ACTION_PATH}/summary.py" --junit "${JUNIT}" --shard "${SHARD}" || true
+
+    - name: Build the HTML report
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BLOB: ${{ runner.temp }}/playwright/blob
+        PLAYWRIGHT_HTML_OUTPUT_DIR: ${{ runner.temp }}/playwright/html
+      run: |
+        set -euo pipefail
+        if ls "${BLOB}"/*.zip >/dev/null 2>&1; then
+          ./node_modules/.bin/playwright merge-reports --reporter html "${BLOB}"
+        fi
+
+    - name: Upload JUnit, blob and HTML report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      with:
+        name: ${{ inputs.artifact-name }}-results${{ inputs.shard-index != '' && format('-{0}', inputs.shard-index) || '' }}
+        path: ${{ runner.temp }}/playwright/
+        retention-days: 14
+        if-no-files-found: warn
+
+    - name: Upload traces, videos and screenshots
+      if: ${{ steps.run.outputs.rc != '0' }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      with:
+        name: ${{ inputs.artifact-name }}-traces${{ inputs.shard-index != '' && format('-{0}', inputs.shard-index) || '' }}
+        path: ${{ inputs.working-directory }}/test-results/
+        retention-days: 14
+        if-no-files-found: ignore
+
+    - name: Gate
+      shell: bash
+      env:
+        RC: ${{ steps.run.outputs.rc }}
+        FAILED: ${{ steps.summary.outputs.tests-failed }}
+      run: |
+        if [ "${RC}" != "0" ]; then
+          echo "::error title=playwright::${FAILED:-some} test(s) failed (playwright exit ${RC}); traces are in the artefact"
+          exit 1
+        fi

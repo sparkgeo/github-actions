@@ -11,6 +11,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
+| E2E | [`e2e-playwright.yml`](.github/workflows/e2e-playwright.yml) | `workflow_call` | Reusable Playwright gate — browsers and dependencies cached, optional sharding, one check annotation per failure, traces on failure, merged HTML report |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -43,6 +44,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | Pytest Coverage Gate | [`pytest`](.github/actions/pytest/action.yml) | Runs pytest under coverage.py; fails on test failures or line coverage below the threshold. Inline annotations for failed tests, counts and coverage in the step summary, JUnit + coverage XML kept as an artifact. Detects uv.lock (checksum-verified uv), poetry.lock (poetry) or requirements*.txt (pip) | `working-directory` (default: `.`), `python-version` (default: `""` — `.python-version`, then `requires-python`, then `3.12`), `coverage-threshold` (default: `80`; `0` disables), `coverage-source` (default: `""`), `extra-args` (default: `""`), `install-command` (default: `""`), `artifact-name` (default: `pytest-results`) |
 | Node Test Coverage Gate | [`node-test`](.github/actions/node-test/action.yml) | Runs vitest or jest (auto-detected from package.json) under coverage; fails on test failures or line coverage below the threshold. Inline annotations for failed tests, counts and coverage in the step summary, JUnit + cobertura XML kept as an artifact. Detects pnpm / yarn / npm from the lockfile and caches on it | `working-directory` (default: `.`), `node-version` (default: `""` — `.nvmrc`, then `.node-version`, then `22`), `coverage-threshold` (default: `80`; `0` disables), `extra-args` (default: `""`), `install-command` (default: `""`), `test-command` (default: `""`), `pnpm-version` (default: `""`), `artifact-name` (default: `node-test-results`) |
+| Playwright E2E | [`playwright`](.github/actions/playwright/action.yml) | Runs `playwright test` with the `github`, `junit` and `blob` reporters: annotations per failure, counts in the summary and as outputs, HTML report, traces and videos uploaded on failure. Node and package manager from the lockfile; browsers cached on the installed `@playwright/test` version | `working-directory` (default: `.`), `target-url` (`BASE_URL`), `project`, `browsers` (default: `chromium`), `shard-index`/`shard-total`, `extra-args`, `node-version`, `install-command`, `artifact-name` |
 
 ### GitHub Actionlint
 
@@ -441,6 +443,30 @@ jobs:
 **Install detection.** `pnpm-lock.yaml` → `pnpm install --frozen-lockfile` (pnpm from `packageManager` in `package.json`, or the `pnpm-version` input); `yarn.lock` → `yarn install --frozen-lockfile` (v1) or `--immutable` (berry via corepack); `package-lock.json` / `npm-shrinkwrap.json` → `npm ci`. `setup-node` caches the package-manager store on the lockfile hash. Anything else: `install-command`, and `test-command` for a custom runner (it must write JUnit to `$JUNIT_XML` and cobertura XML to `$COVERAGE_XML`).
 
 **Outputs.** Failed tests appear as inline PR annotations on the test file (line 1: neither runner reports line numbers in JUnit). The step summary shows total/failed/skipped and the coverage percentage; `junit.xml` and `coverage.xml` are uploaded as the `node-test-results` artifact for 14 days.
+
+### E2E (Playwright)
+
+[`e2e-playwright.yml`](.github/workflows/e2e-playwright.yml) runs the repo's Playwright suite as a PR gate (issue #75). The repo keeps its own `playwright.config` and specs; the workflow supplies caching, sharding, reporting and artefacts.
+
+```yaml
+# .github/workflows/e2e.yml in the consuming repo
+on:
+  pull_request:
+jobs:
+  e2e:
+    permissions:
+      contents: read
+    uses: sparkgeo/github-actions/.github/workflows/e2e-playwright.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      working-directory: web
+      shards: 2
+      # target-url: https://preview.example.com   # empty runs the webServer from playwright.config
+```
+
+**Config contract.** `use.baseURL` reads `process.env.BASE_URL` (set from `target-url`) with the local server as the fallback, and `webServer` is left undefined when `BASE_URL` is set; `trace: 'retain-on-failure'` gives the traces the workflow uploads. [`tests/e2e-playwright/fixtures/project/playwright.config.js`](tests/e2e-playwright/fixtures/project/playwright.config.js) is a complete example. `@playwright/test` must be in `devDependencies`; browsers (`chromium` by default, `browsers: chromium firefox webkit` for all three) are installed with their OS libraries and cached per Playwright version.
+
+**Output.** The `github` reporter puts one check annotation per failure at the spec file and line; the step summary lists tests per file and every failure with its message. Artefacts: `playwright-results[-N]` (JUnit, blob, HTML report of that shard) always, `playwright-traces[-N]` (`test-results/`: traces, videos, screenshots) only when tests fail, and with `shards > 1` a merged `playwright-report`. Egress: the npm registry and `cdn.playwright.dev` for browser downloads. Pair with the `axe-core` checks from #70 inside the same suite for accessibility.
 
 ## Consuming repo CI setup
 

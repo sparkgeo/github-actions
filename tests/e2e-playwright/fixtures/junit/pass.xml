@@ -1,0 +1,13 @@
+<testsuites id="" name="" tests="3" failures="0" skipped="1" errors="0" time="2.41">
+<testsuite name="home.spec.js" timestamp="2026-10-12T03:00:00.000Z" hostname="chromium" tests="2" failures="0" skipped="0" time="2.1" errors="0">
+<testcase name="home page has the title" classname="home.spec.js" time="1.2">
+</testcase>
+<testcase name="home page greets" classname="home.spec.js" time="0.9">
+</testcase>
+</testsuite>
+<testsuite name="failing.spec.js" timestamp="2026-10-12T03:00:00.000Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0.3" errors="0">
+<testcase name="deliberately failing when E2E_FIXTURE_FAIL is set" classname="failing.spec.js" time="0.3">
+<skipped/>
+</testcase>
+</testsuite>
+</testsuites>
