@@ -429,7 +429,7 @@ jobs:
       strict-checks: CKV_AWS_133,CKV_AWS_28,SPK_DR_1   # Tier B; see docs/dr-checklist.md
 ```
 
-`plan-json` scans a plan file with the `terraform_plan` framework instead of the directory, so `count` and `for_each` are resolved. `policies-ref` loads `policies/dr` from another ref of this repo when the pack must move ahead of the composite. Suppress a finding with `# checkov:skip=CKV_AWS_144:<tier or exception issue>` inside the resource; a skip without text is reported. The tiers and the full id-to-control table are in `docs/dr-checklist.md` (#95).
+`plan-json` scans a plan file with the `terraform_plan` framework instead of the directory, so `count` and `for_each` are resolved. `policies-ref` loads `policies/dr` from another ref of this repo when the pack must move ahead of the composite. Suppress a finding with `# checkov:skip=CKV_AWS_144:<tier or exception issue>` inside the resource; a skip without text is reported. The tiers, the full id-to-control table, the `strict-checks` list per tier and the manual controls are in [`docs/dr-checklist.md`](docs/dr-checklist.md); [`docs/examples/dr/`](docs/examples/dr) holds a compliant stack.
 
 ## Consuming repo CI setup
 

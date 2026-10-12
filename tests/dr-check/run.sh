@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Checks the DR policy pack with a real checkov run over the pass and fail
-# fixtures, then report.py over the failing run's JSON. Tool path via CHECKOV.
+# Checks the DR policy pack with a real checkov run over the compliant examples
+# in docs/examples/dr and the fail fixture, checks docs/dr-checklist.md against
+# the policy ids, then report.py over the failing run's JSON. Tool path via CHECKOV.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,20 +18,33 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 CHECKS="$(grep -oE '^[A-Z_0-9]+' "${POLICIES}/checks.txt" | paste -sd, -)"
 [ -n "${CHECKS}" ] || fail "checks.txt parsed to nothing"
 
-scan() {  # <fixture> -> $TMP/<fixture>.json
-  "${CHECKOV}" -d "${FIX}/$1" --framework terraform --external-checks-dir "${POLICIES}" \
-    --check "${CHECKS},SPK_DR_1,SPK_DR_2,SPK_DR_3,SPK_DR_4" -o json > "${TMP}/$1.json" 2>/dev/null || true
-  [ -s "${TMP}/$1.json" ] || fail "checkov produced no JSON for $1"
+scan() {  # <dir> <name> -> $TMP/<name>.json
+  "${CHECKOV}" -d "$1" --framework terraform --external-checks-dir "${POLICIES}" \
+    --check "${CHECKS},SPK_DR_1,SPK_DR_2,SPK_DR_3,SPK_DR_4" -o json > "${TMP}/$2.json" 2>/dev/null || true
+  [ -s "${TMP}/$2.json" ] || fail "checkov produced no JSON for $2"
 }
 failed_set() { jq -r '[.results.failed_checks[]? | "\(.check_id) \(.resource)"] | sort | join("\n")' "${TMP}/$1.json"; }
 
-echo "== pass fixture: zero findings"
-scan pass
-[ -z "$(failed_set pass)" ] || fail "pass fixture has findings:
-$(failed_set pass)"
+echo "== docs/examples/dr: every example is the compliant fixture and scans clean"
+EXAMPLES="${ROOT}/docs/examples/dr"
+[ -d "${EXAMPLES}" ] || fail "${EXAMPLES} missing"
+for ex in "${EXAMPLES}"/*/; do
+  name="example-$(basename "${ex}")"
+  scan "${ex}" "${name}"
+  [ -z "$(failed_set "${name}")" ] || fail "${ex} has findings:
+$(failed_set "${name}")"
+done
+
+echo "== docs/dr-checklist.md: one row per policy id, no extra ids"
+CHECKLIST="${ROOT}/docs/dr-checklist.md"
+[ -f "${CHECKLIST}" ] || fail "${CHECKLIST} missing"
+policy_ids="$({ grep -oE '^[A-Z_0-9]+' "${POLICIES}/checks.txt"; grep -hoE 'SPK_DR_[0-9]+' "${POLICIES}"/spk_dr_*.yaml; } | sort -u)"
+doc_ids="$(grep -oE '^\| `[A-Z_0-9]+` \|' "${CHECKLIST}" | grep -oE '[A-Z_0-9]+' | sort -u)"
+[ "${policy_ids}" = "${doc_ids}" ] || fail "checklist ids differ from policies/dr (< policies, > checklist):
+$(diff <(echo "${policy_ids}") <(echo "${doc_ids}") || true)"
 
 echo "== fail fixture: one finding per control"
-scan fail
+scan "${FIX}/fail" fail
 expected="$(cat <<'EOT'
 CKV_AWS_133 aws_db_instance.main
 CKV_AWS_134 aws_elasticache_cluster.cache
@@ -80,7 +94,7 @@ grep -qF "\`CKV_AWS_21\` on \`aws_s3_bucket.logs\`" "${TMP}/report/report.md" ||
 grep -q 'DR readiness' "${TMP}/report/summary" || fail "step summary"
 grep -q '^::warning title=dr-check::aws_s3_bucket.logs skips CKV_AWS_21 without a reason' "${TMP}/report/log" || fail "skip warning: $(cat "${TMP}/report/log")"
 
-run_report "${TMP}/pass.json"
+run_report "${TMP}/example-aws.json"
 [ "${rc}" -eq 0 ] || fail "clean report rc ${rc}"
 grep -q '^## DR readiness: no findings' "${TMP}/report/report.md" || fail "clean heading: $(head -2 "${TMP}/report/report.md")"
 
