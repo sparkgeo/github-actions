@@ -1,0 +1,27 @@
+# Sparkgeo resource tagging standard (SecOps plan Step 31, issue #114).
+# Single source for every enforcement point: tflint (policies/tags/tflint),
+# checkov (policies/tags/checkov), conftest (k8s-policy bundle, tags.rego)
+# and the CDK aspect (docs/examples/cdk). See docs/tagging-standard.md.
+tags:
+  # conftest only enforces the tags policy when this file is loaded as data.
+  enforce: true
+  required:
+    owner:
+      description: Team or person accountable for the resource.
+      pattern: '^(team-[a-z0-9-]+|[a-z.]+@sparkgeo\.com)$'
+      # Kubernetes label values cannot contain "@"; write bob@sparkgeo.com as bob_at_sparkgeo.com.
+      label_pattern: '^(team-[a-z0-9-]+|[a-z.]+_at_sparkgeo\.com)$'
+    project:
+      description: Project or client engagement slug.
+      pattern: '^[a-z0-9-]{3,40}$'
+    environment:
+      description: Deployment environment.
+      enum: [dev, staging, prod, shared]
+    data-class:
+      description: Highest data classification tier the resource stores or processes (docs/data-classification.md, issue #100).
+      enum: [public, internal, confidential, restricted]
+  optional:
+    cost-center:
+      description: Finance cost centre, when billing is split below project level.
+    client:
+      description: Client name for billable resources.

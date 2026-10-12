@@ -20,6 +20,14 @@ on:
         description: 'Lowest severity that fails the build: error, warning, or notice'
         default: 'error'
         type: string
+      require-tags:
+        description: 'Also enforce the Sparkgeo tagging standard (owner, project, environment, data-class) with the bundled tflint config'
+        default: true
+        type: boolean
+      tags-provider:
+        description: 'Bundled tagging config to run: aws or azurerm'
+        default: 'aws'
+        type: string
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the tflint
@@ -69,3 +77,5 @@ jobs:
         with:
           directory: ${{ inputs.directory }}
           minimum-failure-severity: ${{ inputs.minimum-failure-severity }}
+          require-tags: ${{ inputs.require-tags }}
+          tags-provider: ${{ inputs.tags-provider }}

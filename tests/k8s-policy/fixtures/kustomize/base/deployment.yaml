@@ -2,6 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: api
+  labels:
+    owner: team-platform
+    project: fixture
+    environment: dev
+    data-class: internal
 spec:
   replicas: 1
   selector:

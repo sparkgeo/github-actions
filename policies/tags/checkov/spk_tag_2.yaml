@@ -1,0 +1,29 @@
+# Sparkgeo tagging standard (policies/tags/standard.yml): Google provider declares default_labels with owner, project, environment and data-class
+# Load with: checkov --external-checks-dir policies/tags/checkov
+metadata:
+  id: "SPK_TAG_2"
+  name: "Google provider declares default_labels with owner, project, environment and data-class"
+  category: "GENERAL_SECURITY"
+  guideline: "https://github.com/sparkgeo/github-actions/blob/main/docs/tagging-standard.md"
+definition:
+  and:
+    - cond_type: attribute
+      resource_types:
+        - "provider.google"
+      attribute: "default_labels.owner"
+      operator: exists
+    - cond_type: attribute
+      resource_types:
+        - "provider.google"
+      attribute: "default_labels.project"
+      operator: exists
+    - cond_type: attribute
+      resource_types:
+        - "provider.google"
+      attribute: "default_labels.environment"
+      operator: exists
+    - cond_type: attribute
+      resource_types:
+        - "provider.google"
+      attribute: "default_labels.data-class"
+      operator: exists

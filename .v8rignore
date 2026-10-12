@@ -1,0 +1,3 @@
+# v8r (MegaLinter YAML schema check) maps policies/**/*.yaml to the aerleon
+# schema from schemastore; these are checkov custom policies.
+policies/tags/checkov/*.yaml

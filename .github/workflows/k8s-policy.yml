@@ -33,6 +33,10 @@ on:
         description: 'Also fail on warn results'
         default: false
         type: boolean
+      require-tags:
+        description: 'Enforce the Sparkgeo tagging standard as required labels (owner, project, environment, data-class)'
+        default: true
+        type: boolean
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the k8s-policy
@@ -81,3 +85,4 @@ jobs:
           policy-path: ${{ inputs.policy-path }}
           data-path: ${{ inputs.data-path }}
           fail-on-warn: ${{ inputs.fail-on-warn }}
+          require-tags: ${{ inputs.require-tags }}
