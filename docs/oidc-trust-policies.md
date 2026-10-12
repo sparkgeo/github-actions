@@ -93,6 +93,32 @@ Bind to a specific repo and branch — never the whole org:
    AWS_DEPLOY_ROLE_ARN = arn:aws:iam::123456789012:role/sparkgeo-app-deploy
    ```
 
+### Plan role (read-only, for cost-diff-tofu.yml and dr-check-tofu.yml)
+
+`tofu plan` needs to read every resource it manages and the state backend, and nothing more. One role per account, trusted by the repositories that run the plan workflows on pull requests (`ref:refs/heads/*` is acceptable here because the role cannot change anything):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadState",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::STATE_BUCKET", "arn:aws:s3:::STATE_BUCKET/*"]
+    },
+    {
+      "Sid": "ReadLockTable",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:DescribeTable"],
+      "Resource": "arn:aws:dynamodb:REGION:ACCOUNT_ID:table/LOCK_TABLE"
+    }
+  ]
+}
+```
+
+Attach the AWS managed `ReadOnlyAccess` policy alongside it for the provider's `Describe*`, `Get*` and `List*` calls. The workflows plan with `-lock=false`, so the role never needs `dynamodb:PutItem`; with S3 native locking (`use_lockfile = true`) the lock-table statement is not needed at all.
+
 ## GitHub environments and environment-scoped secrets
 
 For production deployments, gate the job on a GitHub environment with protection rules:

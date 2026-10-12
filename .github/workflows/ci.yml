@@ -76,9 +76,9 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
-  # Cost gate (#91): gate.py against sample Infracost JSON. The composite's
-  # breakdown and diff modes need INFRACOST_API_KEY and run in consuming
-  # repos through cost-diff-tofu.yml (#89).
+  # Cost gate (#91) and the infracost composite (#89): gate.py and the config
+  # writer against fixtures, then the checksum-verified install. Pricing needs
+  # INFRACOST_API_KEY and a plan, so cost-diff-tofu.yml runs in consuming repos.
   cost-gate:
     name: Cost Gate
     runs-on: ubuntu-latest
@@ -94,8 +94,23 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Gate fixtures
+      - name: Gate and config fixtures
         run: tests/infracost/run.sh
+
+      # Install smoke only: pricing needs INFRACOST_API_KEY and a plan. The
+      # comment step exits 2 on the empty PR number after the install passed.
+      - name: Composite install (no API key)
+        id: smoke
+        continue-on-error: true
+        uses: ./.github/actions/infracost
+        with:
+          mode: comment
+          pull-request: ""
+
+      - name: Installed binary
+        run: |
+          [ -x "${RUNNER_TEMP}/infracost" ] || { echo "::error title=infracost::binary not installed"; exit 1; }
+          "${RUNNER_TEMP}/infracost" --version
 
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate

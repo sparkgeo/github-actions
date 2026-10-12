@@ -11,6 +11,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
+| Cost Diff (OpenTofu) | [`cost-diff-tofu.yml`](.github/workflows/cost-diff-tofu.yml) | `workflow_call` | Reusable PR cost gate — plans changed Terramate stacks (or one OpenTofu root) on base and head with a read-only OIDC role, prices both with Infracost, keeps one updating PR comment with the diff and the cost gate line, fails above the thresholds |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Infracost | [`infracost`](.github/actions/infracost/action.yml) | Checksum-verified Infracost with `breakdown`, `diff` (plus the `gate.py` threshold gate) and `comment` modes over per-stack plan JSON; `plan.sh` and `mkconfig.sh` next to it produce the plans and the config file | `mode` (required), `api-key`, `stacks-file`, `plans-dir`, `usage-file`, `compare-to`, `out-file`, `max-monthly-increase` (default: `0`), `max-percent-increase` (default: `0`), `pull-request`, `github-token`, `version` (default: `0.10.46`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,32 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Cost Diff (Infracost)
+
+[`cost-diff-tofu.yml`](.github/workflows/cost-diff-tofu.yml) prices every pull request to an OpenTofu repository (issues #89 and #91). With Terramate it plans only the stacks changed against the base branch; without it, the `directory` input. Both refs are planned with the same read-only role (`tofu init`, `tofu plan -lock=false`, `tofu show -json`), the base plans are priced with `infracost breakdown`, the head plans with `infracost diff --compare-to`, and the result is one PR comment (marker `<!-- infracost -->`, edited in place) ending with the cost gate line from [`docs/cost-gate.md`](docs/cost-gate.md). The job fails when `max-monthly-increase` or `max-percent-increase` is crossed; both at 0 is comment-only.
+
+```yaml
+# .github/workflows/cost.yml in the consuming repo
+on:
+  pull_request:
+jobs:
+  cost:
+    permissions:
+      id-token: write       # OIDC plan role
+      contents: read
+      pull-requests: write  # the comment
+    uses: sparkgeo/github-actions/.github/workflows/cost-diff-tofu.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      role-arn: arn:aws:iam::123456789012:role/github-plan
+      max-monthly-increase: 200
+      max-percent-increase: 10
+    secrets:
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+```
+
+The plan role is documented in [`docs/oidc-trust-policies.md`](docs/oidc-trust-policies.md) (read-only account access plus the state bucket and lock table). `INFRACOST_API_KEY` is an org secret (free Infracost account). Usage-based resources need an `infracost-usage.yml` at the repo root ([starter](docs/examples/infracost-usage.yml)); the comment warns when it is missing. Artefact `infracost` holds both JSONs, the gate snippet and the plan JSONs. Egress: `pricing.api.infracost.io` and `dashboard.api.infracost.io` (API key validation) besides GitHub and the cloud APIs; update checks and Infracost Cloud uploads are off.
 
 ## Consuming repo CI setup
 

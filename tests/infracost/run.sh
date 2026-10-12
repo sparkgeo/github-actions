@@ -85,4 +85,33 @@ echo "== missing JSON exits 2"
 run missing "${TMP}/nope.json"
 [ "${rc}" -eq 2 ] || fail "missing rc ${rc}"
 
+echo "== mkconfig.sh: plan list to infracost.yml"
+MKCONFIG="${HERE}/../../.github/actions/infracost/mkconfig.sh"
+mkdir -p "${TMP}/plans/stacks/prod" "${TMP}/plans/stacks/dev"
+echo '{}' > "${TMP}/plans/stacks/prod/plan.json"
+echo '{}' > "${TMP}/plans/stacks/dev/plan.json"
+printf 'stacks/prod\nstacks/dev\n' > "${TMP}/stacks.txt"
+bash "${MKCONFIG}" "${TMP}/stacks.txt" "${TMP}/plans" "${FIX}/infracost-usage.yml" > "${TMP}/infracost.yml"
+diff -u - "${TMP}/infracost.yml" <<CFG || fail "mkconfig output differs"
+version: "0.1"
+projects:
+  - path: ${TMP}/plans/stacks/prod/plan.json
+    name: stacks/prod
+    usage_file: ${FIX}/infracost-usage.yml
+  - path: ${TMP}/plans/stacks/dev/plan.json
+    name: stacks/dev
+    usage_file: ${FIX}/infracost-usage.yml
+CFG
+printf 'stacks/prod\nstacks/gone\n' > "${TMP}/stacks2.txt"
+bash "${MKCONFIG}" "${TMP}/stacks2.txt" "${TMP}/plans" "" > "${TMP}/infracost2.yml" 2> "${TMP}/mk.log"
+grep -q 'name: stacks/prod' "${TMP}/infracost2.yml" || fail "mkconfig kept prod"
+! grep -q 'stacks/gone' "${TMP}/infracost2.yml" || fail "mkconfig must skip stacks without a plan"
+! grep -q 'usage_file' "${TMP}/infracost2.yml" || fail "mkconfig must omit usage_file when empty"
+grep -q '^::notice title=infracost::stacks/gone has no plan' "${TMP}/mk.log" || fail "mkconfig notice: $(cat "${TMP}/mk.log")"
+set +e
+bash "${MKCONFIG}" "${TMP}/stacks2.txt" "${TMP}/nowhere" "" > /dev/null 2> "${TMP}/mk2.log"
+rc=$?
+set -e
+[ "${rc}" -eq 1 ] || fail "mkconfig with no plans at all must exit 1, got ${rc}"
+
 echo "all infracost gate checks passed"
