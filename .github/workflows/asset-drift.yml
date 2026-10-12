@@ -1,0 +1,166 @@
+name: Asset Drift
+
+# Reusable scheduled check that compares a live AWS account with the org asset
+# register (issue #117, plan Step 31 Standard). Steampipe reads every taggable
+# resource through the Resource Groups Tagging API with a read-only OIDC role
+# (no stored keys); drift.py reports resources missing required tags,
+# resources no repository declares (unmanaged) and declared resources the
+# account no longer has (orphaned). One tracking issue per account in the
+# calling repo; artefacts kept 90 days as audit evidence.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      role-arn:
+        description: 'Read-only IAM role to assume through OIDC (docs/oidc-trust-policies.md, asset drift role)'
+        required: true
+        type: string
+      aws-region:
+        description: 'Region for the STS and tagging API calls'
+        default: 'us-west-2'
+        type: string
+      required-tags:
+        description: 'Comma-separated tag keys every resource must carry'
+        default: 'owner,project,environment,data-class'
+        type: string
+      register-ref:
+        description: 'asset-register release to diff against: latest or a date (YYYY-MM-DD)'
+        default: 'latest'
+        type: string
+      issue:
+        description: 'Open, update or close the per-account tracking issue (needs issues: write)'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned asset-drift.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      untagged-count:
+        description: 'Live resources missing a required tag'
+        value: ${{ jobs.drift.outputs.untagged-count }}
+      unmanaged-count:
+        description: 'Live resources not declared in any repository'
+        value: ${{ jobs.drift.outputs.unmanaged-count }}
+      orphaned-count:
+        description: 'Declared resources absent from the account'
+        value: ${{ jobs.drift.outputs.orphaned-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `id-token: write` (OIDC), `contents: read`
+# and `issues: write` for the tracking issue. See README.
+jobs:
+  drift:
+    name: Asset Drift
+    runs-on: ubuntu-latest
+    outputs:
+      untagged-count: ${{ steps.drift.outputs.untagged-count }}
+      unmanaged-count: ${{ steps.drift.outputs.unmanaged-count }}
+      orphaned-count: ${{ steps.drift.outputs.orphaned-count }}
+    steps:
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout sparkgeo composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Assume the read-only role
+        uses: ./.sparkgeo-github-actions/.github/actions/aws-oidc-auth
+        with:
+          role-arn: ${{ inputs.role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Identify the account
+        id: account
+        run: echo "id=$(aws sts get-caller-identity --query Account --output text)" >> "${GITHUB_OUTPUT}"
+
+      - name: Query live taggable resources
+        id: live
+        uses: ./.sparkgeo-github-actions/.github/actions/steampipe
+        with:
+          query: select arn, name, region, account_id, tags from aws_tagging_resource
+          output-file: ${{ runner.temp }}/live.json
+
+      - name: Download the asset register
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.register-ref }}
+          DIR: ${{ runner.temp }}/register
+        run: |
+          set -euo pipefail
+          case "${REF}" in
+            latest) TAG="asset-register-latest" ;;
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) TAG="asset-register-${REF}" ;;
+            *) TAG="${REF}" ;;
+          esac
+          gh release download "${TAG}" -R sparkgeo/github-actions -D "${DIR}" -p assets.json -p SHA256SUMS
+          ( cd "${DIR}" && sha256sum -c --ignore-missing --quiet SHA256SUMS )
+          echo "register ${TAG}"
+
+      - name: Compare
+        id: drift
+        env:
+          LIVE: ${{ steps.live.outputs.output-file }}
+          REGISTER: ${{ runner.temp }}/register/assets.json
+          ACCOUNT: ${{ steps.account.outputs.id }}
+          REQUIRED_TAGS: ${{ inputs.required-tags }}
+          OUT: ${{ runner.temp }}/asset-drift
+        run: |
+          set -euo pipefail
+          mkdir -p "${OUT}"
+          python3 -I .sparkgeo-github-actions/.github/actions/steampipe/drift.py \
+            --live "${LIVE}" --register "${REGISTER}" --account "${ACCOUNT}" --required-tags "${REQUIRED_TAGS}" \
+            --output "${OUT}/drift.json" --report "${OUT}/report.md"
+          cp "${LIVE}" "${OUT}/live.json"
+
+      - name: Upload audit evidence
+        if: always() && steps.drift.outputs.report-path != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: asset-drift-${{ steps.account.outputs.id }}
+          path: ${{ runner.temp }}/asset-drift/
+          retention-days: 90
+
+      - name: Open, update or close the tracking issue
+        if: inputs.issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACCOUNT: ${{ steps.account.outputs.id }}
+          UNTAGGED: ${{ steps.drift.outputs.untagged-count }}
+          UNMANAGED: ${{ steps.drift.outputs.unmanaged-count }}
+          ORPHANED: ${{ steps.drift.outputs.orphaned-count }}
+          REPORT: ${{ steps.drift.outputs.report-path }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="Asset drift: account ${ACCOUNT}"
+          existing="$(gh issue list -R "${REPO}" --state open --search "\"${TITLE}\" in:title" --json number --jq '.[0].number // empty')"
+          if [ "${UNTAGGED}" = "0" ] && [ "${UNMANAGED}" = "0" ] && [ "${ORPHANED}" = "0" ]; then
+            if [ -n "${existing}" ]; then
+              gh issue close "${existing}" -R "${REPO}" --comment "Clean run on $(date -u +%F): no untagged, unmanaged or orphaned resources. ${RUN_URL}"
+            fi
+            exit 0
+          fi
+          {
+            echo "Run of $(date -u +%F): ${RUN_URL} (artefact \`asset-drift-${ACCOUNT}\` holds drift.json and the live query)."
+            echo
+            cat "${REPORT}"
+          } > "${RUNNER_TEMP}/issue-body.md"
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" -R "${REPO}" --body-file "${RUNNER_TEMP}/issue-body.md"
+          else
+            gh issue create -R "${REPO}" --title "${TITLE}" --label security --body-file "${RUNNER_TEMP}/issue-body.md"
+          fi

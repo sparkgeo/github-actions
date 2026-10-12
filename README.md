@@ -13,6 +13,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
 | Asset Inventory | [`asset-inventory.yml`](.github/workflows/asset-inventory.yml) | `workflow_call` | Reusable register — builds `inventory.json` and a tag-grouped diagram from OpenTofu plan JSON or CDK synth output; diffs against the last published inventory on PRs, publishes a rolling `asset-inventory-latest` release on the default branch |
 | Asset Register Roll-up | [`asset-register-rollup.yml`](.github/workflows/asset-register-rollup.yml) | `schedule` (daily), `workflow_dispatch` | Reads every repo's `asset-inventory-latest` release with a read-only App token, merges them into the org-wide register (`assets.json`, `owners.md`, `unowned.md`, `data-classes.md`, diagram) on the rolling `asset-register-latest` release plus dated tags; tracking issue while assets are unowned or inventories stale |
+| Asset Drift | [`asset-drift.yml`](.github/workflows/asset-drift.yml) | `workflow_call` | Reusable scheduled check — Steampipe reads every taggable resource of an AWS account through a read-only OIDC role and reports untagged, unmanaged (not in any repo's inventory) and orphaned (declared, absent) resources against the org register; tracking issue per account, artefacts kept 90 days |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -47,6 +48,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | K8s Policy | [`k8s-policy`](.github/actions/k8s-policy/action.yml) | Renders Helm charts / Kustomize overlays and evaluates them with conftest against the bundled org policy set ([`policies/`](.github/actions/k8s-policy/policies)); error annotations + job summary per violation. Installs a checksum-verified conftest binary | `version` (default: `0.71.1`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `policy-path` (default: `""`), `data-path` (default: `""`), `fail-on-warn` (default: `false`), `require-tags` (default: `true`) |
 | Asset Inventory | [`asset-inventory`](.github/actions/asset-inventory/action.yml) | One record per planned resource (id, type, stack, region, tags, missing required tags, source) from OpenTofu plan JSON or CDK templates; Graphviz DOT and SVG (installs graphviz if missing) plus Mermaid grouped project, environment, owner; diff against a base inventory. Never fails on findings | `stack` (required: `tofu` or `cdk`), `input-dir` (required), `required-tags`, `account`, `base-inventory`, `mermaid-max-nodes` (default: `60`), `output-dir` |
 | Asset Register | [`asset-register`](.github/actions/asset-register/action.yml) | Merges per-repo `inventory.json` files into the org register: `assets.json`, `owners.md`, `unowned.md` (tag violations or an owner outside `policies/tags/teams.yml`), `data-classes.md`, Graphviz diagram, `SHA256SUMS`; flags inventories older than `stale-days` | `inventories-dir` (required), `teams-file`, `stale-days` (default: `7`), `output-dir` (default: `register`) |
+| Steampipe | [`steampipe`](.github/actions/steampipe/action.yml) | Installs a checksum-verified Steampipe binary and pinned plugins, runs one SQL query against the live account with the ambient credentials and writes the JSON result; `drift.py` next to it compares `aws_tagging_resource` rows with the register | `version` (default: `2.4.7`), `plugins` (default: `aws@1.34.0`), `query` (empty installs only), `output-file` |
 
 ### GitHub Actionlint
 
@@ -489,6 +491,32 @@ python3 -I .github/actions/asset-inventory/inventory.py --stack tofu --input pla
 [`asset-register-rollup.yml`](.github/workflows/asset-register-rollup.yml) runs daily in this repo and builds the org-wide register from every repository's published inventory (issue #116): one `assets.json` with the repo attached to each record, `owners.md` (assets per owner, project, environment), `unowned.md` (tag violations, or a `team-*` owner missing from [`policies/tags/teams.yml`](policies/tags/teams.yml)), `data-classes.md` (confidential and restricted assets, for the storage-location inventory of the classification policy), `register.svg`, `summary.md` and `SHA256SUMS`. Each run replaces the `asset-register-latest` release and adds `asset-register-YYYY-MM-DD` (90 kept). An "Asset register: unowned or stale assets" issue is opened or updated while any asset is unowned or any inventory is older than seven days, and closed by the next clean run.
 
 Reading private repositories needs a GitHub App with `contents: read` and `metadata: read` installed on the org, stored as the `ASSET_REGISTER_APP_ID` and `ASSET_REGISTER_APP_PRIVATE_KEY` secrets of this repo; without them the run reads public repositories only and says so. Nothing in the roll-up can write to a consuming repository. Auditors fetch a dated snapshot with `gh release download asset-register-2026-10-12 -R sparkgeo/github-actions` and check it with `sha256sum -c SHA256SUMS`; format in [`docs/asset-inventory.md`](docs/asset-inventory.md).
+
+### Asset Drift (Steampipe)
+
+IaC declares what should exist; the account shows what does. [`asset-drift.yml`](.github/workflows/asset-drift.yml) closes that gap on a schedule (issue #117): the `aws-oidc-auth` composite assumes a read-only role, the `steampipe` composite runs `select arn, name, region, account_id, tags from aws_tagging_resource` (every taggable resource through the Resource Groups Tagging API), the org register `assets.json` is downloaded from this repo's `asset-register-<ref>` release and checksum-verified, and `drift.py` produces three lists: **untagged** (live resources missing a required tag), **unmanaged** (live resources whose ARN name matches no register `identifier`) and **orphaned** (register records whose `identifier` matches no live ARN). Register records with no stated identifier (ids generated at apply time) are counted as unmatchable, not orphaned.
+
+```yaml
+# .github/workflows/asset-drift.yml in the consuming repo
+on:
+  schedule:
+    - cron: '0 7 * * 1-5'
+  workflow_dispatch:
+jobs:
+  drift:
+    permissions:
+      id-token: write   # OIDC
+      contents: read
+      issues: write     # tracking issue
+    uses: sparkgeo/github-actions/.github/workflows/asset-drift.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      role-arn: arn:aws:iam::123456789012:role/github-asset-drift
+```
+
+The role needs only `tag:GetResources`, `tag:GetTagKeys`, `tag:GetTagValues` and `sts:GetCallerIdentity`; policy and trust in [`docs/oidc-trust-policies.md`](docs/oidc-trust-policies.md). One issue per account ("Asset drift: account 123456789012") is opened or updated while any list is non-empty and closed by the next clean run; `drift.json`, the report and the raw query are kept 90 days in the `asset-drift-<account>` artefact.
+
+**Egress** for the Steampipe composite: `github.com`, `release-assets.githubusercontent.com` (binary and embedded Postgres), `hub.steampipe.io`, `ghcr.io`, `pkg-containers.githubusercontent.com` (plugins), plus the AWS API endpoints. **Other clouds:** the same shape works with the `gcp` and `azure` plugins over `gcp_project`/`azure_resource` tag columns; Turbot's `steampipe-mod-gcp-tags` and `steampipe-mod-azure-tags` carry the equivalent controls. The mods, including `steampipe-mod-aws-tags`, run under Powerpipe since Steampipe 1.0 and are not wired here; the mandatory-tag control they implement is the untagged list above.
 
 ## Consuming repo CI setup
 

@@ -1,0 +1,159 @@
+{
+ "generated_at": "2026-10-12T06:41:00Z",
+ "stale_days": 7,
+ "teams_file": null,
+ "repos": [],
+ "counts": {
+  "repos": 2,
+  "assets": 6,
+  "unowned": 1,
+  "stale_repos": 0
+ },
+ "assets": [
+  {
+   "id": "aws_s3_bucket.ingest",
+   "type": "aws_s3_bucket",
+   "name": "ingest",
+   "stack": "stacks/prod",
+   "account": "123456789012",
+   "region": "us-west-2",
+   "taggable": true,
+   "identifier": "prescient-ingest",
+   "tags": {
+    "owner": "team-platform",
+    "project": "prescient",
+    "environment": "prod",
+    "data-class": "confidential"
+   },
+   "tag_violations": [],
+   "source": {
+    "repo": "sparkgeo/prescient-infra",
+    "path": null,
+    "line": null
+   },
+   "repo": "sparkgeo/prescient-infra",
+   "unowned_reason": null
+  },
+  {
+   "id": "aws_s3_bucket.logs[\"a\"]",
+   "type": "aws_s3_bucket",
+   "name": "logs",
+   "stack": "stacks/prod",
+   "account": "123456789012",
+   "region": "us-west-2",
+   "taggable": true,
+   "identifier": "prescient-logs-a",
+   "tags": {
+    "owner": "team-platform"
+   },
+   "tag_violations": [
+    "project",
+    "environment",
+    "data-class"
+   ],
+   "source": {
+    "repo": "sparkgeo/prescient-infra",
+    "path": null,
+    "line": null
+   },
+   "repo": "sparkgeo/prescient-infra",
+   "unowned_reason": null
+  },
+  {
+   "id": "aws_iam_role.app",
+   "type": "aws_iam_role",
+   "name": "app",
+   "stack": "stacks/prod",
+   "account": null,
+   "region": "us-west-2",
+   "taggable": true,
+   "identifier": "prescient-app",
+   "tags": {
+    "owner": "team-platform",
+    "project": "prescient",
+    "environment": "prod",
+    "data-class": "confidential"
+   },
+   "tag_violations": [],
+   "source": {
+    "repo": "sparkgeo/prescient-infra",
+    "path": null,
+    "line": null
+   },
+   "repo": "sparkgeo/prescient-infra",
+   "unowned_reason": null
+  },
+  {
+   "id": "module.net.aws_vpc.main",
+   "type": "aws_vpc",
+   "name": "main",
+   "stack": "stacks/prod",
+   "account": "123456789012",
+   "region": "us-west-2",
+   "taggable": true,
+   "identifier": null,
+   "tags": {
+    "owner": "team-platform",
+    "project": "prescient",
+    "environment": "prod",
+    "data-class": "confidential"
+   },
+   "tag_violations": [],
+   "source": {
+    "repo": "sparkgeo/prescient-infra",
+    "path": null,
+    "line": null
+   },
+   "repo": "sparkgeo/prescient-infra",
+   "unowned_reason": null
+  },
+  {
+   "id": "aws_sqs_queue.gone",
+   "type": "aws_sqs_queue",
+   "name": "gone",
+   "stack": "stacks/prod",
+   "account": "123456789012",
+   "region": "us-west-2",
+   "taggable": true,
+   "identifier": "prescient-events",
+   "tags": {
+    "owner": "team-platform",
+    "project": "prescient",
+    "environment": "prod",
+    "data-class": "confidential"
+   },
+   "tag_violations": [],
+   "source": {
+    "repo": "sparkgeo/prescient-infra",
+    "path": null,
+    "line": null
+   },
+   "repo": "sparkgeo/prescient-infra",
+   "unowned_reason": null
+  },
+  {
+   "id": "aws_s3_bucket.elsewhere",
+   "type": "aws_s3_bucket",
+   "name": "elsewhere",
+   "stack": "stacks/prod",
+   "account": "555555555555",
+   "region": "us-west-2",
+   "taggable": true,
+   "identifier": "elsewhere-bucket",
+   "tags": {
+    "owner": "team-platform",
+    "project": "prescient",
+    "environment": "prod",
+    "data-class": "confidential"
+   },
+   "tag_violations": [],
+   "source": {
+    "repo": "sparkgeo/other-infra",
+    "path": null,
+    "line": null
+   },
+   "repo": "sparkgeo/other-infra",
+   "unowned_reason": null
+  }
+ ]
+}

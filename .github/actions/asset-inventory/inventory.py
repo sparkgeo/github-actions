@@ -45,6 +45,14 @@ CFN_TAGGABLE = {
     "AWS::CodeBuild::Project", "AWS::Glue::Job", "AWS::SageMaker::NotebookInstance", "AWS::Route53::HostedZone",
 }
 CFN_SKIP = {"AWS::CDK::Metadata"}
+# Cloud-side name of a resource, when the plan or template states it. Used by
+# asset-drift to match register records to live ARNs; null when generated at
+# apply time (vpc ids, CDK-generated names).
+TOFU_IDENTIFIER_ATTRS = ("bucket", "function_name", "identifier", "cluster_identifier", "cluster_name", "table_name",
+                         "repository_name", "domain_name", "name")
+CFN_IDENTIFIER_PROPS = ("BucketName", "FunctionName", "RoleName", "TableName", "TopicName", "QueueName", "ClusterName",
+                        "RepositoryName", "DBInstanceIdentifier", "DomainName", "LogGroupName", "StreamName",
+                        "UserPoolName", "AlarmName", "StateMachineName", "Name")
 FILL = {"public": "#d9ead3", "internal": "#cfe2f3", "confidential": "#fff2cc", "restricted": "#f4cccc", None: "#eeeeee"}
 
 
@@ -57,11 +65,19 @@ def usage_error(msg):
     return 2
 
 
-def record(id_, typ, name, stack, account, region, taggable, tags, required, repo, path=None, line=None):
+def identifier_from(mapping, keys):
+    for k in keys:
+        v = mapping.get(k)
+        if isinstance(v, str) and v:
+            return v
+    return None
+
+
+def record(id_, typ, name, stack, account, region, taggable, tags, required, repo, path=None, line=None, identifier=None):
     tags = {str(k): str(v) for k, v in (tags or {}).items() if v is not None}
     return {
         "id": id_, "type": typ, "name": name, "stack": stack, "account": account, "region": region,
-        "taggable": taggable, "tags": tags,
+        "identifier": identifier, "taggable": taggable, "tags": tags,
         "tag_violations": [k for k in required if k not in tags] if taggable else [],
         "source": {"repo": repo, "path": path, "line": line},
     }
@@ -94,7 +110,7 @@ def tofu_resources(plan, stack, account, required, repo):
             taggable = any(attr in values for attr in TOFU_TAG_ATTRS)
             provider = (r.get("provider_name") or "").rsplit("/", 1)[-1]
             yield record(r["address"], r["type"], r["name"], stack, account, regions.get(provider),
-                         taggable, tags, required, repo)
+                         taggable, tags, required, repo, identifier=identifier_from(values, TOFU_IDENTIFIER_ATTRS))
         for child in module.get("child_modules", []):
             yield from walk(child)
 
@@ -140,7 +156,8 @@ def load_cdk(root, account, required, repo):
             tags = {t["Key"]: t["Value"] for t in raw if isinstance(t, dict) and "Key" in t} if isinstance(raw, list) else {}
             taggable = typ in CFN_TAGGABLE or raw is not None
             yield record(logical_id, typ, logical_id, stack, account, None, taggable, tags, required, repo,
-                         path=(res.get("Metadata") or {}).get("aws:cdk:path"))
+                         path=(res.get("Metadata") or {}).get("aws:cdk:path"),
+                         identifier=identifier_from(props, CFN_IDENTIFIER_PROPS))
     if not found:
         warn(f"no plan or template JSON found under {root}")
 

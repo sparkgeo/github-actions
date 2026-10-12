@@ -31,6 +31,7 @@
 | `stack` | directory of the plan file under the input directory | template file name without `.template.json` |
 | `region` | `region` of the resource's provider configuration | null (templates are region-agnostic) |
 | `account` | from the `account` input, else null | same |
+| `identifier` | first stated name among `bucket`, `function_name`, `identifier`, `cluster_identifier`, `cluster_name`, `table_name`, `repository_name`, `domain_name`, `name`; null when apply time generates it | first set `*Name` property (`BucketName`, `FunctionName`, `RoleName`, ...); null for CDK-generated names |
 | `taggable` | the type exposes `tags`, `tags_all`, `labels` or `effective_labels` | a common taggable type, or `Properties.Tags` present |
 | `tags` | `tags_all`, else `tags`, else `effective_labels`, else `labels` | `Properties.Tags` |
 | `source.path` | null: plan JSON carries no source positions | `Metadata["aws:cdk:path"]` |

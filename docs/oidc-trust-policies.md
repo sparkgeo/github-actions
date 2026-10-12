@@ -93,6 +93,26 @@ Bind to a specific repo and branch — never the whole org:
    AWS_DEPLOY_ROLE_ARN = arn:aws:iam::123456789012:role/sparkgeo-app-deploy
    ```
 
+### Asset drift role (read-only)
+
+`asset-drift.yml` (issue #117) assumes one role per account to read every taggable resource through the Resource Groups Tagging API. The role needs no write permission of any kind; attach this policy and the standard trust policy above, scoped to the repository that runs the drift schedule:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadTaggedResources",
+      "Effect": "Allow",
+      "Action": ["tag:GetResources", "tag:GetTagKeys", "tag:GetTagValues", "sts:GetCallerIdentity"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+`tag:GetResources` returns ARNs and tags only; the role cannot describe, list or modify the resources themselves. If a later query needs resource details (for example `aws_s3_bucket` for encryption state), add the matching `Describe*`/`Get*`/`List*` actions one at a time and record them here.
+
 ## GitHub environments and environment-scoped secrets
 
 For production deployments, gate the job on a GitHub environment with protection rules:
