@@ -48,9 +48,11 @@ All ports are 443.
 | | `api.deps.dev`, `api.osv.dev`, `www.bestpractices.dev`, `oss-fuzz-build-logs.storage.googleapis.com` | Scorecard checks (Vulnerabilities, Fuzzing, CII badge) |
 | | `ghcr.io`, `pkg-containers.githubusercontent.com` | scorecard container image |
 | Dependency Review | `github.com`, `api.github.com` | dependency graph comparison, PR comment |
+| | `api.deps.dev`, `api.securityscorecards.dev` | OpenSSF Scorecard column of the summary (`show-openssf-scorecard`, on by default); the deps.dev lookup for a dependency GitHub has no repository URL for is not wrapped in error handling, so blocking it fails the job |
 | Terramate + OpenTofu Setup | `github.com`, `get.opentofu.org`, `release-assets.githubusercontent.com` | OpenTofu and Terramate installers |
 | Storage Optimizer | `github.com` | checkout only |
 | Threat Feeds | `github.com`, `api.github.com`, `release-assets.githubusercontent.com` | checkout; `gh release view` / `gh release download` of the mirror snapshot |
+| IOC Check | `github.com`, `api.github.com`, `release-assets.githubusercontent.com` | checkout; threat-feeds composite (`gh release view` / `gh release download`) |
 
 ### Deliberately not allowed
 

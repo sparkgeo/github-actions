@@ -1,0 +1,4 @@
+{"feed":"urlhaus","fetched_at":"2026-10-07T05:17:42Z","source_url":"https://urlhaus.abuse.ch/downloads/csv_recent/","count":2,"dropped_count":0,"skipped_count":0,"meta":{},"entries":[
+{"value":"http://bad.example/x/loader.bin","type":"url","confidence":100,"first_seen":"2026-10-04T00:00:00Z","meta":{"threat":"malware_download","tags":"elf","status":"online","id":"3401"}},
+{"value":"https://mirror.example/","type":"url","confidence":50,"first_seen":"2026-10-04T00:00:00Z","meta":{"threat":"malware_download","tags":"elf","status":"offline","id":"3402"}}
+]}

@@ -1,0 +1,83 @@
+name: "IOC Check"
+description: |
+  Matches IPs, CIDRs, domains and URLs found in IaC, container and dependency
+  sources against the abuse.ch ThreatFox, Feodo Tracker and URLhaus feeds from
+  the threat-feeds snapshot (issue #110). Categories: c2-ip, c2-domain,
+  malware-url. A code CIDR that contains a feed IP counts; private, loopback,
+  link-local, documentation and catch-all ranges never match. Malware URLs with
+  a path are redacted to <feed>#<id> in every output.
+
+  Pair with the threat-feeds composite for feeds-dir. Required permissions on
+  the calling job: contents: read.
+inputs:
+  feeds-dir:
+    description: "Directory holding threatfox.json, feodo.json and urlhaus.json (threat-feeds output feeds-dir)."
+    required: true
+  paths:
+    description: "Comma-separated globs of files to scan, relative to the repo. Empty uses the built-in IaC, container and dependency set."
+    default: ""
+  exclude:
+    description: "Comma-separated globs to skip. Empty uses the built-in set (node_modules, .terraform, vendor, tests)."
+    default: ""
+  base-sha:
+    description: "When set, only files changed between this commit and HEAD are scanned (PR mode)."
+    default: ""
+  block-on:
+    description: "Comma-separated categories that fail the step (c2-ip, c2-domain, malware-url). Empty is advisory: warnings only."
+    default: "c2-ip,c2-domain,malware-url"
+  output-dir:
+    description: "Where findings.json and report.md are written."
+    default: "ioc-check"
+outputs:
+  match-count:
+    description: "Indicators matched, blocking or not."
+    value: ${{ steps.check.outputs.match-count }}
+  blocking-count:
+    description: "Matches in a block-on category."
+    value: ${{ steps.check.outputs.blocking-count }}
+  report-path:
+    description: "Markdown report (starts with the <!-- ioc-check --> marker), suitable for a PR comment."
+    value: ${{ steps.check.outputs.report-path }}
+runs:
+  using: "composite"
+  steps:
+    - name: Select files
+      id: files
+      shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base-sha }}
+        LIST: ${{ runner.temp }}/ioc-check-files.txt
+      run: |
+        set -euo pipefail
+        if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+          echo "list=" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+        if [ -n "${BASE_SHA}" ]; then
+          git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+          git diff --name-only --diff-filter=ACMR "${BASE_SHA}" HEAD > "${LIST}"
+        else
+          git ls-files > "${LIST}"
+        fi
+        echo "list=${LIST}" >> "${GITHUB_OUTPUT}"
+        echo "$(wc -l < "${LIST}") candidate files"
+
+    - name: Match indicators
+      id: check
+      shell: bash
+      env:
+        FEEDS_DIR: ${{ inputs.feeds-dir }}
+        PATHS: ${{ inputs.paths }}
+        EXCLUDE: ${{ inputs.exclude }}
+        BLOCK_ON: ${{ inputs.block-on }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        LIST: ${{ steps.files.outputs.list }}
+      run: |
+        set -euo pipefail
+        mkdir -p "${OUTPUT_DIR}"
+        args=(--feeds-dir "${FEEDS_DIR}" --root . --block-on "${BLOCK_ON}"
+              --output "${OUTPUT_DIR}/findings.json" --report "${OUTPUT_DIR}/report.md")
+        [ -n "${PATHS}" ] && args+=(--paths "${PATHS}")
+        [ -n "${EXCLUDE}" ] && args+=(--exclude "${EXCLUDE}")
+        [ -n "${LIST}" ] && args+=(--files-from "${LIST}")
+        python3 -I "${GITHUB_ACTION_PATH}/ioc_check.py" "${args[@]}"

@@ -1,0 +1,8 @@
+{"feed":"threatfox","fetched_at":"2026-10-07T05:17:40Z","source_url":"https://threatfox.abuse.ch/export/json/recent/","count":6,"dropped_count":0,"skipped_count":0,"meta":{},"entries":[
+{"value":"c2.example","type":"domain","confidence":100,"first_seen":"2026-10-06T12:00:00Z","meta":{"malware":"Cobalt Strike","threat_type":"botnet_cc","tags":"fixture","id":"1000001"}},
+{"value":"240.1.2.3","type":"ip","confidence":75,"first_seen":"2026-10-01T08:00:00Z","last_seen":"2026-10-06T09:00:00Z","meta":{"malware":"Cobalt Strike","threat_type":"botnet_cc","tags":"fixture","port":4444,"id":"1000002"}},
+{"value":"http://dl.example/payload.sh","type":"url","confidence":90,"first_seen":"2026-10-05T00:00:00Z","meta":{"malware":"Unknown","threat_type":"payload_delivery","tags":"fixture","id":"1000003"}},
+{"value":"registry.example","type":"domain","confidence":80,"first_seen":"2026-10-02T00:00:00Z","meta":{"malware":"Unknown","threat_type":"payload_delivery","tags":"fixture","id":"1000004"}},
+{"value":"10.0.0.1","type":"ip","confidence":100,"first_seen":"2026-10-02T00:00:00Z","meta":{"malware":"Unknown","threat_type":"botnet_cc","tags":"fixture","port":80,"id":"1000005"}},
+{"value":"192.0.2.1","type":"ip","confidence":100,"first_seen":"2026-10-02T00:00:00Z","meta":{"malware":"Unknown","threat_type":"botnet_cc","tags":"fixture","port":80,"id":"1000006"}}
+]}
