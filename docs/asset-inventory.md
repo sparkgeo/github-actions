@@ -39,7 +39,7 @@ Data sources, `AWS::CDK::Metadata` and anything that is not a managed resource a
 
 ## Diagram
 
-`inventory.dot` and `inventory.svg` (Graphviz, rendered when `dot` is available, which it is on GitHub-hosted runners) cluster resources project, environment, owner. Fill colour follows `data-class`: public green, internal blue, confidential yellow, restricted red, unclassified grey; a resource with `tag_violations` gets a red border. `inventory.mmd` is the same grouping as a Mermaid `flowchart` and is embedded in the PR comment while the inventory has at most `mermaid-max-nodes` resources.
+`inventory.dot` and `inventory.svg` (Graphviz; the composite installs the `graphviz` package with apt when `dot` is missing, as it is on current GitHub-hosted images) cluster resources project, environment, owner. Fill colour follows `data-class`: public green, internal blue, confidential yellow, restricted red, unclassified grey; a resource with `tag_violations` gets a red border. `inventory.mmd` is the same grouping as a Mermaid `flowchart` and is embedded in the PR comment while the inventory has at most `mermaid-max-nodes` resources.
 
 ## Publishing
 

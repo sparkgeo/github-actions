@@ -48,6 +48,19 @@ outputs:
 runs:
   using: "composite"
   steps:
+    # GitHub-hosted images no longer ship graphviz; install it for the SVG.
+    - name: Install graphviz
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v dot >/dev/null; then
+          if command -v apt-get >/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends graphviz
+          else
+            echo "::warning title=asset-inventory::graphviz not found and apt-get unavailable; SVG will not be rendered"
+          fi
+        fi
+
     - name: Build inventory
       id: build
       shell: bash
@@ -71,4 +84,4 @@ runs:
         [ -n "${ACCOUNT}" ] && args+=(--account "${ACCOUNT}")
         [ -n "${BASE}" ] && args+=(--diff-base "${BASE}")
         python3 -I "${GITHUB_ACTION_PATH}/inventory.py" "${args[@]}"
-        ( cd "${OUTPUT_DIR}" && sha256sum inventory.json inventory.svg inventory.mmd > SHA256SUMS )
+        ( cd "${OUTPUT_DIR}" && sha256sum inventory.json inventory.mmd $(ls inventory.svg 2>/dev/null) > SHA256SUMS )

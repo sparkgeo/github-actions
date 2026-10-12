@@ -96,7 +96,7 @@ run diff tofu "${FIX}/tofu" --diff-base "${FIX}/base-inventory.json"
 [ "$(jq -r '.diff.removed | join(",")' "${TMP}/diff/inventory.json")" = "aws_sqs_queue.gone" ] || fail "diff removed"
 [ "$(jq -r '.diff.retagged[] | "\(.id) \(.key) \(.before) \(.after)"' "${TMP}/diff/inventory.json")" = "aws_s3_bucket.ingest owner team-old team-platform" ] || fail "diff retagged: $(jq -c '.diff.retagged' "${TMP}/diff/inventory.json")"
 grep -q '^## Asset inventory: 8 resources, 3 with missing tags' "${TMP}/diff/report.md" || fail "report heading: $(head -3 "${TMP}/diff/report.md")"
-grep -qE '^\| `aws_s3_bucket.ingest` \| owner \| `team-old` \| \*\*`team-platform`\*\* \|' "${TMP}/diff/report.md" || fail "owner change must be bold in the report"
+grep -qF "| \`aws_s3_bucket.ingest\` | owner | \`team-old\` | **\`team-platform\`** |" "${TMP}/diff/report.md" || fail "owner change must be bold in the report"
 grep -q 'aws_sqs_queue.gone' "${TMP}/diff/report.md" || fail "removed in report"
 [ "$(output diff added-count)" = "6" ] || fail "added-count output"
 
