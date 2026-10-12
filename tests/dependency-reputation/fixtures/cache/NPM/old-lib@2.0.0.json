@@ -1,0 +1,56 @@
+{
+  "version": {
+    "versionKey": {
+      "system": "NPM",
+      "name": "old-lib",
+      "version": "2.0.0"
+    },
+    "publishedAt": "2019-01-01T00:00:00Z",
+    "advisoryKeys": [],
+    "relatedProjects": [
+      {
+        "projectKey": {
+          "id": "github.com/old/lib"
+        },
+        "relationType": "SOURCE_REPO"
+      }
+    ]
+  },
+  "project": {
+    "projectKey": {
+      "id": "github.com/old/lib"
+    },
+    "starsCount": 100,
+    "scorecard": {
+      "date": "2026-08-24T00:00:00Z",
+      "overallScore": 6.0,
+      "checks": [
+        {
+          "name": "Maintained",
+          "score": 0
+        },
+        {
+          "name": "Dangerous-Workflow",
+          "score": 10
+        },
+        {
+          "name": "Binary-Artifacts",
+          "score": 10
+        },
+        {
+          "name": "Signed-Releases",
+          "score": 0
+        },
+        {
+          "name": "Vulnerabilities",
+          "score": 10
+        },
+        {
+          "name": "Code-Review",
+          "score": 7
+        }
+      ]
+    }
+  },
+  "latest_published_at": "2019-01-01T00:00:00Z"
+}

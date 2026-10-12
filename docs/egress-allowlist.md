@@ -50,6 +50,7 @@ All ports are 443.
 | Dependency Review | `github.com`, `api.github.com` | dependency graph comparison, PR comment |
 | Terramate + OpenTofu Setup | `github.com`, `get.opentofu.org`, `release-assets.githubusercontent.com` | OpenTofu and Terramate installers |
 | Storage Optimizer | `github.com` | checkout only |
+| Dependency Reputation | `github.com`, `api.github.com`, `api.deps.dev` | checkout, base commit fetch; deps.dev package, project and advisory lookups |
 
 ### Deliberately not allowed
 

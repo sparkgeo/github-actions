@@ -1,0 +1,63 @@
+{
+  "version": {
+    "versionKey": {
+      "system": "NPM",
+      "name": "evil-stream",
+      "version": "0.1.1"
+    },
+    "publishedAt": "2026-09-01T00:00:00Z",
+    "advisoryKeys": [
+      {
+        "id": "MAL-2024-0001"
+      },
+      {
+        "id": "GHSA-xxxx-yyyy-zzzz"
+      }
+    ],
+    "relatedProjects": [
+      {
+        "projectKey": {
+          "id": "github.com/evil/stream"
+        },
+        "relationType": "SOURCE_REPO"
+      }
+    ]
+  },
+  "project": {
+    "projectKey": {
+      "id": "github.com/evil/stream"
+    },
+    "starsCount": 100,
+    "scorecard": {
+      "date": "2026-08-24T00:00:00Z",
+      "overallScore": 9.0,
+      "checks": [
+        {
+          "name": "Maintained",
+          "score": 10
+        },
+        {
+          "name": "Dangerous-Workflow",
+          "score": 10
+        },
+        {
+          "name": "Binary-Artifacts",
+          "score": 10
+        },
+        {
+          "name": "Signed-Releases",
+          "score": 10
+        },
+        {
+          "name": "Vulnerabilities",
+          "score": 10
+        },
+        {
+          "name": "Code-Review",
+          "score": 7
+        }
+      ]
+    }
+  },
+  "latest_published_at": "2026-09-01T00:00:00Z"
+}

@@ -1,0 +1,128 @@
+name: Dependency Reputation
+
+# Reusable PR gate that answers "should we trust this package at all?" for
+# every dependency added in a pull request: OSV malicious-package advisories,
+# the upstream repository's OpenSSF Scorecard and its release recency, all
+# from deps.dev (issue #111, plan Step 27). Complements dependency-review
+# and osv-scanner, which only answer "does this version have a known CVE?".
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      min-scorecard:
+        description: 'Fail when a newly added dependency scores below this (0 disables)'
+        default: 0
+        type: number
+      max-age-days:
+        description: 'Warn when the latest upstream release is older than this'
+        default: 730
+        type: number
+      fail-on-malicious:
+        description: 'Fail when OSV lists a MAL-* advisory for the added version'
+        default: true
+        type: boolean
+      ecosystems:
+        description: 'Comma-separated subset of npm, pypi, go, cargo'
+        default: 'npm,pypi,go,cargo'
+        type: string
+      exclude:
+        description: 'Comma-separated globs of lockfile paths to ignore'
+        default: '**/tests/**,**/test/**,**/fixtures/**'
+        type: string
+      comment:
+        description: 'Keep one PR comment up to date with the findings (needs pull-requests: write)'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned dependency-reputation.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      added-count:
+        description: 'Packages added or changed in the diff'
+        value: ${{ jobs.reputation.outputs.added-count }}
+      blocking-count:
+        description: 'Added packages that failed a gate'
+        value: ${{ jobs.reputation.outputs.blocking-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (checkout) and adds
+# `pull-requests: write` for the PR comment. See README.
+jobs:
+  reputation:
+    name: Dependency Reputation
+    runs-on: ubuntu-latest
+    outputs:
+      added-count: ${{ steps.rep.outputs.added-count }}
+      blocking-count: ${{ steps.rep.outputs.blocking-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout sparkgeo composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Check added dependencies
+        id: rep
+        uses: ./.sparkgeo-github-actions/.github/actions/dependency-reputation
+        with:
+          base-sha: ${{ github.event.pull_request.base.sha || '' }}
+          ecosystems: ${{ inputs.ecosystems }}
+          min-scorecard: ${{ inputs.min-scorecard }}
+          max-age-days: ${{ inputs.max-age-days }}
+          fail-on-malicious: ${{ inputs.fail-on-malicious }}
+          exclude: ${{ inputs.exclude }}
+          output-dir: ${{ runner.temp }}/dependency-reputation
+
+      - name: Upload findings
+        if: always() && steps.rep.outputs.report-path != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: dependency-reputation
+          path: ${{ runner.temp }}/dependency-reputation/
+          if-no-files-found: ignore
+
+      # One comment per PR, found by its marker and edited in place. Fork PRs
+      # get a read-only token and are skipped.
+      - name: Update PR comment
+        if: >-
+          always() && inputs.comment && github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && steps.rep.outputs.report-path != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          REPORT: ${{ steps.rep.outputs.report-path }}
+          ADDED: ${{ steps.rep.outputs.added-count }}
+        run: |
+          set -euo pipefail
+          existing="$(gh api --paginate "repos/${REPO}/issues/${PR}/comments" \
+            --jq '[.[] | select(.body | startswith("<!-- dependency-reputation -->")) | .id] | first // empty')"
+          if [ -z "${existing}" ] && [ "${ADDED}" = "0" ]; then
+            echo "no added dependencies and no earlier comment; nothing to post"
+            exit 0
+          fi
+          body="$(jq -n --rawfile r "${REPORT}" '{body: $r}')"
+          if [ -n "${existing}" ]; then
+            echo "${body}" | gh api -X PATCH "repos/${REPO}/issues/comments/${existing}" --input - > /dev/null
+          else
+            echo "${body}" | gh api -X POST "repos/${REPO}/issues/${PR}/comments" --input - > /dev/null
+          fi

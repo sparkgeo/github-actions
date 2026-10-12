@@ -11,6 +11,7 @@ All action references in this repo are pinned to full commit SHAs, and every CI 
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
+| Dependency Reputation | [`dependency-reputation.yml`](.github/workflows/dependency-reputation.yml) | `workflow_call` | Reusable gate — for every dependency added in a PR, asks deps.dev for OSV malicious-package advisories, the upstream OpenSSF Scorecard and release recency; blocks on `MAL-*` and on a score below `min-scorecard`; one updating PR comment |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Dependency Reputation | [`dependency-reputation`](.github/actions/dependency-reputation/action.yml) | Diffs changed lockfiles (npm, pnpm, yarn, `requirements*.txt`, poetry, uv, `go.sum`, `Cargo.lock`) against `base-sha` and checks each added `package@version` on deps.dev: `MAL-*` advisories, Scorecard score and checks, latest release; responses cached per package across runs | `base-sha`, `ecosystems` (default: `npm,pypi,go,cargo`), `min-scorecard` (default: `0`), `max-age-days` (default: `730`), `fail-on-malicious` (default: `true`), `exclude`, `cache-dir`, `output-dir` |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,46 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Dependency Reputation (deps.dev and Scorecard)
+
+`dependency-review` and `osv-scanner` answer "does this version have a known vulnerability?". This gate answers "should we trust this package at all?" for every dependency a pull request adds (SecOps plan Step 27, issue #111). For each `package@version` that is on the head side of a changed lockfile and not on the base side, [deps.dev](https://docs.deps.dev/api/v3/) supplies the OSV advisories (a `MAL-*` id means the [malicious-packages](https://github.com/ossf/malicious-packages) catalogue lists it), the upstream repository with its [OpenSSF Scorecard](https://github.com/ossf/scorecard#scorecard-checks) score and the Maintained, Dangerous-Workflow, Binary-Artifacts and Signed-Releases checks, and the date of the latest upstream release.
+
+```yaml
+# .github/workflows/dependency-reputation.yml in the consuming repo
+on:
+  pull_request:
+jobs:
+  reputation:
+    permissions:
+      contents: read
+      pull-requests: write   # PR comment; drop it and set comment: false if not wanted
+    uses: sparkgeo/github-actions/.github/workflows/dependency-reputation.yml@<SHA>
+    with:
+      actions-ref: <SHA>     # same SHA as the uses: line
+      min-scorecard: 0       # 0 only reports the score; 5 blocks anything below it
+```
+
+| Gate | Default | Outcome |
+|---|---|---|
+| `fail-on-malicious` | `true` | OSV `MAL-*` advisory on the added version: error, job fails |
+| `min-scorecard` | `0` | Scorecard overall score below the threshold: error, job fails. `0` disables the gate; a package without a Scorecard only warns |
+| `max-age-days` | `730` | latest upstream release older than this: warning |
+| unknown package | | deps.dev returns 404 (private registry, typo, very new): warning |
+
+**Lockfiles.** `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` (v1 and berry), `requirements*.txt` (`==` pins only), `poetry.lock`, `uv.lock`, `go.sum`, `Cargo.lock`. A version bump counts as an added package; removals are ignored. Paths matching `exclude` (default `**/tests/**,**/test/**,**/fixtures/**`) are skipped. Maven and NuGet have no lockfile parser yet.
+
+**Output.** One annotation per flagged package at the lockfile line, a step summary and PR comment with one row per package (score, the four checks, last release, advisories, flags, source repository), `findings.json` and `report.md` in the `dependency-reputation` artefact, outputs `added-count` and `blocking-count`. Exit 1 on a blocking package, 0 otherwise, 2 on an unsupported ecosystem. Without a base commit (a `push` run) there is nothing to diff and the job passes with a notice. The PR comment is skipped on fork PRs.
+
+**Caching.** deps.dev responses are stored one JSON per `package@version` and carried between runs with `actions/cache` (`deps-dev-` prefix), so a re-run or a follow-up push only queries new packages. `api.deps.dev` is the only host besides GitHub.
+
+**Local run.**
+
+```bash
+python3 -I .github/actions/dependency-reputation/reputation.py \
+  --base-sha "$(git merge-base origin/main HEAD)" --min-scorecard 5 \
+  --cache-dir /tmp/deps-dev-cache --output findings.json --report report.md
+```
 
 ## Consuming repo CI setup
 

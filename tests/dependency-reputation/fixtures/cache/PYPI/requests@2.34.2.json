@@ -1,0 +1,56 @@
+{
+  "version": {
+    "versionKey": {
+      "system": "PYPI",
+      "name": "requests",
+      "version": "2.34.2"
+    },
+    "publishedAt": "2026-05-14T19:25:26Z",
+    "advisoryKeys": [],
+    "relatedProjects": [
+      {
+        "projectKey": {
+          "id": "github.com/psf/requests"
+        },
+        "relationType": "SOURCE_REPO"
+      }
+    ]
+  },
+  "project": {
+    "projectKey": {
+      "id": "github.com/psf/requests"
+    },
+    "starsCount": 100,
+    "scorecard": {
+      "date": "2026-08-24T00:00:00Z",
+      "overallScore": 8.2,
+      "checks": [
+        {
+          "name": "Maintained",
+          "score": 10
+        },
+        {
+          "name": "Dangerous-Workflow",
+          "score": 10
+        },
+        {
+          "name": "Binary-Artifacts",
+          "score": 10
+        },
+        {
+          "name": "Signed-Releases",
+          "score": 0
+        },
+        {
+          "name": "Vulnerabilities",
+          "score": 10
+        },
+        {
+          "name": "Code-Review",
+          "score": 7
+        }
+      ]
+    }
+  },
+  "latest_published_at": "2026-05-14T19:25:26Z"
+}
