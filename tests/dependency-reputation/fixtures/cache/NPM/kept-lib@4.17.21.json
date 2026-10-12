@@ -2,7 +2,7 @@
   "version": {
     "versionKey": {
       "system": "NPM",
-      "name": "lodash",
+      "name": "kept-lib",
       "version": "4.17.21"
     },
     "publishedAt": "2021-02-20T15:42:16Z",
@@ -10,7 +10,7 @@
     "relatedProjects": [
       {
         "projectKey": {
-          "id": "github.com/lodash/lodash"
+          "id": "github.com/kept/lib"
         },
         "relationType": "SOURCE_REPO"
       }
@@ -18,7 +18,7 @@
   },
   "project": {
     "projectKey": {
-      "id": "github.com/lodash/lodash"
+      "id": "github.com/kept/lib"
     },
     "starsCount": 100,
     "scorecard": {
