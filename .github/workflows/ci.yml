@@ -254,6 +254,9 @@ jobs:
         with:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
+          # MPL-2.0 tool run in CI, never redistributed (also used by the
+          # terramate-opentofu-setup composite).
+          allow-dependencies-licenses: pkg:githubactions/opentofu/setup-opentofu
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
