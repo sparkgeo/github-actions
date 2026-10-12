@@ -1,0 +1,212 @@
+name: Cost Diff (OpenTofu)
+
+# Reusable PR cost gate for OpenTofu, with or without Terramate (issue #89).
+# Plans every changed stack on the base and head refs with a read-only plan
+# role, prices both with Infracost, posts one updating PR comment with the
+# diff and the cost gate line (docs/cost-gate.md, #91), and fails the job
+# when the gate's thresholds are crossed.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      directory:
+        description: 'OpenTofu root when not using Terramate'
+        default: '.'
+        type: string
+      use-terramate:
+        description: 'List changed stacks with Terramate; false plans the directory input only'
+        default: true
+        type: boolean
+      role-arn:
+        description: 'Read-only plan role to assume through OIDC (docs/oidc-trust-policies.md)'
+        required: true
+        type: string
+      aws-region:
+        description: 'Region for the provider and the state backend'
+        default: 'us-west-2'
+        type: string
+      usage-file:
+        description: 'Path to infracost-usage.yml (empty or missing skips usage estimates)'
+        default: 'infracost-usage.yml'
+        type: string
+      max-monthly-increase:
+        description: 'USD; job fails when the monthly delta exceeds it (0 disables)'
+        default: 0
+        type: number
+      max-percent-increase:
+        description: 'Percent; job fails when the monthly delta exceeds it (0 disables)'
+        default: 0
+        type: number
+      tofu-version:
+        description: 'OpenTofu version'
+        default: '1.10.0'
+        type: string
+      terramate-version:
+        description: 'Terramate version (use-terramate only)'
+        default: '0.14.7'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned cost-diff-tofu.yml to, so
+          the whole workflow is immutable.
+        default: 'main'
+        type: string
+    secrets:
+      INFRACOST_API_KEY:
+        required: true
+    outputs:
+      monthly-diff:
+        description: 'diffTotalMonthlyCost'
+        value: ${{ jobs.cost.outputs.monthly-diff }}
+      gate:
+        description: 'comment-only, passed or failed'
+        value: ${{ jobs.cost.outputs.gate }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `id-token: write` (OIDC), `contents: read`
+# and `pull-requests: write` for the comment. See README.
+jobs:
+  cost:
+    name: Infracost
+    runs-on: ubuntu-latest
+    outputs:
+      monthly-diff: ${{ steps.diff.outputs.monthly-diff }}
+      gate: ${{ steps.diff.outputs.gate }}
+    steps:
+      - name: Checkout head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # Terramate change detection needs the base commit
+
+      - name: Checkout base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .cost-base
+          persist-credentials: false
+
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout sparkgeo composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Assume the plan role
+        uses: ./.sparkgeo-github-actions/.github/actions/aws-oidc-auth
+        with:
+          role-arn: ${{ inputs.role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@847eaa4afeb791b06daa46e8eafa8b1b68d7cfb4  # v2.0.1
+        with:
+          tofu_version: ${{ inputs.tofu-version }}
+          tofu_wrapper: false
+
+      - name: Setup Terramate
+        if: inputs.use-terramate
+        uses: terramate-io/terramate-action@c5a1375801a3fac44d29fc7e0ebb3757ea0db3e0  # v3.0.0
+        with:
+          version: ${{ inputs.terramate-version }}
+
+      - name: List stacks
+        id: stacks
+        env:
+          USE_TERRAMATE: ${{ inputs.use-terramate }}
+          DIRECTORY: ${{ inputs.directory }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          STACKS: ${{ runner.temp }}/stacks.txt
+        run: |
+          set -euo pipefail
+          if [ "${USE_TERRAMATE}" = "true" ]; then
+            terramate list --changed --git-change-base "${BASE_SHA}" > "${STACKS}"
+          else
+            echo "${DIRECTORY}" > "${STACKS}"
+          fi
+          echo "stacks=${STACKS}" >> "${GITHUB_OUTPUT}"
+          if [ ! -s "${STACKS}" ]; then
+            echo "any=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice title=infracost::no changed stacks; nothing to price"
+          else
+            echo "any=true" >> "${GITHUB_OUTPUT}"
+            echo "stacks:"; cat "${STACKS}"
+          fi
+
+      - name: Plan base and head
+        if: steps.stacks.outputs.any == 'true'
+        env:
+          STACKS: ${{ steps.stacks.outputs.stacks }}
+          PLANS: ${{ runner.temp }}/plans
+        run: |
+          set -euo pipefail
+          bash .sparkgeo-github-actions/.github/actions/infracost/plan.sh "${GITHUB_WORKSPACE}/.cost-base" "${STACKS}" "${PLANS}/base"
+          bash .sparkgeo-github-actions/.github/actions/infracost/plan.sh "${GITHUB_WORKSPACE}" "${STACKS}" "${PLANS}/head"
+
+      - name: Breakdown on the base ref
+        if: steps.stacks.outputs.any == 'true'
+        uses: ./.sparkgeo-github-actions/.github/actions/infracost
+        with:
+          mode: breakdown
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+          stacks-file: ${{ steps.stacks.outputs.stacks }}
+          plans-dir: ${{ runner.temp }}/plans/base
+          usage-file: .cost-base/${{ inputs.usage-file }}
+          out-file: ${{ runner.temp }}/infracost-base.json
+
+      - name: Diff on the head ref
+        id: diff
+        if: steps.stacks.outputs.any == 'true'
+        uses: ./.sparkgeo-github-actions/.github/actions/infracost
+        with:
+          mode: diff
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+          stacks-file: ${{ steps.stacks.outputs.stacks }}
+          plans-dir: ${{ runner.temp }}/plans/head
+          usage-file: ${{ inputs.usage-file }}
+          compare-to: ${{ runner.temp }}/infracost-base.json
+          out-file: ${{ runner.temp }}/infracost-diff.json
+          max-monthly-increase: ${{ inputs.max-monthly-increase }}
+          max-percent-increase: ${{ inputs.max-percent-increase }}
+
+      - name: Update the PR comment
+        if: >-
+          always() && steps.stacks.outputs.any == 'true' && github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository
+        uses: ./.sparkgeo-github-actions/.github/actions/infracost
+        with:
+          mode: comment
+          out-file: ${{ runner.temp }}/infracost-diff.json
+          pull-request: ${{ github.event.pull_request.number }}
+
+      # Plan JSON carries every planned value, sensitive ones included, so it
+      # never leaves the runner. Only the priced output is kept.
+      - name: Remove the plans
+        if: always()
+        env:
+          PLANS: ${{ runner.temp }}/plans
+        run: |
+          [ -d "${PLANS}" ] && find "${PLANS:?}" -type f -delete
+          echo "plans removed"
+
+      - name: Upload Infracost JSON
+        if: always() && steps.stacks.outputs.any == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: infracost
+          path: |
+            ${{ runner.temp }}/infracost-base.json
+            ${{ runner.temp }}/infracost-diff.json
+            ${{ runner.temp }}/infracost-diff-gate.md
+          retention-days: 14
+          if-no-files-found: ignore

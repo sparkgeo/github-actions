@@ -1,0 +1,153 @@
+name: "Infracost"
+description: |
+  Cost estimates for OpenTofu plans with a pinned, checksum-verified Infracost
+  binary (issues #89, #91). Three modes over plan JSON files listed per stack:
+  breakdown (price one ref to a JSON file), diff (price the other ref against
+  that file, then apply the cost gate from gate.py) and comment (render the
+  diff as a GitHub comment with the gate line appended and keep one updating
+  PR comment). Needs INFRACOST_API_KEY for breakdown and diff; update checks
+  and Infracost Cloud uploads are off.
+
+  Required permissions on the calling job: contents: read, plus
+  pull-requests: write for comment mode.
+inputs:
+  version:
+    description: "Infracost release to install (no leading 'v'), verified against its .sha256 file."
+    default: "0.10.46"
+  mode:
+    description: "breakdown, diff or comment."
+    required: true
+  api-key:
+    description: "Infracost API key (breakdown and diff)."
+    default: ""
+  stacks-file:
+    description: "File with one stack path per line (breakdown and diff)."
+    default: ""
+  plans-dir:
+    description: "Directory holding <stack>/plan.json for every stack (breakdown and diff)."
+    default: ""
+  usage-file:
+    description: "Path to infracost-usage.yml; empty or missing skips usage estimates."
+    default: ""
+  compare-to:
+    description: "Breakdown JSON of the base ref (diff)."
+    default: ""
+  out-file:
+    description: "Where breakdown and diff write their JSON; what comment reads."
+    default: ${{ runner.temp }}/infracost.json
+  max-monthly-increase:
+    description: "USD; the diff fails above this monthly increase (0 disables)."
+    default: "0"
+  max-percent-increase:
+    description: "Percent; the diff fails above this increase of the base total (0 disables)."
+    default: "0"
+  pull-request:
+    description: "PR number for comment mode."
+    default: ""
+  github-token:
+    description: "Token for comment mode."
+    default: ${{ github.token }}
+outputs:
+  monthly-diff:
+    description: "diffTotalMonthlyCost (diff)."
+    value: ${{ steps.gate.outputs.monthly-diff }}
+  monthly-total:
+    description: "totalMonthlyCost (diff)."
+    value: ${{ steps.gate.outputs.monthly-total }}
+  percent-change:
+    description: "Increase as a percent of the base total, or n/a (diff)."
+    value: ${{ steps.gate.outputs.percent-change }}
+  gate:
+    description: "comment-only, passed or failed (diff)."
+    value: ${{ steps.gate.outputs.gate }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install infracost
+      shell: bash
+      env:
+        INFRACOST_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        [ -x "${RUNNER_TEMP}/infracost" ] && exit 0
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/infracost/infracost/releases/download/v${INFRACOST_VERSION}"
+        curl -sSfL -o "${TMP}/infracost-linux-amd64.tar.gz" "${BASE}/infracost-linux-amd64.tar.gz"
+        curl -sSfL -o "${TMP}/infracost-linux-amd64.tar.gz.sha256" "${BASE}/infracost-linux-amd64.tar.gz.sha256"
+        # Verify the downloaded archive against the published checksum before use.
+        ( cd "${TMP}" && sha256sum -c infracost-linux-amd64.tar.gz.sha256 )
+        tar -xzf "${TMP}/infracost-linux-amd64.tar.gz" -C "${TMP}"
+        # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
+        install "${TMP}/infracost-linux-amd64" "${RUNNER_TEMP}/infracost"
+        "${RUNNER_TEMP}/infracost" --version
+
+    - name: Price the plans
+      if: inputs.mode == 'breakdown' || inputs.mode == 'diff'
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        INFRACOST_API_KEY: ${{ inputs.api-key }}
+        STACKS: ${{ inputs.stacks-file }}
+        PLANS: ${{ inputs.plans-dir }}
+        USAGE: ${{ inputs.usage-file }}
+        COMPARE_TO: ${{ inputs.compare-to }}
+        OUT: ${{ inputs.out-file }}
+        INFRACOST_SKIP_UPDATE_CHECK: "true"
+        INFRACOST_ENABLE_CLOUD: "false"
+      run: |
+        set -euo pipefail
+        [ -n "${INFRACOST_API_KEY}" ] || { echo "::error title=infracost::api-key is required for ${MODE}"; exit 2; }
+        usage=""
+        if [ -n "${USAGE}" ] && [ -f "${USAGE}" ]; then usage="$(cd "$(dirname "${USAGE}")" && pwd)/$(basename "${USAGE}")"; fi
+        CONFIG="${RUNNER_TEMP}/infracost-${MODE}.yml"
+        bash "${GITHUB_ACTION_PATH}/mkconfig.sh" "${STACKS}" "${PLANS}" "${usage}" > "${CONFIG}"
+        if [ "${MODE}" = "breakdown" ]; then
+          "${RUNNER_TEMP}/infracost" breakdown --config-file "${CONFIG}" --format json --out-file "${OUT}"
+        else
+          [ -f "${COMPARE_TO}" ] || { echo "::error title=infracost::compare-to ${COMPARE_TO} not found"; exit 2; }
+          "${RUNNER_TEMP}/infracost" diff --config-file "${CONFIG}" --compare-to "${COMPARE_TO}" --format json --out-file "${OUT}"
+        fi
+
+    - name: Cost gate
+      id: gate
+      if: inputs.mode == 'diff'
+      shell: bash
+      env:
+        OUT: ${{ inputs.out-file }}
+        USAGE: ${{ inputs.usage-file }}
+        MAX_MONTHLY: ${{ inputs.max-monthly-increase }}
+        MAX_PERCENT: ${{ inputs.max-percent-increase }}
+      run: |
+        set -euo pipefail
+        python3 -I "${GITHUB_ACTION_PATH}/gate.py" --json "${OUT}" --snippet "${OUT%.json}-gate.md" \
+          --max-monthly-increase "${MAX_MONTHLY}" --max-percent-increase "${MAX_PERCENT}" --usage-file "${USAGE}"
+
+    # One comment per PR, found by its marker and edited in place.
+    - name: Comment on the pull request
+      if: inputs.mode == 'comment'
+      shell: bash
+      env:
+        OUT: ${{ inputs.out-file }}
+        PR: ${{ inputs.pull-request }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        INFRACOST_SKIP_UPDATE_CHECK: "true"
+      run: |
+        set -euo pipefail
+        [ -n "${PR}" ] || { echo "::error title=infracost::pull-request is required for comment mode"; exit 2; }
+        [ -f "${OUT}" ] || { echo "::error title=infracost::${OUT} not found; run diff first"; exit 2; }
+        body="${RUNNER_TEMP}/infracost-comment.md"
+        {
+          echo "<!-- infracost -->"
+          "${RUNNER_TEMP}/infracost" output --format github-comment --path "${OUT}" --show-skipped
+          echo
+          if [ -f "${OUT%.json}-gate.md" ]; then cat "${OUT%.json}-gate.md"; fi
+        } > "${body}"
+        existing="$(gh api --paginate "repos/${REPO}/issues/${PR}/comments" \
+          --jq '[.[] | select(.body | startswith("<!-- infracost -->")) | .id] | first // empty')"
+        payload="$(jq -n --rawfile r "${body}" '{body: $r}')"
+        if [ -n "${existing}" ]; then
+          echo "${payload}" | gh api -X PATCH "repos/${REPO}/issues/comments/${existing}" --input - > /dev/null
+        else
+          echo "${payload}" | gh api -X POST "repos/${REPO}/issues/${PR}/comments" --input - > /dev/null
+        fi
