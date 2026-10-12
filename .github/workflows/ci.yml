@@ -76,6 +76,67 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # k6 (#74): summary fixtures, then the composite against a local static
+  # server (no egress), once passing and once with an impossible p95 threshold
+  # that must fail.
+  k6:
+    name: k6
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Summary fixtures
+        run: tests/k6/run.sh
+
+      - name: Start a local target
+        run: |
+          mkdir -p "${RUNNER_TEMP}/www" && echo ok > "${RUNNER_TEMP}/www/index.html"
+          ( cd "${RUNNER_TEMP}/www" && python3 -m http.server 18080 --bind 127.0.0.1 > /dev/null 2>&1 & )
+          curl -sSf --retry 10 --retry-all-errors --retry-delay 1 http://127.0.0.1:18080/ > /dev/null
+
+      - name: Composite, thresholds pass
+        id: pass
+        uses: ./.github/actions/k6
+        with:
+          script: tests/k6/fixtures/smoke.js
+          target-url: http://127.0.0.1:18080
+          vus: 2
+          duration: 3s
+          summary-file: ${{ runner.temp }}/k6-pass.json
+
+      - name: Composite, threshold crossed
+        id: crossed
+        continue-on-error: true
+        uses: ./.github/actions/k6
+        with:
+          script: tests/k6/fixtures/smoke.js
+          target-url: http://127.0.0.1:18080
+          vus: 2
+          duration: 3s
+          extra-args: --env P95_MS=0.001
+          summary-file: ${{ runner.temp }}/k6-fail.json
+
+      - name: Outcomes
+        env:
+          PASS_FAILED: ${{ steps.pass.outputs.thresholds-failed }}
+          PASS_REQUESTS: ${{ steps.pass.outputs.requests }}
+          CROSSED: ${{ steps.crossed.outcome }}
+          CROSSED_FAILED: ${{ steps.crossed.outputs.thresholds-failed }}
+        run: |
+          [ "${PASS_FAILED}" = "0" ] || { echo "::error title=k6::passing run reported ${PASS_FAILED} crossed thresholds"; exit 1; }
+          [ "${PASS_REQUESTS}" -gt 0 ] || { echo "::error title=k6::passing run made no requests"; exit 1; }
+          [ "${CROSSED}" = "failure" ] || { echo "::error title=k6::crossed-threshold run did not fail"; exit 1; }
+          [ "${CROSSED_FAILED}" = "1" ] || { echo "::error title=k6::expected 1 crossed threshold, got ${CROSSED_FAILED}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
