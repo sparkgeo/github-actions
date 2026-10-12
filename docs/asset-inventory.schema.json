@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sparkgeo/github-actions/docs/asset-inventory.schema.json",
+  "title": "Sparkgeo asset inventory",
+  "description": "One record per planned cloud resource, produced by .github/actions/asset-inventory from OpenTofu plan JSON or CDK templates (issue #115).",
+  "type": "object",
+  "required": ["generated_at", "repo", "stack_kind", "required_tags", "counts", "resources"],
+  "additionalProperties": false,
+  "properties": {
+    "generated_at": { "type": "string", "format": "date-time" },
+    "repo": { "type": "string", "description": "owner/name of the repository the plans came from" },
+    "stack_kind": { "type": "string", "enum": ["tofu", "cdk"] },
+    "required_tags": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "counts": {
+      "type": "object",
+      "required": ["resources", "taggable", "violations"],
+      "additionalProperties": false,
+      "properties": {
+        "resources": { "type": "integer", "minimum": 0 },
+        "taggable": { "type": "integer", "minimum": 0 },
+        "violations": { "type": "integer", "minimum": 0, "description": "resources with at least one missing required tag" }
+      }
+    },
+    "resources": { "type": "array", "items": { "$ref": "#/$defs/resource" } },
+    "diff": {
+      "type": "object",
+      "description": "Present when a base inventory was given",
+      "required": ["base_generated_at", "added", "removed", "retagged"],
+      "additionalProperties": false,
+      "properties": {
+        "base_generated_at": { "type": ["string", "null"] },
+        "added": { "type": "array", "items": { "type": "string" } },
+        "removed": { "type": "array", "items": { "type": "string" } },
+        "retagged": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "key", "before", "after"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "key": { "type": "string" },
+              "before": { "type": ["string", "null"] },
+              "after": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "resource": {
+      "type": "object",
+      "required": ["id", "type", "name", "stack", "account", "region", "taggable", "tags", "tag_violations", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "OpenTofu address (module path, for_each or count index included) or CloudFormation logical id" },
+        "type": { "type": "string", "description": "aws_s3_bucket, AWS::S3::Bucket, ..." },
+        "name": { "type": "string" },
+        "stack": { "type": "string", "description": "plan file directory or CDK stack name" },
+        "account": { "type": ["string", "null"] },
+        "region": { "type": ["string", "null"] },
+        "taggable": { "type": "boolean", "description": "false when the resource type carries no tags; such resources never have tag_violations" },
+        "tags": { "type": "object", "additionalProperties": { "type": "string" } },
+        "tag_violations": { "type": "array", "items": { "type": "string" }, "description": "required tags that are missing" },
+        "source": {
+          "type": "object",
+          "required": ["repo", "path", "line"],
+          "additionalProperties": false,
+          "properties": {
+            "repo": { "type": "string" },
+            "path": { "type": ["string", "null"], "description": "CDK construct path; null for OpenTofu (plan JSON carries no source positions)" },
+            "line": { "type": ["integer", "null"] }
+          }
+        }
+      }
+    }
+  }
+}

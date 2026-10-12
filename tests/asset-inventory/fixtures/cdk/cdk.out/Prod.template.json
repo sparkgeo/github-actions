@@ -1,0 +1,80 @@
+{
+ "Resources": {
+  "IngestBucket1A2B3C": {
+   "Type": "AWS::S3::Bucket",
+   "Properties": {
+    "BucketName": "prescient-ingest",
+    "Tags": [
+     {
+      "Key": "owner",
+      "Value": "team-platform"
+     },
+     {
+      "Key": "project",
+      "Value": "prescient"
+     },
+     {
+      "Key": "environment",
+      "Value": "prod"
+     },
+     {
+      "Key": "data-class",
+      "Value": "confidential"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Prod/Ingest/Resource"
+   }
+  },
+  "AppRole4D5E6F": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {}
+   },
+   "Metadata": {
+    "aws:cdk:path": "Prod/App/Role/Resource"
+   }
+  },
+  "Events7G8H9I": {
+   "Type": "AWS::SNS::Topic",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "owner",
+      "Value": "bob@sparkgeo.com"
+     },
+     {
+      "Key": "environment",
+      "Value": "production"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Prod/Events/Resource"
+   }
+  },
+  "EventsPermission": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": "x",
+    "Principal": "sns.amazonaws.com"
+   },
+   "Metadata": {
+    "aws:cdk:path": "Prod/Events/Permission"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:x"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>"
+  }
+ }
+}

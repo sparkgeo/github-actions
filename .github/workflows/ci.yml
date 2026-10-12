@@ -199,6 +199,66 @@ jobs:
           [ "${TFLINT_OUTCOME}" = "failure" ] || { echo "::error title=tagging::tflint composite passed the untagged fixture"; exit 1; }
           [ "${K8S_OUTCOME}" = "failure" ] || { echo "::error title=tagging::k8s-policy composite passed the untagged fixture"; exit 1; }
 
+  # Asset inventory (#115): parser, renderer and diff fixtures, then the
+  # composite on the recorded plan and template fixtures. Real plan artefacts
+  # come from consuming repos; asset-inventory.yml is exercised there.
+  asset-inventory:
+    name: Asset Inventory
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install check-jsonschema
+        run: python3 -m pip install --quiet --user check-jsonschema
+
+      - name: Parser, renderer and diff fixtures
+        run: tests/asset-inventory/run.sh
+
+      - name: Composite on the OpenTofu fixture
+        id: tofu
+        uses: ./.github/actions/asset-inventory
+        with:
+          stack: tofu
+          input-dir: tests/asset-inventory/fixtures/tofu
+          base-inventory: tests/asset-inventory/fixtures/base-inventory.json
+          output-dir: ${{ runner.temp }}/asset-inventory-tofu
+
+      - name: Composite on the CDK fixture
+        id: cdk
+        uses: ./.github/actions/asset-inventory
+        with:
+          stack: cdk
+          input-dir: tests/asset-inventory/fixtures/cdk/cdk.out
+          output-dir: ${{ runner.temp }}/asset-inventory-cdk
+
+      - name: Outputs and SVG
+        env:
+          TOFU_COUNT: ${{ steps.tofu.outputs.resource-count }}
+          TOFU_ADDED: ${{ steps.tofu.outputs.added-count }}
+          CDK_VIOLATIONS: ${{ steps.cdk.outputs.violation-count }}
+          DIR: ${{ runner.temp }}/asset-inventory-tofu
+        run: |
+          set -euo pipefail
+          [ "${TOFU_COUNT}" = "8" ] || { echo "::error title=asset-inventory::expected 8 tofu resources, got ${TOFU_COUNT}"; exit 1; }
+          [ "${TOFU_ADDED}" = "6" ] || { echo "::error title=asset-inventory::expected 6 added, got ${TOFU_ADDED}"; exit 1; }
+          [ "${CDK_VIOLATIONS}" = "2" ] || { echo "::error title=asset-inventory::expected 2 cdk violations, got ${CDK_VIOLATIONS}"; exit 1; }
+          grep -q '<svg' "${DIR}/inventory.svg"
+          ( cd "${DIR}" && sha256sum -c SHA256SUMS )
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: asset-inventory-fixtures
+          path: ${{ runner.temp }}/asset-inventory-tofu/
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

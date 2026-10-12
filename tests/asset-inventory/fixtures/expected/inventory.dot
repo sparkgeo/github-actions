@@ -1,0 +1,34 @@
+digraph inventory {
+  graph [rankdir=LR, fontname="Helvetica", fontsize=11, style="rounded", color="#999999"];
+  node [shape=box, style="filled,rounded", fontname="Helvetica", fontsize=10, color="#999999"];
+  subgraph "cluster_1" { label="project: (none)";
+    subgraph "cluster_2" { label="environment: (none)";
+      subgraph "cluster_3" { label="owner: (none)";
+        "stacks/prod:aws_iam_role.app" [label="aws_iam_role\napp", fillcolor="#eeeeee", color="red", penwidth=2];
+        "stacks/prod:random_id.suffix" [label="random_id\nsuffix", fillcolor="#eeeeee"];
+      }
+      subgraph "cluster_4" { label="owner: team-platform";
+        "stacks/prod:aws_s3_bucket.logs[\"a\"]" [label="aws_s3_bucket\nlogs", fillcolor="#eeeeee", color="red", penwidth=2];
+        "stacks/prod:aws_s3_bucket.logs[\"b\"]" [label="aws_s3_bucket\nlogs", fillcolor="#eeeeee", color="red", penwidth=2];
+      }
+    }
+  }
+  subgraph "cluster_5" { label="project: prescient";
+    subgraph "cluster_6" { label="environment: dev";
+      subgraph "cluster_7" { label="owner: team-data";
+        "stacks/dev:google_storage_bucket.assets" [label="google_storage_bucket\nassets", fillcolor="#cfe2f3"];
+      }
+    }
+    subgraph "cluster_8" { label="environment: prod";
+      subgraph "cluster_9" { label="owner: team-platform";
+        "stacks/prod:aws_s3_bucket.ingest" [label="aws_s3_bucket\ningest", fillcolor="#fff2cc"];
+        "stacks/prod:module.net.aws_vpc.main" [label="aws_vpc\nmain", fillcolor="#fff2cc"];
+      }
+    }
+    subgraph "cluster_10" { label="environment: production";
+      subgraph "cluster_11" { label="owner: team-platform";
+        "stacks/prod:module.net.module.subnets.aws_subnet.private[0]" [label="aws_subnet\nprivate", fillcolor="#fff2cc"];
+      }
+    }
+  }
+}

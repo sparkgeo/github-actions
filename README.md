@@ -11,6 +11,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
+| Asset Inventory | [`asset-inventory.yml`](.github/workflows/asset-inventory.yml) | `workflow_call` | Reusable register — builds `inventory.json` and a tag-grouped diagram from OpenTofu plan JSON or CDK synth output; diffs against the last published inventory on PRs, publishes a rolling `asset-inventory-latest` release on the default branch |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -43,6 +44,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`), `require-tags` (default: `true`), `tags-provider` (default: `aws`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | K8s Policy | [`k8s-policy`](.github/actions/k8s-policy/action.yml) | Renders Helm charts / Kustomize overlays and evaluates them with conftest against the bundled org policy set ([`policies/`](.github/actions/k8s-policy/policies)); error annotations + job summary per violation. Installs a checksum-verified conftest binary | `version` (default: `0.71.1`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `policy-path` (default: `""`), `data-path` (default: `""`), `fail-on-warn` (default: `false`), `require-tags` (default: `true`) |
+| Asset Inventory | [`asset-inventory`](.github/actions/asset-inventory/action.yml) | One record per planned resource (id, type, stack, region, tags, missing required tags, source) from OpenTofu plan JSON or CDK templates; Graphviz DOT and SVG (installs graphviz if missing) plus Mermaid grouped project, environment, owner; diff against a base inventory. Never fails on findings | `stack` (required: `tofu` or `cdk`), `input-dir` (required), `required-tags`, `account`, `base-inventory`, `mermaid-max-nodes` (default: `60`), `output-dir` |
 
 ### GitHub Actionlint
 
@@ -444,6 +446,40 @@ tflint --recursive --config policies/tags/tflint/aws.tflint.hcl --only aws_resou
 checkov -d . --framework terraform --external-checks-dir policies/tags/checkov -c SPK_TAG_1,SPK_TAG_2
 # Rendered manifests
 conftest test --all-namespaces -p .github/actions/k8s-policy/policies -d policies/tags/standard.yml <(helm template release charts/my-chart)
+```
+
+### Asset Inventory
+
+The register behind "one named owner per asset" (SecOps plan Step 31, issue #115). Each run turns the repo's OpenTofu plan JSONs or CDK synth templates into [`inventory.json`](docs/asset-inventory.md) (schema: [`docs/asset-inventory.schema.json`](docs/asset-inventory.schema.json)), a Graphviz diagram and a Mermaid block, all grouped project, environment, owner and coloured by `data-class`, with resources missing a required tag outlined in red. The caller produces the plan artefact; the workflow only reads it.
+
+```yaml
+# .github/workflows/asset-inventory.yml in the consuming repo
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  plan:
+    # ... run tofu plan -out and `tofu show -json` per stack, upload as "plans"
+  inventory:
+    needs: plan
+    permissions:
+      contents: write        # publish the asset-inventory-latest release on main; read is enough on PRs
+      pull-requests: write   # PR comment
+    uses: sparkgeo/github-actions/.github/workflows/asset-inventory.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      stack: tofu            # or cdk, with the cdk.out folder as the artefact
+      plan-artifact: plans
+```
+
+**Pull requests:** the last published `inventory.json` is fetched from the repo's `asset-inventory-latest` release and the comment lists added, removed and retagged resources, owner changes in bold, then the resources missing required tags and the Mermaid diagram (up to `mermaid-max-nodes`; larger stacks point at `inventory.svg` in the `asset-inventory` artefact). **Default branch:** with `publish: true` the register (`inventory.json`, `inventory.svg`, `inventory.mmd`, `SHA256SUMS`) replaces the assets of the rolling release, which the org roll-up reads.
+
+**What is recorded.** OpenTofu: managed resources from `planned_values`, including module, `for_each` and `count` instances by full address; tags from `tags_all`, `tags`, `effective_labels` or `labels`; region from the provider configuration; `account` only when given. Plan JSON has no source positions, so `source.path` is null for OpenTofu. CDK: every resource in each `*.template.json` except `AWS::CDK::Metadata`, tags from `Properties.Tags`, construct path as `source.path`. A resource is `taggable` when its type exposes a tags attribute (OpenTofu) or is a common taggable CloudFormation type or already has `Tags` (CDK); only taggable resources get `tag_violations`. Values are not validated here; the tagging gates do that.
+
+```bash
+python3 -I .github/actions/asset-inventory/inventory.py --stack tofu --input plans --repo sparkgeo/my-infra \
+  --output inventory.json --svg inventory.svg --mermaid inventory.mmd --report report.md
 ```
 
 ## Consuming repo CI setup
