@@ -128,6 +128,56 @@ jobs:
           working-directory: tests/test-node/fixtures/project
           coverage-threshold: 100
 
+  # Playwright (#75): summary fixtures, then the composite on the fixture
+  # project (webServer, chromium), once passing and once with the failing
+  # spec enabled, which must fail with an annotation and tests-failed=1.
+  e2e-playwright:
+    name: E2E Playwright
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Summary fixtures
+        run: tests/e2e-playwright/run.sh
+
+      - name: Composite, suite passes
+        id: pass
+        uses: ./.github/actions/playwright
+        with:
+          working-directory: tests/e2e-playwright/fixtures/project
+          artifact-name: playwright-fixture
+
+      - name: Composite, failing spec enabled
+        id: failing
+        continue-on-error: true
+        uses: ./.github/actions/playwright
+        with:
+          working-directory: tests/e2e-playwright/fixtures/project
+          artifact-name: playwright-fixture-failing
+        env:
+          E2E_FIXTURE_FAIL: "1"
+
+      - name: Outcomes
+        env:
+          PASS_TOTAL: ${{ steps.pass.outputs.tests-total }}
+          PASS_FAILED: ${{ steps.pass.outputs.tests-failed }}
+          FAILING: ${{ steps.failing.outcome }}
+          FAILING_FAILED: ${{ steps.failing.outputs.tests-failed }}
+        run: |
+          [ "${PASS_TOTAL}" = "3" ] || { echo "::error title=playwright::expected 3 tests, got ${PASS_TOTAL}"; exit 1; }
+          [ "${PASS_FAILED}" = "0" ] || { echo "::error title=playwright::passing run reported ${PASS_FAILED} failures"; exit 1; }
+          [ "${FAILING}" = "failure" ] || { echo "::error title=playwright::failing run did not fail"; exit 1; }
+          [ "${FAILING_FAILED}" = "1" ] || { echo "::error title=playwright::expected 1 failure, got ${FAILING_FAILED}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
