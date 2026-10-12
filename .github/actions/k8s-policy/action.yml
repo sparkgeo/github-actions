@@ -5,7 +5,8 @@ description: |
   bundled policy set (policies/ next to this action) denies images from
   non-approved registries, unpinned or `latest` images, containers without
   resource requests/limits, containers not running as non-root, and
-  privileged containers. Consumers can add their own Rego under `policy-path`
+  privileged containers, and (require-tags) workloads or namespaces missing
+  the Sparkgeo tagging standard labels. Consumers can add their own Rego under `policy-path`
   and override the allowed registries through a `data-path` file.
 
   Installs a pinned, checksum-verified conftest binary directly. helm and
@@ -34,6 +35,9 @@ inputs:
   fail-on-warn:
     description: "Also fail the step on `warn` results."
     default: "false"
+  require-tags:
+    description: "Enforce the Sparkgeo tagging standard (policies/tags/standard.yml) as required labels on workloads and namespaces."
+    default: "true"
 outputs:
   deny-count:
     description: "Number of policy denies across all rendered targets."
@@ -121,11 +125,15 @@ runs:
         BUNDLED_POLICIES: ${{ github.action_path }}/policies
         POLICY_PATH: ${{ inputs.policy-path }}
         DATA_PATH: ${{ inputs.data-path }}
+        REQUIRE_TAGS: ${{ inputs.require-tags }}
+        TAGS_STANDARD: ${{ github.action_path }}/../../../policies/tags/standard.yml
       run: |
         set -euo pipefail
         ARGS=(--all-namespaces -p "${BUNDLED_POLICIES}")
         [ -n "${POLICY_PATH}" ] && ARGS+=(-p "${POLICY_PATH}")
         [ -n "${DATA_PATH}" ] && ARGS+=(-d "${DATA_PATH}")
+        # tags.rego stays dormant unless the standard is loaded as data.
+        [ "${REQUIRE_TAGS}" = "true" ] && ARGS+=(-d "${TAGS_STANDARD}")
         mapfile -t TARGETS < <(find "${RENDER_DIR}" \( -name helm.yaml -o -name kustomize.yaml \) -print | sort)
         if [ "${#TARGETS[@]}" -eq 0 ]; then
           echo "::notice title=k8s-policy::no charts or overlays found; nothing to evaluate"

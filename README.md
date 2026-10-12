@@ -15,9 +15,9 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
-| Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching; enforces the [tagging standard](#tagging-standard) with `require-tags` |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
-| K8s Policy | [`k8s-policy.yml`](.github/workflows/k8s-policy.yml) | `workflow_call` | Reusable conftest gate — renders Helm charts / Kustomize overlays and enforces Sparkgeo org policy (approved registries, pinned images, resource requests/limits, non-root, no privileged) with the bundled Rego; blocks on any deny |
+| K8s Policy | [`k8s-policy.yml`](.github/workflows/k8s-policy.yml) | `workflow_call` | Reusable conftest gate — renders Helm charts / Kustomize overlays and enforces Sparkgeo org policy (approved registries, pinned images, resource requests/limits, non-root, no privileged) with the bundled Rego, plus the [tagging standard](#tagging-standard) as required labels (`require-tags`); blocks on any deny |
 
 ## Composite Actions
 
@@ -40,9 +40,9 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Gitleaks Secret Scan | [`gitleaks`](.github/actions/gitleaks/action.yml) | Pattern-based secret detection; hard-fails on any match. Scans the PR commit range on `pull_request`, else the full git history. Installs a checksum-verified Gitleaks binary (no paid license) | `version` (default: `8.30.1`), `config-path` (default: `.gitleaks.toml`), `fail-on-finding` (default: `true`) |
 | TruffleHog Verified Scan | [`trufflehog`](.github/actions/trufflehog/action.yml) | Verified active-secret detection; hard-fails on verified secrets, unverified matches are warnings. Converts findings to SARIF and uploads to the Security tab. Installs a checksum-verified TruffleHog binary | `version` (default: `3.95.5`), `only-verified` (default: `true`), `sarif-upload` (default: `true`) |
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
-| TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
+| TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`), `require-tags` (default: `true`), `tags-provider` (default: `aws`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
-| K8s Policy | [`k8s-policy`](.github/actions/k8s-policy/action.yml) | Renders Helm charts / Kustomize overlays and evaluates them with conftest against the bundled org policy set ([`policies/`](.github/actions/k8s-policy/policies)); error annotations + job summary per violation. Installs a checksum-verified conftest binary | `version` (default: `0.71.1`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `policy-path` (default: `""`), `data-path` (default: `""`), `fail-on-warn` (default: `false`) |
+| K8s Policy | [`k8s-policy`](.github/actions/k8s-policy/action.yml) | Renders Helm charts / Kustomize overlays and evaluates them with conftest against the bundled org policy set ([`policies/`](.github/actions/k8s-policy/policies)); error annotations + job summary per violation. Installs a checksum-verified conftest binary | `version` (default: `0.71.1`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `policy-path` (default: `""`), `data-path` (default: `""`), `fail-on-warn` (default: `false`), `require-tags` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -422,6 +422,29 @@ k8s_policy:
 The bundle is versioned with this repo: `actions-ref` selects both the composite and the policies, so a consumer pinned to a SHA never picks up a new rule unnoticed. If the rules later need to be applied in-cluster (Gatekeeper/Kyverno) or by other tooling, extract `policies/` to its own repo and keep the same package layout.
 
 Findings are emitted as job-level error annotations naming the chart/overlay and the `Kind/name container <name>` — rendered manifests have no source-line mapping, so inline annotations aren't possible.
+
+### Tagging standard
+
+Every cloud resource and Kubernetes workload carries four tags or labels: `owner`, `project`, `environment` and `data-class` (SecOps plan Step 31, issue #114). The standard lives in [`policies/tags/standard.yml`](policies/tags/standard.yml) and is explained in [`docs/tagging-standard.md`](docs/tagging-standard.md); the enforcement points below all read from that one file or mirror it.
+
+| Stack | Enforcement | Switch |
+|---|---|---|
+| Terraform / OpenTofu on AWS or Azure | `tflint` composite second pass with [`policies/tags/tflint/`](policies/tags/tflint) (`aws_resource_missing_tags`, `azurerm_resource_missing_tags`); AWS provider `default_tags` satisfy it | `require-tags` (default `true`), `tags-provider` (`aws` or `azurerm`) on the composite and `lint-iac.yml` |
+| Terraform / OpenTofu providers | checkov custom policies [`policies/tags/checkov/`](policies/tags/checkov): `SPK_TAG_1` AWS `default_tags`, `SPK_TAG_2` Google `default_labels` must declare the four keys | `checkov --external-checks-dir policies/tags/checkov` (wired into `iac-scan.yml` once #6 merges) |
+| Helm / Kustomize | `tags.rego` in the k8s-policy bundle: required labels with enum and pattern checks on every workload kind and `Namespace` | `require-tags` (default `true`) on the composite and `k8s-policy.yml` |
+| AWS CDK | [`docs/examples/cdk/required_tags_aspect.py`](docs/examples/cdk/required_tags_aspect.py) and [`required-tags-aspect.ts`](docs/examples/cdk/required-tags-aspect.ts): an aspect that fails synth on a missing key or a value outside the enum | `RequiredTagsAspect.apply(stack)` in the app (`dr-check-cdk.yml` wiring follows #94) |
+
+Kubernetes label values cannot contain `@`, so an email owner is written `bob_at_sparkgeo.com` in labels (`label_pattern` in the standard). GCP has no tflint label rule; the checkov policy covers `google` providers. Values that are variables or tokens are not validated at lint time.
+
+```bash
+# Terraform, tagging pass only
+tflint --init --config policies/tags/tflint/aws.tflint.hcl
+tflint --recursive --config policies/tags/tflint/aws.tflint.hcl --only aws_resource_missing_tags --minimum-failure-severity=notice
+# Provider default tags
+checkov -d . --framework terraform --external-checks-dir policies/tags/checkov -c SPK_TAG_1,SPK_TAG_2
+# Rendered manifests
+conftest test --all-namespaces -p .github/actions/k8s-policy/policies -d policies/tags/standard.yml <(helm template release charts/my-chart)
+```
 
 ## Consuming repo CI setup
 

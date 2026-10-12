@@ -54,7 +54,11 @@ jobs:
         with:
           persist-credentials: false
 
+      # tests/tagging/fixtures holds a deliberately untagged stack, so the
+      # tagging pass is off here; the Tagging job dogfoods require-tags.
       - uses: ./.github/actions/tflint
+        with:
+          require-tags: "false"
 
   # Validate Helm/Kustomize with kubeconform. This repo has no charts/, so this
   # is a smoke test that the composite installs and runs (exits 0, nothing to
@@ -103,6 +107,97 @@ jobs:
         env:
           CONFTEST: ${{ runner.temp }}/conftest
         run: tests/k8s-policy/run.sh
+
+  # Tagging standard (policies/tags): every enforcement point against pass and
+  # fail fixtures, then the tflint and k8s-policy composites with require-tags
+  # on the same fixtures. checkov is installed here because its composite (#6)
+  # lives on another branch; the CDK aspect needs aws-cdk-lib from PyPI.
+  tagging:
+    name: Tagging
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install tflint, conftest, checkov and aws-cdk-lib
+        env:
+          TFLINT_VERSION: "0.63.1"
+          CONFTEST_VERSION: "0.71.1"
+          CHECKOV_VERSION: "3.3.25"
+          CHECKOV_SHA256: "d76cd26e0eb642be12f60751ee627be3bab6c81e7add30dee018a03c0c1941e2"
+          CDK_VERSION: "2.273.0"
+        run: |
+          set -euo pipefail
+          TMP="$(mktemp -d)"
+          BASE="https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}"
+          curl -sSfL -o "${TMP}/tflint_linux_amd64.zip" "${BASE}/tflint_linux_amd64.zip"
+          curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/checksums.txt"
+          ( cd "${TMP}" && grep " tflint_linux_amd64.zip$" checksums.txt | sha256sum -c - )
+          unzip -q "${TMP}/tflint_linux_amd64.zip" -d "${TMP}"
+          install "${TMP}/tflint" "${RUNNER_TEMP}/tflint"
+          BASE="https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}"
+          ASSET="conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          curl -sSfL -o "${TMP}/${ASSET}" "${BASE}/${ASSET}"
+          curl -sSfL -o "${TMP}/conftest-checksums.txt" "${BASE}/checksums.txt"
+          ( cd "${TMP}" && grep " ${ASSET}$" conftest-checksums.txt | sha256sum -c - )
+          tar -xzf "${TMP}/${ASSET}" -C "${TMP}" conftest
+          install "${TMP}/conftest" "${RUNNER_TEMP}/conftest"
+          curl -sSfL -o "${TMP}/checkov.zip" \
+            "https://github.com/bridgecrewio/checkov/releases/download/${CHECKOV_VERSION}/checkov_linux_X86_64.zip"
+          echo "${CHECKOV_SHA256}  ${TMP}/checkov.zip" | sha256sum -c -
+          unzip -j -q "${TMP}/checkov.zip" -d "${TMP}/bin"
+          install "${TMP}/bin/checkov" "${RUNNER_TEMP}/checkov"
+          python3 -m pip install --quiet --user "aws-cdk-lib==${CDK_VERSION}"
+
+      - name: Enforcement point fixtures
+        env:
+          TFLINT: ${{ runner.temp }}/tflint
+          CONFTEST: ${{ runner.temp }}/conftest
+          CHECKOV: ${{ runner.temp }}/checkov
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tests/tagging/run.sh
+
+      - name: tflint composite, tagged fixture passes
+        uses: ./.github/actions/tflint
+        with:
+          directory: tests/tagging/fixtures/terraform/aws-pass
+
+      - name: tflint composite, untagged fixture fails
+        id: tflint-fail
+        continue-on-error: true
+        uses: ./.github/actions/tflint
+        with:
+          directory: tests/tagging/fixtures/terraform/aws-fail
+
+      - name: k8s-policy composite, tagged fixture passes
+        uses: ./.github/actions/k8s-policy
+        with:
+          charts-dir: ""
+          kustomize-dir: tests/tagging/fixtures/manifests/tagged
+
+      - name: k8s-policy composite, untagged fixture fails
+        id: k8s-fail
+        continue-on-error: true
+        uses: ./.github/actions/k8s-policy
+        with:
+          charts-dir: ""
+          kustomize-dir: tests/tagging/fixtures/manifests/untagged
+
+      - name: Untagged fixtures must have failed
+        env:
+          TFLINT_OUTCOME: ${{ steps.tflint-fail.outcome }}
+          K8S_OUTCOME: ${{ steps.k8s-fail.outcome }}
+        run: |
+          [ "${TFLINT_OUTCOME}" = "failure" ] || { echo "::error title=tagging::tflint composite passed the untagged fixture"; exit 1; }
+          [ "${K8S_OUTCOME}" = "failure" ] || { echo "::error title=tagging::k8s-policy composite passed the untagged fixture"; exit 1; }
 
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate

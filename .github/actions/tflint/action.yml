@@ -21,6 +21,12 @@ inputs:
   minimum-failure-severity:
     description: "Lowest severity that fails the build: error, warning, or notice."
     default: "error"
+  require-tags:
+    description: "Also enforce the Sparkgeo tagging standard (policies/tags) as a second pass with the bundled tflint config; the repo's own .tflint.hcl is untouched."
+    default: "true"
+  tags-provider:
+    description: "Which bundled tagging config to run: aws or azurerm (no tflint tag rule exists for google; checkov covers it)."
+    default: "aws"
 runs:
   using: "composite"
   steps:
@@ -61,4 +67,33 @@ runs:
           --minimum-failure-severity "${MIN_SEVERITY}" \
           && rc=0 || rc=$?
         echo "::remove-matcher owner=tflint::"
+        exit "${rc}"
+
+    # Second pass with the bundled config from policies/tags/tflint, so the
+    # tagging standard is enforced without editing the consumer's .tflint.hcl.
+    # The rule reports at Notice severity, so the gate is set explicitly.
+    - name: Enforce tagging standard
+      if: inputs.require-tags == 'true'
+      shell: bash
+      env:
+        DIRECTORY: ${{ inputs.directory }}
+        PROVIDER: ${{ inputs.tags-provider }}
+        TAGS_DIR: ${{ github.action_path }}/../../../policies/tags/tflint
+        MATCHER: ${{ github.action_path }}/tflint-matcher.json
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        case "${PROVIDER}" in
+          aws|azurerm) ;;
+          *) echo "::error title=tflint::tags-provider must be aws or azurerm, got '${PROVIDER}'"; exit 2 ;;
+        esac
+        CONFIG="$(cd "${TAGS_DIR}" && pwd)/${PROVIDER}.tflint.hcl"
+        cd "${DIRECTORY}"
+        "${RUNNER_TEMP}/tflint" --init --config "${CONFIG}"
+        echo "::add-matcher::${MATCHER}"
+        "${RUNNER_TEMP}/tflint" --recursive --format compact --config "${CONFIG}" \
+          --only "${PROVIDER}_resource_missing_tags" --minimum-failure-severity=notice \
+          && rc=0 || rc=$?
+        echo "::remove-matcher owner=tflint::"
+        [ "${rc}" -eq 0 ] || echo "::error title=tflint::resources are missing required tags (owner, project, environment, data-class); see docs/tagging-standard.md"
         exit "${rc}"
