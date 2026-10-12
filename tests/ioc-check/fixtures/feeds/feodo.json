@@ -1,0 +1,4 @@
+{"feed":"feodo","fetched_at":"2026-10-07T05:17:41Z","source_url":"https://feodotracker.abuse.ch/downloads/ipblocklist.json","count":2,"dropped_count":0,"skipped_count":0,"meta":{},"entries":[
+{"value":"240.9.9.9","type":"ip","confidence":100,"first_seen":"2026-09-30T00:00:00Z","last_seen":"2026-10-06T00:00:00Z","meta":{"malware":"QakBot","port":443,"status":"online"}},
+{"value":"127.0.0.1","type":"ip","confidence":50,"first_seen":"2026-09-30T00:00:00Z","meta":{"malware":"QakBot","port":443,"status":"offline"}}
+]}

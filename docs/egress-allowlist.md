@@ -51,6 +51,7 @@ All ports are 443.
 | Terramate + OpenTofu Setup | `github.com`, `get.opentofu.org`, `release-assets.githubusercontent.com` | OpenTofu and Terramate installers |
 | Storage Optimizer | `github.com` | checkout only |
 | Threat Feeds | `github.com`, `api.github.com`, `release-assets.githubusercontent.com` | checkout; `gh release view` / `gh release download` of the mirror snapshot |
+| IOC Check | `github.com`, `api.github.com`, `release-assets.githubusercontent.com` | checkout; threat-feeds composite (`gh release view` / `gh release download`) |
 
 ### Deliberately not allowed
 

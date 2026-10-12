@@ -112,10 +112,11 @@ def parse_epss(text):
 def parse_threatfox(text):
     data = json.loads(text)
     out, skipped = [], 0
-    for iocs in data.values():
+    for ioc_id, iocs in data.items():
         for i in iocs:
             typ, value = i.get("ioc_type"), i.get("ioc_value")
-            meta = {"malware": i.get("malware"), "threat_type": i.get("threat_type"), "tags": i.get("tags")}
+            # id lets consumers cite an indicator without repeating a malware URL (#110).
+            meta = {"malware": i.get("malware"), "threat_type": i.get("threat_type"), "tags": i.get("tags"), "id": ioc_id}
             if typ == "ip:port":
                 host, _, port = value.rpartition(":")
                 typ, value = "ip", host

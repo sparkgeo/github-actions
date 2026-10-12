@@ -1,0 +1,8 @@
+image:
+  repository: ghcr.io/sparkgeo/app
+hostAliases:
+  - ip: 240.9.9.9
+    hostnames: ["beacon"]
+ingress:
+  hosts:
+    - host: app.example.com

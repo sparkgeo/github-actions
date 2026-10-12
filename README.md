@@ -12,6 +12,7 @@ All action references in this repo are pinned to full commit SHAs, and every CI 
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
 | Threat Feeds Mirror | [`threat-feeds-mirror.yml`](.github/workflows/threat-feeds-mirror.yml) | `schedule` (daily), `workflow_dispatch` | Mirrors CISA KEV, EPSS, ThreatFox, Feodo Tracker and URLhaus into one normalised, checksummed snapshot per day, published as release assets (`threat-feeds-latest` and dated tags) for the `threat-feeds` composite |
+| IOC Check | [`ioc-check.yml`](.github/workflows/ioc-check.yml) | `workflow_call` | Reusable gate — matches IPs, CIDRs, domains and URLs in IaC, container and dependency sources against the ThreatFox, Feodo Tracker and URLhaus C2 and malware feeds; changed files only on PRs, one updating PR comment |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -43,6 +44,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | Threat Feeds | [`threat-feeds`](.github/actions/threat-feeds/action.yml) | Downloads the daily threat-intelligence snapshot from this repo's releases, verifies `SHA256SUMS`, caches per release; exposes `feeds-dir` with one JSON per feed. GitHub is the only egress | `feeds` (default: `kev,epss,threatfox,feodo,urlhaus`), `ref` (default: `latest`), `repository` (default: `sparkgeo/github-actions`), `token` (default: `github.token`) |
+| IOC Check | [`ioc-check`](.github/actions/ioc-check/action.yml) | Matches IPs, CIDRs, domains and URLs in source files against the threat-feeds snapshot; `c2-ip`, `c2-domain`, `malware-url` categories; malware URLs redacted to `<feed>#<id>`; inline annotations, `findings.json` and a markdown report | `feeds-dir` (required), `paths`, `exclude`, `base-sha` (changed files only), `block-on` (default: `c2-ip,c2-domain,malware-url`), `output-dir` (default: `ioc-check`) |
 
 ### GitHub Actionlint
 
@@ -420,6 +422,51 @@ python3 -I .github/actions/threat-feeds/normalize.py --feed kev \
 ```
 
 The mirror job's upstream hosts are listed in [`docs/egress-allowlist.md`](docs/egress-allowlist.md); no other job may reach them. Feed terms of use, the expiry policy rationale and the MISP graduation criteria are documented in #112.
+
+### IOC Check (threat feeds)
+
+Matches what a repo's IaC, container and dependency sources point at against the abuse.ch C2 and malware feeds from the [threat-feeds snapshot](#threat-feeds-mirror-and-composite) (SecOps plan Step 27, issue #110). A Terraform security-group CIDR that contains a Feodo C2 address, a Dockerfile that pulls from a ThreatFox domain, a Helm `hostAliases` entry, a `package.json` git URL or a `go.mod` replace pointing at a malware host all surface as inline annotations with `file:line`, and on pull requests as one PR comment that is edited in place on every run.
+
+```yaml
+# .github/workflows/ioc-check.yml in the consuming repo
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  ioc-check:
+    permissions:
+      contents: read
+      pull-requests: write   # PR comment; drop it and set comment: false if not wanted
+    uses: sparkgeo/github-actions/.github/workflows/ioc-check.yml@<SHA>
+    with:
+      actions-ref: <SHA>     # same SHA as the uses: line
+      block-on: c2-ip,c2-domain,malware-url   # default; "" for advisory mode
+```
+
+| Category | Feed entries | What it means in a source file |
+|---|---|---|
+| `c2-ip` | Feodo Tracker `ip`, ThreatFox `ip` | an address, or a CIDR that contains one, that is a known botnet command-and-control server |
+| `c2-domain` | ThreatFox `domain` | a hostname (or a subdomain of one) used for command-and-control |
+| `malware-url` | ThreatFox `url`, URLhaus `url` | a URL that serves a known malware payload |
+
+**What is scanned.** By default: Terraform and OpenTofu (`*.tf`, `*.tofu`, `*.hcl`, `*.tfvars`), CDK and Pulumi code (`*.ts`, `*.js`, `*.py`), Dockerfiles, YAML, JSON and TOML (Helm values, Kustomize, Compose, manifests), and lockfiles (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `go.mod`, `go.sum`, `requirements*.txt`, `poetry.lock`, `uv.lock`, `Pipfile*`, `Cargo.*`). `node_modules`, `.terraform`, `vendor`, `tests` and `test` directories are skipped. Override with `paths` and `exclude` (comma-separated globs; `**/` prefixes match at any depth including the root). On pull requests only files changed against the base branch are scanned (`changed-only: true`); pushes scan every tracked file.
+
+**What never matches.** RFC 1918, loopback, link-local, RFC 5737 documentation ranges, `0.0.0.0/8`, CGNAT, multicast, and the catch-all `0.0.0.0/0`, on either side: a feed entry inside those ranges is ignored, and so is a source value. Hash indicators are not in the snapshot at all (checksum-verified downloads cover that path).
+
+**Redaction.** A matched malware URL that has a path is never printed. Logs, the step summary, the PR comment and `findings.json` cite it as `threatfox#<ioc id>` or `urlhaus#<id>`; look the id up on abuse.ch. Host-only URLs, domains and addresses are printed as they appear.
+
+**Outputs.** `match-count`, `blocking-count`; the composite also exposes `report-path`. `findings.json` and `report.md` are uploaded as the `ioc-check` artefact. Exit 1 when any match is in a `block-on` category, 0 otherwise (advisory mode with `block-on: ""` only warns), 2 on a bad category or missing feeds directory. The PR comment is skipped on fork PRs, whose token is read-only.
+
+**Local run.**
+
+```bash
+gh release download threat-feeds-latest -R sparkgeo/github-actions -D /tmp/feeds -p 'threatfox.json' -p 'feodo.json' -p 'urlhaus.json'
+git ls-files > /tmp/files
+python3 -I .github/actions/ioc-check/ioc_check.py --feeds-dir /tmp/feeds --root . \
+  --files-from /tmp/files --block-on c2-ip,c2-domain,malware-url \
+  --output ioc-check/findings.json --report ioc-check/report.md
+```
 
 ## Consuming repo CI setup
 

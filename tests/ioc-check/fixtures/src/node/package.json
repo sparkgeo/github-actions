@@ -1,0 +1,8 @@
+{
+  "name": "fixture",
+  "dependencies": {
+    "dep": "git+https://c2.example/org/dep.git",
+    "loader": "http://bad.example/x/loader.bin",
+    "mirror": "https://mirror.example/"
+  }
+}

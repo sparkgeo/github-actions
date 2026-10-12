@@ -1,0 +1,136 @@
+name: IOC Check
+
+# Reusable PR/CI gate that matches IPs, CIDRs, domains and URLs in IaC,
+# container and dependency sources against the abuse.ch C2 and malware feeds
+# mirrored by threat-feeds-mirror.yml (issue #110, plan Step 27). On pull
+# requests only changed files are scanned and one PR comment is kept up to
+# date with the findings.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: 'Comma-separated globs to scan. Empty uses the built-in IaC, container and dependency set'
+        default: ''
+        type: string
+      exclude:
+        description: 'Comma-separated globs to skip. Empty uses the built-in set'
+        default: ''
+        type: string
+      block-on:
+        description: 'Categories that fail the job: c2-ip, c2-domain, malware-url. Empty is advisory'
+        default: 'c2-ip,c2-domain,malware-url'
+        type: string
+      feeds-ref:
+        description: 'Threat-feeds snapshot: latest, a date (YYYY-MM-DD) or a release tag'
+        default: 'latest'
+        type: string
+      changed-only:
+        description: 'On pull requests scan only files changed against the base branch'
+        default: true
+        type: boolean
+      comment:
+        description: 'Keep one PR comment up to date with the findings (needs pull-requests: write)'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned ioc-check.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      match-count:
+        description: 'Indicators matched, blocking or not'
+        value: ${{ jobs.ioc-check.outputs.match-count }}
+      blocking-count:
+        description: 'Matches in a block-on category'
+        value: ${{ jobs.ioc-check.outputs.blocking-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (checkout and the mirror
+# release) and adds `pull-requests: write` for the PR comment. See README.
+jobs:
+  ioc-check:
+    name: IOC Check
+    runs-on: ubuntu-latest
+    outputs:
+      match-count: ${{ steps.ioc.outputs.match-count }}
+      blocking-count: ${{ steps.ioc.outputs.blocking-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout sparkgeo composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Download threat-feeds snapshot
+        id: feeds
+        uses: ./.sparkgeo-github-actions/.github/actions/threat-feeds
+        with:
+          feeds: threatfox,feodo,urlhaus
+          ref: ${{ inputs.feeds-ref }}
+
+      - name: Match indicators
+        id: ioc
+        uses: ./.sparkgeo-github-actions/.github/actions/ioc-check
+        with:
+          feeds-dir: ${{ steps.feeds.outputs.feeds-dir }}
+          paths: ${{ inputs.paths }}
+          exclude: ${{ inputs.exclude }}
+          block-on: ${{ inputs.block-on }}
+          base-sha: ${{ (inputs.changed-only && github.event_name == 'pull_request') && github.event.pull_request.base.sha || '' }}
+          output-dir: ${{ runner.temp }}/ioc-check
+
+      - name: Upload findings
+        if: always() && steps.ioc.outputs.report-path != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ioc-check
+          path: ${{ runner.temp }}/ioc-check/
+          if-no-files-found: ignore
+
+      # One comment per PR, found by its marker and edited in place. A clean
+      # run after a finding rewrites it to "no indicators matched" rather than
+      # deleting it, so the history stays visible. Fork PRs get a read-only
+      # token and are skipped.
+      - name: Update PR comment
+        if: >-
+          always() && inputs.comment && github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && steps.ioc.outputs.report-path != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          REPORT: ${{ steps.ioc.outputs.report-path }}
+          MATCHES: ${{ steps.ioc.outputs.match-count }}
+        run: |
+          set -euo pipefail
+          existing="$(gh api --paginate "repos/${REPO}/issues/${PR}/comments" \
+            --jq '[.[] | select(.body | startswith("<!-- ioc-check -->")) | .id] | first // empty')"
+          if [ -z "${existing}" ] && [ "${MATCHES}" = "0" ]; then
+            echo "no matches and no earlier comment; nothing to post"
+            exit 0
+          fi
+          body="$(jq -n --rawfile r "${REPORT}" '{body: $r}')"
+          if [ -n "${existing}" ]; then
+            echo "${body}" | gh api -X PATCH "repos/${REPO}/issues/comments/${existing}" --input - > /dev/null
+          else
+            echo "${body}" | gh api -X POST "repos/${REPO}/issues/${PR}/comments" --input - > /dev/null
+          fi

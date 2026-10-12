@@ -147,6 +147,73 @@ jobs:
             jq -r '"\(.feed): \(.count) entries fetched \(.fetched_at)"' "${DIR}/${f}.json"
           done
 
+  # Dogfood the ioc-check composite: fixture feeds and sources first, then the
+  # whole repo against the fixture feeds (must be clean), then the live
+  # snapshot in advisory mode once threat-feeds-latest exists. Advisory because
+  # upstream feed noise must not block unrelated PRs here; the fixture run
+  # proves the gate. ioc-check.yml is exercised by consuming repos.
+  ioc-check:
+    name: IOC Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Matcher fixtures
+        run: tests/ioc-check/run.sh
+
+      - name: Whole repo against fixture feeds
+        id: fixture-scan
+        uses: ./.github/actions/ioc-check
+        with:
+          feeds-dir: tests/ioc-check/fixtures/feeds
+          output-dir: ${{ runner.temp }}/ioc-fixture
+
+      - name: Fixture scan must be clean
+        env:
+          MATCHES: ${{ steps.fixture-scan.outputs.match-count }}
+        run: |
+          [ "${MATCHES}" = "0" ] || { echo "::error title=ioc-check::expected 0 matches, got ${MATCHES}"; exit 1; }
+
+      - name: Check for a published snapshot
+        id: snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view threat-feeds-latest --json id >/dev/null 2>&1; then
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+            echo "::warning title=ioc-check::no threat-feeds-latest release yet; live snapshot not exercised"
+          fi
+
+      - id: feeds
+        if: steps.snapshot.outputs.exists == 'true'
+        uses: ./.github/actions/threat-feeds
+        with:
+          feeds: threatfox,feodo,urlhaus
+
+      - name: Whole repo against the live snapshot (advisory)
+        if: steps.snapshot.outputs.exists == 'true'
+        uses: ./.github/actions/ioc-check
+        with:
+          feeds-dir: ${{ steps.feeds.outputs.feeds-dir }}
+          block-on: ""
+          output-dir: ${{ runner.temp }}/ioc-live
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
