@@ -1,0 +1,5 @@
+version: 0.1
+resource_usage:
+  aws_s3_bucket.ingest:
+    standard:
+      storage_gb: 500
