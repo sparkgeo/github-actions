@@ -1,0 +1,92 @@
+name: Load Test
+
+# Reusable pre-release load test (issue #74): runs the consuming repo's k6
+# script against a staging or preview URL and fails the job when the script's
+# thresholds (p95 latency, error rate, checks) are crossed. The summary JSON
+# is kept as an artefact and rendered into the job summary.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      script:
+        description: 'Path to the k6 script in the consuming repo'
+        default: 'tests/load/script.js'
+        type: string
+      target-url:
+        description: 'Base URL under test, exported to the script as BASE_URL'
+        required: true
+        type: string
+      vus:
+        description: 'Virtual users'
+        default: 10
+        type: number
+      duration:
+        description: 'Run duration, e.g. 1m'
+        default: '1m'
+        type: string
+      extra-args:
+        description: 'Extra arguments passed to k6 run'
+        default: ''
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the k6
+          composite from. Pin this to the SAME SHA you pinned load-test.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      p95-ms:
+        description: 'http_req_duration p(95) in milliseconds'
+        value: ${{ jobs.k6.outputs.p95-ms }}
+      error-rate:
+        description: 'http_req_failed rate in percent'
+        value: ${{ jobs.k6.outputs.error-rate }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`. See README.
+jobs:
+  k6:
+    name: k6
+    runs-on: ubuntu-latest
+    outputs:
+      p95-ms: ${{ steps.k6.outputs.p95-ms }}
+      error-rate: ${{ steps.k6.outputs.error-rate }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout k6 composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: k6
+        uses: ./.sparkgeo-github-actions/.github/actions/k6
+        with:
+          script: ${{ inputs.script }}
+          target-url: ${{ inputs.target-url }}
+          vus: ${{ inputs.vus }}
+          duration: ${{ inputs.duration }}
+          extra-args: ${{ inputs.extra-args }}
+          summary-file: ${{ runner.temp }}/k6-summary.json
+
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: k6-summary
+          path: ${{ runner.temp }}/k6-summary.json
+          if-no-files-found: ignore
