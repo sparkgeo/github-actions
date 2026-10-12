@@ -1,0 +1,52 @@
+{
+ "format_version": "1.2",
+ "terraform_version": "1.8.2",
+ "planned_values": {
+  "root_module": {
+   "resources": [
+    {
+     "address": "google_storage_bucket.assets",
+     "mode": "managed",
+     "type": "google_storage_bucket",
+     "name": "assets",
+     "provider_name": "registry.opentofu.org/hashicorp/google",
+     "schema_version": 0,
+     "values": {
+      "name": "prescient-assets",
+      "location": "US",
+      "labels": {
+       "owner": "team-data",
+       "project": "prescient",
+       "environment": "dev",
+       "data-class": "internal"
+      },
+      "effective_labels": {
+       "owner": "team-data",
+       "project": "prescient",
+       "environment": "dev",
+       "data-class": "internal"
+      }
+     }
+    }
+   ]
+  }
+ },
+ "configuration": {
+  "provider_config": {
+   "google": {
+    "name": "google",
+    "full_name": "registry.opentofu.org/hashicorp/google",
+    "expressions": {
+     "project": {
+      "constant_value": "prescient-dev"
+     },
+     "region": {
+      "constant_value": "us-central1"
+     }
+    }
+   }
+  },
+  "root_module": {}
+ },
+ "resource_changes": []
+}

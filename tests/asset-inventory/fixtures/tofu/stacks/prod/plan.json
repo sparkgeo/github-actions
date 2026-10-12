@@ -1,0 +1,184 @@
+{
+ "format_version": "1.2",
+ "terraform_version": "1.8.2",
+ "planned_values": {
+  "root_module": {
+   "resources": [
+    {
+     "address": "aws_s3_bucket.ingest",
+     "mode": "managed",
+     "type": "aws_s3_bucket",
+     "name": "ingest",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "schema_version": 0,
+     "values": {
+      "bucket": "prescient-ingest",
+      "tags": {
+       "owner": "team-platform",
+       "project": "prescient",
+       "environment": "prod",
+       "data-class": "confidential"
+      },
+      "tags_all": {
+       "owner": "team-platform",
+       "project": "prescient",
+       "environment": "prod",
+       "data-class": "confidential"
+      }
+     }
+    },
+    {
+     "address": "aws_s3_bucket.logs[\"a\"]",
+     "mode": "managed",
+     "type": "aws_s3_bucket",
+     "name": "logs",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "schema_version": 0,
+     "values": {
+      "bucket": "prescient-logs-a",
+      "tags": {
+       "owner": "team-platform"
+      },
+      "tags_all": {
+       "owner": "team-platform"
+      }
+     },
+     "index": "a"
+    },
+    {
+     "address": "aws_s3_bucket.logs[\"b\"]",
+     "mode": "managed",
+     "type": "aws_s3_bucket",
+     "name": "logs",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "schema_version": 0,
+     "values": {
+      "bucket": "prescient-logs-b",
+      "tags": {
+       "owner": "team-platform"
+      },
+      "tags_all": {
+       "owner": "team-platform"
+      }
+     },
+     "index": "b"
+    },
+    {
+     "address": "aws_iam_role.app",
+     "mode": "managed",
+     "type": "aws_iam_role",
+     "name": "app",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "schema_version": 0,
+     "values": {
+      "name": "prescient-app",
+      "tags": null,
+      "tags_all": {}
+     }
+    },
+    {
+     "address": "random_id.suffix",
+     "mode": "managed",
+     "type": "random_id",
+     "name": "suffix",
+     "provider_name": "registry.opentofu.org/hashicorp/random",
+     "schema_version": 0,
+     "values": {
+      "byte_length": 4
+     }
+    },
+    {
+     "address": "data.aws_caller_identity.current",
+     "mode": "data",
+     "type": "aws_caller_identity",
+     "name": "current",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "schema_version": 0,
+     "values": {
+      "account_id": "123456789012"
+     }
+    }
+   ],
+   "child_modules": [
+    {
+     "address": "module.net",
+     "resources": [
+      {
+       "address": "module.net.aws_vpc.main",
+       "mode": "managed",
+       "type": "aws_vpc",
+       "name": "main",
+       "provider_name": "registry.opentofu.org/hashicorp/aws",
+       "schema_version": 0,
+       "values": {
+        "cidr_block": "10.0.0.0/16",
+        "tags": {
+         "owner": "team-platform",
+         "project": "prescient",
+         "environment": "prod",
+         "data-class": "confidential"
+        },
+        "tags_all": {
+         "owner": "team-platform",
+         "project": "prescient",
+         "environment": "prod",
+         "data-class": "confidential"
+        }
+       }
+      }
+     ],
+     "child_modules": [
+      {
+       "address": "module.net.module.subnets",
+       "resources": [
+        {
+         "address": "module.net.module.subnets.aws_subnet.private[0]",
+         "mode": "managed",
+         "type": "aws_subnet",
+         "name": "private",
+         "provider_name": "registry.opentofu.org/hashicorp/aws",
+         "schema_version": 0,
+         "values": {
+          "cidr_block": "10.0.1.0/24",
+          "tags": {
+           "owner": "team-platform",
+           "project": "prescient",
+           "environment": "production",
+           "data-class": "confidential"
+          },
+          "tags_all": {
+           "owner": "team-platform",
+           "project": "prescient",
+           "environment": "production",
+           "data-class": "confidential"
+          }
+         },
+         "index": 0
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "configuration": {
+  "provider_config": {
+   "aws": {
+    "name": "aws",
+    "full_name": "registry.opentofu.org/hashicorp/aws",
+    "expressions": {
+     "region": {
+      "constant_value": "us-west-2"
+     }
+    }
+   },
+   "random": {
+    "name": "random",
+    "full_name": "registry.opentofu.org/hashicorp/random"
+   }
+  },
+  "root_module": {}
+ },
+ "resource_changes": []
+}

@@ -1,0 +1,74 @@
+name: "Asset Inventory"
+description: |
+  Builds inventory.json (one record per planned resource with its tags,
+  stack, region and missing required tags) from OpenTofu plan JSON or CDK
+  synth templates, plus a Graphviz diagram (DOT and SVG) and a Mermaid
+  block grouped project -> environment -> owner, coloured by data-class with
+  violations outlined in red (issue #115). With base-inventory it also
+  reports added, removed and retagged resources. Never fails on findings;
+  the tagging gates (#114) enforce, this is the register.
+
+  Schema: docs/asset-inventory.schema.json. Required permissions on the
+  calling job: contents: read.
+inputs:
+  stack:
+    description: "tofu (plan JSON files, any depth) or cdk (cdk.out *.template.json)."
+    required: true
+  input-dir:
+    description: "Directory holding the plan JSONs or the cdk.out folder."
+    required: true
+  required-tags:
+    description: "Comma-separated tag keys a taggable resource must carry (policies/tags/standard.yml)."
+    default: "owner,project,environment,data-class"
+  account:
+    description: "Cloud account id to record on every resource (plans do not carry it)."
+    default: ""
+  base-inventory:
+    description: "Path to a previously published inventory.json to diff against. Empty for no diff."
+    default: ""
+  mermaid-max-nodes:
+    description: "Embed the Mermaid diagram in the report only up to this many resources."
+    default: "60"
+  output-dir:
+    description: "Where inventory.json, inventory.dot, inventory.svg, inventory.mmd and report.md are written."
+    default: "asset-inventory"
+outputs:
+  resource-count:
+    description: "Resources in the inventory."
+    value: ${{ steps.build.outputs.resource-count }}
+  violation-count:
+    description: "Resources missing at least one required tag."
+    value: ${{ steps.build.outputs.violation-count }}
+  added-count:
+    description: "Resources not in the base inventory (0 without one)."
+    value: ${{ steps.build.outputs.added-count }}
+  report-path:
+    description: "Markdown report (starts with the <!-- asset-inventory --> marker)."
+    value: ${{ steps.build.outputs.report-path }}
+runs:
+  using: "composite"
+  steps:
+    - name: Build inventory
+      id: build
+      shell: bash
+      env:
+        STACK: ${{ inputs.stack }}
+        INPUT_DIR: ${{ inputs.input-dir }}
+        REQUIRED_TAGS: ${{ inputs.required-tags }}
+        ACCOUNT: ${{ inputs.account }}
+        BASE: ${{ inputs.base-inventory }}
+        MAX_NODES: ${{ inputs.mermaid-max-nodes }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        mkdir -p "${OUTPUT_DIR}"
+        args=(--stack "${STACK}" --input "${INPUT_DIR}" --repo "${REPO}" --required-tags "${REQUIRED_TAGS}"
+              --mermaid-max-nodes "${MAX_NODES}"
+              --output "${OUTPUT_DIR}/inventory.json" --dot "${OUTPUT_DIR}/inventory.dot"
+              --svg "${OUTPUT_DIR}/inventory.svg" --mermaid "${OUTPUT_DIR}/inventory.mmd"
+              --report "${OUTPUT_DIR}/report.md")
+        [ -n "${ACCOUNT}" ] && args+=(--account "${ACCOUNT}")
+        [ -n "${BASE}" ] && args+=(--diff-base "${BASE}")
+        python3 -I "${GITHUB_ACTION_PATH}/inventory.py" "${args[@]}"
+        ( cd "${OUTPUT_DIR}" && sha256sum inventory.json inventory.svg inventory.mmd > SHA256SUMS )

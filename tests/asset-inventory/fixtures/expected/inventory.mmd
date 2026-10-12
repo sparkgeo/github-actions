@@ -1,0 +1,37 @@
+flowchart LR
+  subgraph p__none_["project: (none)"]
+    subgraph p__none__e__none_["environment: (none)"]
+      subgraph p__none__e__none__o__none_["owner: (none)"]
+        n1["aws_iam_role<br/>app"]:::violation
+        n2["random_id<br/>suffix"]:::unclassified
+      end
+      subgraph p__none__e__none__o_team_platform["owner: team-platform"]
+        n3["aws_s3_bucket<br/>logs"]:::violation
+        n4["aws_s3_bucket<br/>logs"]:::violation
+      end
+    end
+  end
+  subgraph p_prescient["project: prescient"]
+    subgraph p_prescient_e_dev["environment: dev"]
+      subgraph p_prescient_e_dev_o_team_data["owner: team-data"]
+        n5["google_storage_bucket<br/>assets"]:::internal
+      end
+    end
+    subgraph p_prescient_e_prod["environment: prod"]
+      subgraph p_prescient_e_prod_o_team_platform["owner: team-platform"]
+        n6["aws_s3_bucket<br/>ingest"]:::confidential
+        n7["aws_vpc<br/>main"]:::confidential
+      end
+    end
+    subgraph p_prescient_e_production["environment: production"]
+      subgraph p_prescient_e_production_o_team_platform["owner: team-platform"]
+        n8["aws_subnet<br/>private"]:::confidential
+      end
+    end
+  end
+  classDef public fill:#d9ead3,stroke:#999999
+  classDef internal fill:#cfe2f3,stroke:#999999
+  classDef confidential fill:#fff2cc,stroke:#999999
+  classDef restricted fill:#f4cccc,stroke:#999999
+  classDef unclassified fill:#eeeeee,stroke:#999999
+  classDef violation fill:#ffffff,stroke:#ff0000,stroke-width:2px
