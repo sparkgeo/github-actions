@@ -1,0 +1,63 @@
+{
+ "rows": [
+  {
+   "arn": "arn:aws:s3:::prescient-ingest",
+   "name": "prescient-ingest",
+   "region": "us-west-2",
+   "account_id": "123456789012",
+   "tags": {
+    "owner": "team-platform",
+    "project": "prescient",
+    "environment": "prod",
+    "data-class": "confidential"
+   }
+  },
+  {
+   "arn": "arn:aws:s3:::prescient-logs-a",
+   "name": "prescient-logs-a",
+   "region": "us-west-2",
+   "account_id": "123456789012",
+   "tags": {
+    "owner": "team-platform"
+   }
+  },
+  {
+   "arn": "arn:aws:lambda:us-west-2:123456789012:function:legacy-cron",
+   "name": "legacy-cron",
+   "region": "us-west-2",
+   "account_id": "123456789012",
+   "tags": {}
+  },
+  {
+   "arn": "arn:aws:iam::123456789012:role/prescient-app",
+   "name": "prescient-app",
+   "region": "global",
+   "account_id": "123456789012",
+   "tags": {
+    "owner": "team-platform",
+    "project": "prescient",
+    "environment": "prod",
+    "data-class": "confidential"
+   }
+  },
+  {
+   "arn": "arn:aws:ec2:us-west-2:123456789012:vpc/vpc-0abc123",
+   "name": "vpc-0abc123",
+   "region": "us-west-2",
+   "account_id": "123456789012",
+   "tags": {
+    "owner": "team-platform",
+    "project": "prescient",
+    "environment": "prod",
+    "data-class": "confidential"
+   }
+  },
+  {
+   "arn": "arn:aws:s3:::other-account-bucket",
+   "name": "other-account-bucket",
+   "region": "us-west-2",
+   "account_id": "999999999999",
+   "tags": {}
+  }
+ ]
+}

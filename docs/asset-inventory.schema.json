@@ -51,7 +51,7 @@
   "$defs": {
     "resource": {
       "type": "object",
-      "required": ["id", "type", "name", "stack", "account", "region", "taggable", "tags", "tag_violations", "source"],
+      "required": ["id", "type", "name", "stack", "account", "region", "identifier", "taggable", "tags", "tag_violations", "source"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "description": "OpenTofu address (module path, for_each or count index included) or CloudFormation logical id" },
@@ -60,6 +60,7 @@
         "stack": { "type": "string", "description": "plan file directory or CDK stack name" },
         "account": { "type": ["string", "null"] },
         "region": { "type": ["string", "null"] },
+        "identifier": { "type": ["string", "null"], "description": "cloud-side name stated in the plan or template (bucket name, function name, ...); null when generated at apply time. asset-drift matches it against live ARNs" },
         "taggable": { "type": "boolean", "description": "false when the resource type carries no tags; such resources never have tag_violations" },
         "tags": { "type": "object", "additionalProperties": { "type": "string" } },
         "tag_violations": { "type": "array", "items": { "type": "string" }, "description": "required tags that are missing" },

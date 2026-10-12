@@ -56,6 +56,9 @@ ${actual}"
 [ "$(inv tofu '.resources[] | select(.id == "aws_iam_role.app") | .taggable')" = "true" ] || fail "iam role taggable"
 [ "$(inv tofu '.resources[0].source | "\(.repo) \(.path) \(.line)"')" = "sparkgeo/prescient-infra null null" ] || fail "tofu source has no positions"
 [ "$(inv tofu '.resources[0].account')" = "null" ] || fail "account null without --account"
+[ "$(inv tofu '.resources[] | select(.id == "aws_s3_bucket.ingest") | .identifier')" = "prescient-ingest" ] || fail "tofu identifier from bucket"
+[ "$(inv tofu '.resources[] | select(.id == "aws_iam_role.app") | .identifier')" = "prescient-app" ] || fail "tofu identifier from name"
+[ "$(inv tofu '.resources[] | select(.id == "module.net.aws_vpc.main") | .identifier')" = "null" ] || fail "tofu identifier null when unknown at plan time"
 [ "$(inv tofu '.counts | "\(.resources) \(.taggable) \(.violations)"')" = "8 7 3" ] || fail "tofu counts $(inv tofu '.counts')"
 [ "$(inv tofu '.stack_kind')" = "tofu" ] || fail "stack_kind"
 [ "$(inv tofu '.generated_at')" = "${NOW}" ] || fail "generated_at"
@@ -87,6 +90,8 @@ actual="$(inv cdk '.resources[] | "\(.stack) \(.id) \(.type) \(.taggable) \(.sou
 [ "${actual}" = "${expected}" ] || fail "cdk resources differ:
 ${actual}"
 [ "$(inv cdk '.resources[] | select(.id == "Events7G8H9I") | .tags.owner')" = "bob@sparkgeo.com" ] || fail "cdk tags"
+[ "$(inv cdk '.resources[] | select(.id == "IngestBucket1A2B3C") | .identifier')" = "prescient-ingest" ] || fail "cdk identifier from BucketName"
+[ "$(inv cdk '.resources[] | select(.id == "AppRole4D5E6F") | .identifier')" = "null" ] || fail "cdk identifier null without a *Name property"
 [ "$(inv cdk '.counts | "\(.resources) \(.taggable) \(.violations)"')" = "4 3 2" ] || fail "cdk counts $(inv cdk '.counts')"
 
 echo "== diff against a base inventory"
