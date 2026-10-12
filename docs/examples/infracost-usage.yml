@@ -1,0 +1,45 @@
+# Starter infracost-usage.yml (docs/cost-gate.md, issue #91). Copy to the
+# repository root, keep only the resources the stack has, and replace the
+# values with measured or contracted figures. Keys are the OpenTofu resource
+# addresses; wildcards (aws_s3_bucket.*) apply one estimate to every match.
+# Reference: https://www.infracost.io/docs/features/usage_based_resources/
+version: 0.1
+resource_usage:
+  # S3: storage and request counts per bucket. Measure with CloudWatch
+  # BucketSizeBytes and the S3 request metrics after a month of traffic.
+  aws_s3_bucket.ingest:
+    standard:
+      storage_gb: 500                 # average GB stored in STANDARD
+      monthly_tier_1_requests: 100000 # PUT, COPY, POST, LIST
+      monthly_tier_2_requests: 2000000 # GET, SELECT and other
+      monthly_data_transfer_out_gb: 50 # to the internet (not to CloudFront)
+
+  # Data transfer from the region to the internet, declared once per account.
+  # Starts at the egress volume of the previous month's bill.
+  aws_data_transfer.region:
+    region: us-west-2
+    monthly_outbound_internet_gb: 200
+    monthly_outbound_us_east_to_us_east_gb: 0
+
+  # Lambda: invocations and the average billed duration per invocation.
+  aws_lambda_function.api:
+    monthly_requests: 5000000
+    request_duration_ms: 250
+
+  # DynamoDB on-demand tables: read and write request units per month.
+  aws_dynamodb_table.sessions:
+    monthly_write_request_units: 10000000
+    monthly_read_request_units: 50000000
+    storage_gb: 20
+
+  # CloudWatch log groups: ingested and stored data; archived is the retained
+  # volume beyond the first month.
+  aws_cloudwatch_log_group.api:
+    storage_gb: 10
+    monthly_data_ingested_gb: 30
+    monthly_data_scanned_gb: 5
+
+  # NAT gateway: bytes processed through the gateway; the hourly charge is
+  # priced without usage.
+  aws_nat_gateway.main:
+    monthly_data_processed_gb: 1000

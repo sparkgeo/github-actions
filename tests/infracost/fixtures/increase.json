@@ -1,0 +1,39 @@
+{
+ "version": "0.2",
+ "currency": "USD",
+ "projects": [
+  {
+   "name": "stacks/prod",
+   "metadata": {
+    "path": "plans/stacks-prod/plan.json",
+    "type": "terraform_plan_json"
+   },
+   "pastBreakdown": {
+    "totalMonthlyCost": "1000.00"
+   },
+   "breakdown": {
+    "totalMonthlyCost": "1150.00"
+   },
+   "diff": {
+    "totalMonthlyCost": "150.00"
+   }
+  }
+ ],
+ "totalHourlyCost": null,
+ "totalMonthlyCost": "1150.00",
+ "pastTotalHourlyCost": null,
+ "pastTotalMonthlyCost": "1000.00",
+ "diffTotalHourlyCost": null,
+ "diffTotalMonthlyCost": "150.00",
+ "timeGenerated": "2026-10-12T04:00:00Z",
+ "summary": {
+  "totalDetectedResources": 12,
+  "totalSupportedResources": 11,
+  "totalUnsupportedResources": 1,
+  "totalUsageBasedResources": 3,
+  "totalNoPriceResources": 0,
+  "unsupportedResourceCounts": {
+   "aws_x": 1
+  }
+ }
+}
