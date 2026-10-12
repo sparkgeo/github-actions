@@ -89,7 +89,7 @@ grep -q '^::warning file=yarn.lock,line=8,title=dependency-reputation::old-lib@2
 grep -q '^::warning file=uv.lock,line=8,title=dependency-reputation::ghost@9.9.9 ' "${TMP}/all/log" || fail "unknown annotation"
 [ "$(grep -c '^::error ' "${TMP}/all/log")" = "2" ] || fail "exactly two errors"
 grep -q '^<!-- dependency-reputation -->' "${TMP}/all/report.md" || fail "report marker"
-grep -q '| `evil-stream` | 0.1.1 |' "${TMP}/all/report.md" || fail "report row"
+grep -qF "| \`evil-stream\` | 0.1.1 |" "${TMP}/all/report.md" || fail "report row"
 grep -q 'MAL-2024-0001' "${TMP}/all/report.md" || fail "report malicious id"
 grep -q 'github.com/psf/requests' "${TMP}/all/report.md" || fail "report repository"
 grep -q 'dependency-reputation' "${TMP}/all/summary" || fail "step summary"
