@@ -102,6 +102,61 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # DR policy pack (#93): checkov over the pass and fail fixtures through the
+  # test script, then the composite with the curated list on both fixtures.
+  dr-check:
+    name: DR Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install checkov through the composite (pass fixture, zero findings)
+        id: pass
+        uses: ./.github/actions/checkov
+        with:
+          directory: tests/dr-check/fixtures/pass
+          frameworks: terraform
+          checks: CKV_AWS_21,CKV_AWS_144,CKV_AWS_133,CKV_AWS_157,CKV_AWS_28,CKV_AWS_134,CKV_AWS_166,SPK_DR_1,SPK_DR_2,SPK_DR_3,SPK_DR_4
+          external-checks-dir: policies/dr
+          include-passed: "true"
+          sarif-upload: "false"
+
+      - name: Policy pack and report fixtures
+        env:
+          CHECKOV: ${{ runner.temp }}/checkov
+        run: tests/dr-check/run.sh
+
+      - name: Composite on the fail fixture (advisory)
+        id: failing
+        uses: ./.github/actions/checkov
+        with:
+          directory: tests/dr-check/fixtures/fail
+          frameworks: terraform
+          checks: CKV_AWS_21,CKV_AWS_144,CKV_AWS_133,CKV_AWS_157,CKV_AWS_28,CKV_AWS_134,CKV_AWS_166,SPK_DR_1,SPK_DR_2,SPK_DR_3,SPK_DR_4
+          external-checks-dir: policies/dr
+          include-passed: "true"
+          fail-on-severity: none
+          sarif-upload: "false"
+
+      - name: Outcomes
+        env:
+          PASS_FAILED: ${{ steps.pass.outputs.failed-count }}
+          FAIL_FAILED: ${{ steps.failing.outputs.failed-count }}
+          RESULTS: ${{ steps.failing.outputs.results-json }}
+        run: |
+          [ "${PASS_FAILED}" = "0" ] || { echo "::error title=dr-check::pass fixture had ${PASS_FAILED} findings"; exit 1; }
+          [ "${FAIL_FAILED}" = "11" ] || { echo "::error title=dr-check::expected 11 findings on the fail fixture, got ${FAIL_FAILED}"; exit 1; }
+          python3 -I .github/actions/checkov/dr-report.py --json "${RESULTS}" --report "${RUNNER_TEMP}/dr-report.md" --directory tests/dr-check/fixtures/fail > /dev/null
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

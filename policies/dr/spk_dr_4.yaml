@@ -1,0 +1,18 @@
+# DR policy pack (issue #93): backup plans retain and copy to another region.
+metadata:
+  id: "SPK_DR_4"
+  name: "Backup plan rules set lifecycle.delete_after and copy to another vault"
+  category: "BACKUP_AND_RECOVERY"
+  guideline: "https://github.com/sparkgeo/github-actions/blob/main/docs/dr-checklist.md"
+definition:
+  and:
+    - cond_type: attribute
+      resource_types:
+        - aws_backup_plan
+      attribute: rule.lifecycle.delete_after
+      operator: exists
+    - cond_type: attribute
+      resource_types:
+        - aws_backup_plan
+      attribute: rule.copy_action.destination_vault_arn
+      operator: exists

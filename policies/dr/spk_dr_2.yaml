@@ -1,0 +1,19 @@
+# DR policy pack (issue #93): EFS is covered by an AWS Backup selection.
+metadata:
+  id: "SPK_DR_2"
+  name: "EFS file systems are referenced by an aws_backup_selection"
+  category: "BACKUP_AND_RECOVERY"
+  guideline: "https://github.com/sparkgeo/github-actions/blob/main/docs/dr-checklist.md"
+definition:
+  and:
+    - cond_type: filter
+      attribute: resource_type
+      operator: within
+      value:
+        - aws_efs_file_system
+    - cond_type: connection
+      resource_types:
+        - aws_efs_file_system
+      connected_resource_types:
+        - aws_backup_selection
+      operator: exists

@@ -1,0 +1,26 @@
+# DR policy pack (issue #93): DynamoDB is backed up or has point-in-time recovery.
+metadata:
+  id: "SPK_DR_3"
+  name: "DynamoDB tables are referenced by an aws_backup_selection or have point-in-time recovery"
+  category: "BACKUP_AND_RECOVERY"
+  guideline: "https://github.com/sparkgeo/github-actions/blob/main/docs/dr-checklist.md"
+definition:
+  and:
+    - cond_type: filter
+      attribute: resource_type
+      operator: within
+      value:
+        - aws_dynamodb_table
+    - or:
+        - cond_type: connection
+          resource_types:
+            - aws_dynamodb_table
+          connected_resource_types:
+            - aws_backup_selection
+          operator: exists
+        - cond_type: attribute
+          resource_types:
+            - aws_dynamodb_table
+          attribute: point_in_time_recovery.enabled
+          operator: equals
+          value: "true"

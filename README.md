@@ -11,6 +11,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
+| DR Check (OpenTofu) | [`dr-check-tofu.yml`](.github/workflows/dr-check-tofu.yml) | `workflow_call` | Reusable DR-readiness check — curated checkov backup and DR checks plus the `SPK_DR_*` graph policies; one updating PR comment grouped by resource with remediation; `strict-checks` subset fails the job |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -408,6 +409,27 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### DR Check (checkov policy pack)
+
+[`dr-check-tofu.yml`](.github/workflows/dr-check-tofu.yml) asks one question of every Terraform or OpenTofu change: will this survive a region loss (issue #93, plan Steps 8 and 19). It runs the `checkov` composite twice. The advisory run covers every id in [`policies/dr/checks.txt`](policies/dr/checks.txt) (S3 versioning and replication, RDS backups and Multi-AZ, DynamoDB PITR, ElastiCache snapshots, encrypted Backup vaults, and the GCP and Azure equivalents) plus the graph policies in [`policies/dr/`](policies/dr): `SPK_DR_1` RDS in an `aws_backup_selection`, `SPK_DR_2` EFS in one, `SPK_DR_3` DynamoDB in one or with PITR, `SPK_DR_4` backup plans with `lifecycle.delete_after` and a cross-region `copy_action`. Its findings become one PR comment (marker `<!-- dr-check -->`) grouped by resource with the check name, checkov's guideline link and a remediation snippet, followed by every `checkov:skip` that carries no reason. The strict run then fails the job on the `strict-checks` ids only.
+
+```yaml
+# .github/workflows/dr-check.yml in the consuming repo
+on:
+  pull_request:
+jobs:
+  dr:
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: sparkgeo/github-actions/.github/workflows/dr-check-tofu.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      strict-checks: CKV_AWS_133,CKV_AWS_28,SPK_DR_1   # Tier B; see docs/dr-checklist.md
+```
+
+`plan-json` scans a plan file with the `terraform_plan` framework instead of the directory, so `count` and `for_each` are resolved. `policies-ref` loads `policies/dr` from another ref of this repo when the pack must move ahead of the composite. Suppress a finding with `# checkov:skip=CKV_AWS_144:<tier or exception issue>` inside the resource; a skip without text is reported. The tiers and the full id-to-control table are in `docs/dr-checklist.md` (#95).
 
 ## Consuming repo CI setup
 

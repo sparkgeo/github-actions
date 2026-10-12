@@ -1,0 +1,176 @@
+name: DR Check (OpenTofu)
+
+# Reusable DR-readiness check for Terraform / OpenTofu (issue #93, plan Steps
+# 8 and 19). Runs the curated backup and DR checks from policies/dr/checks.txt
+# plus the SPK_DR_* graph policies with the checkov composite: an advisory run
+# over every check feeds one updating PR comment (grouped by resource, with
+# remediation and suppressions that lack a reason), then the strict-checks
+# subset runs as the gate. Rules and tiers: docs/dr-checklist.md (#95).
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      directory:
+        description: 'Directory to scan (recursively)'
+        default: '.'
+        type: string
+      plan-json:
+        description: 'Optional plan JSON file; scans it with the terraform_plan framework instead of the directory, so count and for_each are resolved'
+        default: ''
+        type: string
+      strict-checks:
+        description: 'Comma-separated check IDs that fail the job; empty means advisory only'
+        default: ''
+        type: string
+      policies-ref:
+        description: 'Git ref of sparkgeo/github-actions to load policies/dr from; empty uses actions-ref'
+        default: ''
+        type: string
+      comment:
+        description: 'Keep one PR comment up to date with the findings (needs pull-requests: write)'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the checkov
+          composite from. Pin this to the SAME SHA you pinned dr-check-tofu.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      failed-count:
+        description: 'Findings in the advisory run'
+        value: ${{ jobs.dr.outputs.failed-count }}
+      unreasoned-skips:
+        description: 'checkov:skip comments without a reason'
+        value: ${{ jobs.dr.outputs.unreasoned-skips }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` and `pull-requests: write`
+# for the comment. See README.
+jobs:
+  dr:
+    name: DR readiness
+    runs-on: ubuntu-latest
+    outputs:
+      failed-count: ${{ steps.report.outputs.failed-count }}
+      unreasoned-skips: ${{ steps.report.outputs.unreasoned-skips }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout checkov composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Checkout the policy pack
+        if: inputs.policies-ref != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.policies-ref }}
+          path: .sparkgeo-policies
+          sparse-checkout: policies/dr
+          persist-credentials: false
+
+      - name: Resolve checks and scan target
+        id: cfg
+        env:
+          POLICIES_REF: ${{ inputs.policies-ref }}
+          PLAN_JSON: ${{ inputs.plan-json }}
+          DIRECTORY: ${{ inputs.directory }}
+        run: |
+          set -euo pipefail
+          if [ -n "${POLICIES_REF}" ]; then dir=".sparkgeo-policies/policies/dr"; else dir=".sparkgeo-github-actions/policies/dr"; fi
+          checks="$(grep -oE '^[A-Z_0-9]+' "${dir}/checks.txt" | paste -sd, -)"
+          custom="$(grep -hoE 'id: "SPK_DR_[0-9]+"' "${dir}"/*.yaml | grep -oE 'SPK_DR_[0-9]+' | paste -sd, -)"
+          if [ -n "${PLAN_JSON}" ]; then
+            target="$(dirname "${PLAN_JSON}")"; framework="terraform_plan"
+          else
+            target="${DIRECTORY}"; framework="terraform"
+          fi
+          {
+            echo "policies=${dir}"
+            echo "checks=${checks},${custom}"
+            echo "target=${target}"
+            echo "framework=${framework}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "checks: ${checks},${custom}; target ${target} (${framework})"
+
+      - name: Advisory run (all DR checks)
+        id: advisory
+        uses: ./.sparkgeo-github-actions/.github/actions/checkov
+        with:
+          directory: ${{ steps.cfg.outputs.target }}
+          frameworks: ${{ steps.cfg.outputs.framework }}
+          checks: ${{ steps.cfg.outputs.checks }}
+          external-checks-dir: ${{ steps.cfg.outputs.policies }}
+          include-passed: "true"
+          fail-on-severity: none
+          sarif-upload: "false"
+
+      - name: Report
+        id: report
+        env:
+          RESULTS: ${{ steps.advisory.outputs.results-json }}
+          DIRECTORY: ${{ inputs.directory }}
+          REPORT: ${{ runner.temp }}/dr-report.md
+        run: |
+          python3 -I .sparkgeo-github-actions/.github/actions/checkov/dr-report.py \
+            --json "${RESULTS}" --report "${REPORT}" --directory "${DIRECTORY}"
+          echo "report-path=${REPORT}" >> "${GITHUB_OUTPUT}"
+
+      # One comment per PR, found by its marker and edited in place. Fork PRs
+      # get a read-only token and are skipped.
+      - name: Update PR comment
+        if: >-
+          inputs.comment && github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          REPORT: ${{ steps.report.outputs.report-path }}
+        run: |
+          set -euo pipefail
+          existing="$(gh api --paginate "repos/${REPO}/issues/${PR}/comments" \
+            --jq '[.[] | select(.body | startswith("<!-- dr-check -->")) | .id] | first // empty')"
+          body="$(jq -n --rawfile r "${REPORT}" '{body: $r}')"
+          if [ -n "${existing}" ]; then
+            echo "${body}" | gh api -X PATCH "repos/${REPO}/issues/comments/${existing}" --input - > /dev/null
+          else
+            echo "${body}" | gh api -X POST "repos/${REPO}/issues/${PR}/comments" --input - > /dev/null
+          fi
+
+      - name: Upload results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: dr-check
+          path: |
+            ${{ steps.advisory.outputs.results-json }}
+            ${{ steps.report.outputs.report-path }}
+          if-no-files-found: ignore
+
+      - name: Strict run (gate)
+        if: inputs.strict-checks != ''
+        uses: ./.sparkgeo-github-actions/.github/actions/checkov
+        with:
+          directory: ${{ steps.cfg.outputs.target }}
+          frameworks: ${{ steps.cfg.outputs.framework }}
+          checks: ${{ inputs.strict-checks }}
+          external-checks-dir: ${{ steps.cfg.outputs.policies }}
+          fail-on-severity: high
+          sarif-upload: "false"

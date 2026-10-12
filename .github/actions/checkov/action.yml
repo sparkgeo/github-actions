@@ -36,6 +36,15 @@ inputs:
   skip-checks:
     description: "Comma-separated check IDs to skip for the whole run (prefer inline checkov:skip with a reason)."
     default: ""
+  checks:
+    description: "Comma-separated check IDs to run exclusively (checkov --check). Empty runs every check."
+    default: ""
+  external-checks-dir:
+    description: "Directory of custom YAML or Python policies loaded with --external-checks-dir (for example policies/dr)."
+    default: ""
+  include-passed:
+    description: "Keep passed and skipped checks in the JSON output (drops --quiet). dr-check-tofu.yml needs the skipped checks to report suppressions without a reason."
+    default: "false"
   download-external-modules:
     description: "Let checkov download remote Terraform modules so their resources are scanned."
     default: "false"
@@ -49,6 +58,9 @@ outputs:
   passed-count:
     description: "Number of passed checks."
     value: ${{ steps.gate.outputs.passed-count }}
+  results-json:
+    description: "Path of the checkov JSON results."
+    value: ${{ steps.scan.outputs.json }}
 runs:
   using: "composite"
   steps:
@@ -75,6 +87,9 @@ runs:
         DIRECTORY: ${{ inputs.directory }}
         FRAMEWORKS: ${{ inputs.frameworks }}
         SKIP_CHECKS: ${{ inputs.skip-checks }}
+        CHECKS: ${{ inputs.checks }}
+        EXTERNAL_CHECKS_DIR: ${{ inputs.external-checks-dir }}
+        INCLUDE_PASSED: ${{ inputs.include-passed }}
         DOWNLOAD_EXTERNAL: ${{ inputs.download-external-modules }}
       run: |
         set -euo pipefail
@@ -82,10 +97,13 @@ runs:
         mkdir -p "${OUT}"
         IFS=',' read -ra FW <<< "${FRAMEWORKS}"
         args=(--directory "${DIRECTORY}" --framework "${FW[@]}"
-              --soft-fail --quiet --compact
+              --soft-fail --compact
               -o cli -o json -o sarif --output-file-path "${OUT}"
               --download-external-modules "${DOWNLOAD_EXTERNAL}")
         if [ -n "${SKIP_CHECKS}" ]; then args+=(--skip-check "${SKIP_CHECKS}"); fi
+        if [ "${INCLUDE_PASSED}" != "true" ]; then args+=(--quiet); fi
+        if [ -n "${CHECKS}" ]; then args+=(--check "${CHECKS}"); fi
+        if [ -n "${EXTERNAL_CHECKS_DIR}" ]; then args+=(--external-checks-dir "${EXTERNAL_CHECKS_DIR}"); fi
         # --soft-fail: we gate on the JSON ourselves below.
         "${RUNNER_TEMP}/checkov" "${args[@]}"
         # The "console,<dir>" output-path form crashes checkov 3.3.25; print the

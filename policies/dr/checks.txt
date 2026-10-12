@@ -1,0 +1,19 @@
+# Curated checkov checks for backup and DR readiness (issue #93, plan Steps 8
+# and 19). One id per line; text after # is a comment. docs/dr-checklist.md
+# (#95) maps each id to a control and a tier; CI diffs the two lists.
+CKV_AWS_21    # S3 versioning enabled
+CKV_AWS_144   # S3 cross-region replication
+CKV_AWS_133   # RDS backup retention configured
+CKV_AWS_157   # RDS Multi-AZ
+CKV_AWS_28    # DynamoDB point-in-time recovery
+CKV_AWS_134   # ElastiCache automatic backup
+CKV_AWS_166   # AWS Backup vault encrypted with KMS
+CKV_GCP_78    # Cloud Storage versioning
+CKV_GCP_14    # Cloud SQL automated backups
+CKV_AZURE_206 # Storage account replication (GRS or better)
+CKV_AZURE_94  # MySQL geo-redundant backup
+CKV_AZURE_102 # PostgreSQL geo-redundant backup
+CKV_AZURE_129 # MariaDB geo-redundant backup
+CKV_AZURE_136 # PostgreSQL Flexible Server geo-redundant backup
+CKV_AZURE_230 # Redis standard replication
+CKV_AZURE_111 # Key Vault soft delete
