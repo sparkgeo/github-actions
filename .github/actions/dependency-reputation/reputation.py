@@ -221,13 +221,17 @@ class DepsDev:
 
     def lookup(self, system, name, version):
         """{version, project, latest_published_at} or {missing: true} or None when offline and uncached."""
-        path = self.cache_dir / system / f"{urllib.parse.quote(name, safe='')}@{version}.json"
+        # name and version come from the PR's lockfile: encode both so neither
+        # can carry a path separator, and never leave cache_dir.
+        q = urllib.parse.quote
+        path = self.cache_dir / system / f"{q(name, safe='')}@{q(version, safe='')}.json"
+        if not path.resolve().is_relative_to(self.cache_dir.resolve()):
+            return None
         if path.is_file():
             with open(path) as f:
                 return json.load(f)
         if self.offline:
             return None
-        q = urllib.parse.quote
         ver = self._get(f"{API}/systems/{system}/packages/{q(name, safe='')}/versions/{q(version, safe='')}")
         if ver is None:
             data = {"missing": True}

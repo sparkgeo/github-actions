@@ -126,6 +126,29 @@ set -e
 [ "${rc}" -eq 0 ] || fail "miss rc ${rc}: $(cat "${TMP}/miss.log")"
 [ "$(jq -r '.packages[0].flags | join(",")' "${TMP}/miss.json")" = "uncached" ] || fail "miss flags"
 
+echo "== cache path confinement: a traversal version string never reads or writes outside cache-dir"
+REPO2="${TMP}/repo2"
+mkdir -p "${REPO2}" "${TMP}/cache2"
+git -C "${REPO2}" init -q -b main
+git -C "${REPO2}" config user.email t@example.com
+git -C "${REPO2}" config user.name t
+printf 'urllib3==2.8.0\n' > "${REPO2}/requirements.txt"
+git -C "${REPO2}" add -A && git -C "${REPO2}" commit -q -m base
+BASE2="$(git -C "${REPO2}" rev-parse HEAD)"
+printf 'urllib3==2.8.0\npwn==/../../outside\n' > "${REPO2}/requirements.txt"
+git -C "${REPO2}" add -A && git -C "${REPO2}" commit -q -m head
+# The online path would mkdir the "pwn@" component before writing; seed it so
+# the read side shows the same escape.
+mkdir -p "${TMP}/cache2/PYPI/pwn@"
+jq -n '{missing: true}' > "${TMP}/cache2/outside.json"
+set +e
+( cd "${REPO2}" && python3 -I "${SCRIPT}" --cache-dir "${TMP}/cache2" --offline --now "${NOW}" --base-sha "${BASE2}" \
+    --output "${TMP}/trav.json" --report "${TMP}/trav.md" ) > "${TMP}/trav.log" 2>&1
+rc=$?
+set -e
+[ "${rc}" -eq 0 ] || fail "traversal rc ${rc}: $(cat "${TMP}/trav.log")"
+[ "$(jq -r '.packages[0].flags | join(",")' "${TMP}/trav.json")" = "uncached" ] || fail "traversal version must not resolve outside the cache: $(jq -c '.packages[0]' "${TMP}/trav.json")"
+
 echo "== usage errors exit 2"
 run badeco --base-sha "${BASE}" --ecosystems npm,maven
 [ "${rc}" -eq 2 ] || fail "bad ecosystem rc ${rc}"
