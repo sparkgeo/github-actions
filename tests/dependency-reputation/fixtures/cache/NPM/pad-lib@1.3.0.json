@@ -2,7 +2,7 @@
   "version": {
     "versionKey": {
       "system": "NPM",
-      "name": "left-pad",
+      "name": "pad-lib",
       "version": "1.3.0"
     },
     "publishedAt": "2018-04-10T00:00:00Z",
@@ -10,7 +10,7 @@
     "relatedProjects": [
       {
         "projectKey": {
-          "id": "github.com/stevemao/left-pad"
+          "id": "github.com/pad/lib"
         },
         "relationType": "SOURCE_REPO"
       }
@@ -18,7 +18,7 @@
   },
   "project": {
     "projectKey": {
-      "id": "github.com/stevemao/left-pad"
+      "id": "github.com/pad/lib"
     },
     "starsCount": 100,
     "scorecard": {

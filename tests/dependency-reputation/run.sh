@@ -49,8 +49,8 @@ CARGO serde 1.0.210 Cargo.lock
 GO github.com/x/y v1.2.3 go.sum
 NPM evil-stream 0.1.1 pnpm-lock.yaml
 NPM kept-lib 4.17.21 package-lock.json
-NPM left-pad 1.3.0 package-lock.json
 NPM old-lib 2.0.0 yarn.lock
+NPM pad-lib 1.3.0 package-lock.json
 PYPI ghost 9.9.9 uv.lock
 PYPI lowscore 1.0.0 poetry.lock
 PYPI requests 2.34.2 requirements.txt
