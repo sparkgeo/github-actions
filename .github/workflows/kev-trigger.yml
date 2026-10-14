@@ -1,0 +1,136 @@
+name: KEV Trigger
+
+# Daily, after the threat-feeds mirror: matches the KEV entries and CISA
+# advisories added in the last window against the products listed in
+# policies/threat-intel/products.json (exposure and owners from the asset
+# register when it exists) and opens one validation-trigger issue per match
+# (SecOps plan Step 27 Standard, Step 40 trigger table, issue #187). A match
+# is a High-tier trigger: validate within 72 hours. A KEV entry with total
+# technical impact or CISA's forensicTriage flag on a publicly exposed asset
+# also carries `forensic-triage` (Step 25, BOD 26-04).
+#
+# Issues open in this repo. Routing to each product's own repositories needs a
+# token with issues:write there (KEV_TRIGGER_APP_ID / KEV_TRIGGER_APP_PRIVATE_KEY,
+# an org App); until those secrets exist the issue names the repos instead.
+#
+# Runs only in this repo on a schedule: no user-controlled input reaches a
+# run: block. Product names from the feeds are passed through jq and gh as
+# arguments, never interpolated into shell.
+
+on:
+  schedule:
+    - cron: '47 6 * * *'  # daily, 06:47 UTC; the mirror runs at 05:17
+  workflow_dispatch:
+    inputs:
+      window-days:
+        description: 'How many days back count as new (default 7; the issue search deduplicates)'
+        default: '7'
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: kev-trigger
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    name: Match and open triggers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: feeds
+        uses: ./.github/actions/threat-feeds
+        with:
+          feeds: kev,advisories,vulnrichment
+
+      - name: Download the asset register, when published
+        id: register
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          DIR="${RUNNER_TEMP}/register"
+          mkdir -p "${DIR}"
+          if gh release download asset-register-latest -R "${REPO}" -D "${DIR}" --clobber -p assets.json 2>/dev/null; then
+            echo "path=${DIR}/assets.json" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::notice title=kev-trigger::no asset-register-latest release; exposure and owners come from products.json"
+            echo "path=" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - id: match
+        uses: ./.github/actions/kev-trigger
+        with:
+          feeds-dir: ${{ steps.feeds.outputs.feeds-dir }}
+          register: ${{ steps.register.outputs.path }}
+          window-days: ${{ inputs.window-days || '7' }}
+
+      - name: Open or update validation-trigger issues
+        if: steps.match.outputs.match-count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MATCHES: ${{ steps.match.outputs.matches }}
+          SNAPSHOT: ${{ steps.feeds.outputs.tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          for l in 'validation:high|D4C5F9|High-tier validation trigger: validate within 72 h' \
+                   'security-finding|D93F0B|Security finding from a CI scan gate; pair with one sla:* label' \
+                   'sla:critical|B60205|Critical: 48 h production, 7 d non-production' \
+                   'sla:high|E99695|High: 7 d production, 30 d non-production' \
+                   'forensic-triage|000000|KEV CVE with total control on a public asset: scope, preserve, contain before patching'; do
+            IFS='|' read -r n c d <<< "${l}"
+            gh label create "${n}" -R "${REPO}" --color "${c}" --description "${d}" --force > /dev/null
+          done
+          n="$(jq '.matches | length' "${MATCHES}")"
+          for i in $(seq 0 $((n - 1))); do
+            m="$(jq -c ".matches[${i}]" "${MATCHES}")"
+            id="$(jq -r '.id' <<< "${m}")"
+            kind="$(jq -r '.kind' <<< "${m}")"
+            product="$(jq -r '.product' <<< "${m}")"
+            key="$(jq -r 'if .kind == "kev" then .id else (.cves[0] // .id) end' <<< "${m}")"
+            title="[validation] ${key}: ${product}"
+            labels="$(jq -r '["validation:high", "security-finding", "sla:" + .sla] + (if .forensic_triage then ["forensic-triage"] else [] end) | join(",")' <<< "${m}")"
+            body="$(jq -r --arg snap "${SNAPSHOT}" --arg run "${RUN_URL}" '
+              "**Signal source**: " + (if .kind == "kev" then "KEV listing" else "CISA advisory" end) + "\n" +
+              "**Tier**: High (validate within 72 hours)\n" +
+              "**Validation deadline**: " + .validate_by + "\n\n" +
+              "### Signal\n\n" +
+              "- " + (.title // .id) + "\n" +
+              "- " + .url + "\n" +
+              (if .kind == "kev" then
+                 "- KEV added " + (.kev_added // "?")[:10] + ", CISA due date " + (.kev_due // "?") + ", known ransomware use: " + (.ransomware // "unknown") + "\n" +
+                 (if .ssvc then "- SSVC (Vulnrichment): exploitation " + (.ssvc.exploitation // "?") + ", automatable " + (.ssvc.automatable // "?") + ", technical impact " + (.ssvc.technical_impact // "?") + (if .ssvc.cvss then ", CVSS " + (.ssvc.cvss | tostring) else "" end) + "\n" else "" end)
+               else "- CVEs named: " + ((.cves // []) | join(", ") | if . == "" then "none" else . end) + "\n" end) +
+              "- Product: **" + .product + "**; exposure: " + .exposure + "; owners: " + ((.owners // []) | join(", ") | if . == "" then "none recorded" else . end) + "; repositories: " + ((.repos // []) | join(", ") | if . == "" then "not listed in products.json" else . end) + "\n" +
+              (if .forensic_triage then "\n### Forensic triage (BOD 26-04)\n\nAssume the asset was reached before the patch: scope in 0–2 h, preserve evidence in 2–24 h before patching, contain in 6–24 h, analysis at 24–48 h, escalation decision with a triage report at 48–72 h.\n" else "" end) +
+              "\n### Techniques to run\n\n_Fill in: `atomic:<guid>`, `stratus:<technique>`, a described manual step, or control decomposition with the layers to test (docs/validation.md)._\n\n" +
+              "### Outcome per technique\n\n_`<technique> prevented|detected|logged|missed` with the evidence link._\n\n" +
+              "Snapshot " + $snap + "; run " + $run' <<< "${m}")"
+            existing="$(gh issue list -R "${REPO}" --state all --search "\"${title}\" in:title" --json number --jq '.[0].number // empty')"
+            if [ -n "${existing}" ]; then
+              echo "#${existing} already tracks ${title}; commenting"
+              gh issue comment "${existing}" -R "${REPO}" --body "Seen again in snapshot ${SNAPSHOT} (${kind} ${id}): ${RUN_URL}"
+            else
+              gh issue create -R "${REPO}" --title "${title}" --label "${labels}" --body "${body}"
+            fi
+          done

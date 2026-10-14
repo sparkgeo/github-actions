@@ -11,7 +11,8 @@ All action references in this repo are pinned to full commit SHAs, and every CI 
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
-| Threat Feeds Mirror | [`threat-feeds-mirror.yml`](.github/workflows/threat-feeds-mirror.yml) | `schedule` (daily), `workflow_dispatch` | Mirrors CISA KEV, EPSS, ThreatFox, Feodo Tracker and URLhaus into one normalised, checksummed snapshot per day, published as release assets (`threat-feeds-latest` and dated tags) for the `threat-feeds` composite |
+| Threat Feeds Mirror | [`threat-feeds-mirror.yml`](.github/workflows/threat-feeds-mirror.yml) | `schedule` (daily), `workflow_dispatch` | Mirrors CISA KEV, EPSS, ThreatFox, Feodo Tracker, URLhaus, the CISA advisories RSS and the Vulnrichment SSVC records of recent KEV entries into one normalised, checksummed snapshot per day, published as release assets (`threat-feeds-latest` and dated tags) for the `threat-feeds` composite |
+| KEV Trigger | [`kev-trigger.yml`](.github/workflows/kev-trigger.yml) | `schedule` (daily, after the mirror), `workflow_dispatch` | Matches new KEV entries and CISA advisories against [`policies/threat-intel/products.json`](policies/threat-intel/products.json) and the asset register; opens one `[validation] <CVE>: <product>` issue per match with the 72-hour deadline, SLA and forensic-triage labels (#187; see [`docs/threat-feeds.md`](docs/threat-feeds.md) "Signals") |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -42,7 +43,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
-| Threat Feeds | [`threat-feeds`](.github/actions/threat-feeds/action.yml) | Downloads the daily threat-intelligence snapshot from this repo's releases, verifies `SHA256SUMS`, caches per release; exposes `feeds-dir` with one JSON per feed. GitHub is the only egress | `feeds` (default: `kev,epss,threatfox,feodo,urlhaus`), `ref` (default: `latest`), `repository` (default: `sparkgeo/github-actions`), `token` (default: `github.token`) |
+| Threat Feeds | [`threat-feeds`](.github/actions/threat-feeds/action.yml) | Downloads the daily threat-intelligence snapshot from this repo's releases, verifies `SHA256SUMS`, caches per release; exposes `feeds-dir` with one JSON per feed. GitHub is the only egress | `feeds` (default: `kev,epss,threatfox,feodo,urlhaus,advisories,vulnrichment`), `ref` (default: `latest`), `repository` (default: `sparkgeo/github-actions`), `token` (default: `github.token`) |
 
 ### GitHub Actionlint
 
@@ -384,14 +385,14 @@ Free threat-intelligence feeds consumed by CI gates (SecOps plan Step 27, parent
       - id: feeds
         uses: sparkgeo/github-actions/.github/actions/threat-feeds@<SHA>
         with:
-          feeds: kev,epss        # default: all five
+          feeds: kev,epss        # default: all seven
           ref: latest            # or a date: 2026-10-07
       - run: jq '.count' "${FEEDS_DIR}/kev.json"
         env:
           FEEDS_DIR: ${{ steps.feeds.outputs.feeds-dir }}
 ```
 
-**Snapshot layout.** Each release (`threat-feeds-YYYY-MM-DD`, plus the rolling `threat-feeds-latest`, 90 dated tags retained) carries `kev.json`, `epss.json`, `threatfox.json`, `feodo.json`, `urlhaus.json` and `SHA256SUMS`. Every file has the same envelope:
+**Snapshot layout.** Each release (`threat-feeds-YYYY-MM-DD`, plus the rolling `threat-feeds-latest`, 90 dated tags retained) carries `kev.json`, `epss.json`, `threatfox.json`, `feodo.json`, `urlhaus.json`, `advisories.json`, `vulnrichment.json` and `SHA256SUMS`. Every file has the same envelope:
 
 ```json
 {"feed": "threatfox", "fetched_at": "2026-10-07T05:17:40Z", "source_url": "https://threatfox.abuse.ch/export/json/recent/",
@@ -403,10 +404,10 @@ Free threat-intelligence feeds consumed by CI gates (SecOps plan Step 27, parent
 
 | Field | Meaning |
 |---|---|
-| `type` | `cve`, `ip`, `cidr`, `domain` or `url`. ThreatFox `ip:port` becomes `ip` with `meta.port`; hash indicators are skipped (checksum-verified downloads already cover that path) and counted in `skipped_count` |
+| `type` | `cve`, `ip`, `cidr`, `domain`, `url` or `advisory`. ThreatFox `ip:port` becomes `ip` with `meta.port`; hash indicators are skipped (checksum-verified downloads already cover that path) and counted in `skipped_count` |
 | `confidence` | 0–100. ThreatFox's own `confidence_level`; 100 for KEV, EPSS and online Feodo/URLhaus entries, 50 for offline ones |
 | `expires_at` | IOC lifecycle policy from the plan: `ip` 30 days, `url` 60, `domain` 90, counted from `last_seen` (else `first_seen`); `cve` never expires. Expired entries are dropped by the mirror and counted in `dropped_count` |
-| `meta` | Feed-specific extras: KEV `due_date`, `ransomware`, `vendor`, `product`; EPSS `epss`, `percentile`; abuse.ch `malware`, `threat_type`, `tags`, `status` |
+| `meta` | Feed-specific extras: KEV `due_date`, `ransomware`, `forensic_triage`, `vendor`, `product`; EPSS `epss`, `percentile`; abuse.ch `malware`, `threat_type`, `tags`, `status`; advisories `title`, `cves`; Vulnrichment `exploitation`, `automatable`, `technical_impact`, `cvss` |
 
 EPSS is the whole score set (about 380,000 CVEs, 39 MB); the other four are small. The composite caches the downloaded set per release, so a job pays the download once per snapshot.
 

@@ -73,7 +73,10 @@ All ports are 443.
 | Threat Feeds Mirror (`threat-feeds-mirror.yml`) | `www.cisa.gov` | CISA KEV catalogue |
 | | `epss.empiricalsecurity.com` | FIRST EPSS scores (`epss.cyentia.com` redirects here; fetched directly) |
 | | `threatfox.abuse.ch`, `feodotracker.abuse.ch`, `urlhaus.abuse.ch` | abuse.ch exports |
+| | `www.cisa.gov` (same host as KEV) | CISA advisories RSS |
+| | `raw.githubusercontent.com` | Vulnrichment records for recent KEV entries (`cisagov/vulnrichment`) |
 | | `github.com`, `api.github.com`, `uploads.github.com`, `release-assets.githubusercontent.com` | checkout, previous snapshot, release creation and asset upload, tracking issue |
+| KEV Trigger (`kev-trigger.yml`) | `github.com`, `api.github.com`, `release-assets.githubusercontent.com` | checkout; the feed snapshot and the asset register through `gh release download`; `gh issue` and `gh label` |
 
 The mirror is the only job in the organisation that may reach the upstream
 feed hosts. Consuming workflows read the snapshot through the `threat-feeds`

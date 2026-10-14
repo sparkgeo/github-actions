@@ -117,6 +117,9 @@ jobs:
       - name: Normaliser fixtures
         run: tests/threat-feeds/run.sh
 
+      - name: KEV trigger matcher fixtures
+        run: tests/kev-trigger/run.sh
+
       - name: Check for a published snapshot
         id: snapshot
         env:

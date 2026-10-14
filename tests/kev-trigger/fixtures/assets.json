@@ -1,0 +1,6 @@
+{"generated_at": "2026-10-07T05:00:00Z", "counts": {"repos": 2, "assets": 3},
+ "assets": [
+  {"repo": "sparkgeo/geo-api", "id": "ApiFunction1A2B", "type": "AWS::Lambda::Function", "tags": {"owner": "team-api", "project": "geo-api", "environment": "prod", "data-class": "internal", "exposure": "public"}},
+  {"repo": "sparkgeo/geo-api", "id": "Table", "type": "AWS::DynamoDB::Table", "tags": {"owner": "team-api", "project": "geo-api", "environment": "prod", "data-class": "internal", "exposure": "internal"}},
+  {"repo": "sparkgeo/prescient-infra", "id": "aws_s3_bucket.ingest", "type": "aws_s3_bucket", "tags": {"owner": "team-old", "project": "prescient", "environment": "prod", "data-class": "confidential"}}
+ ]}

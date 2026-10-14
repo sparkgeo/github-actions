@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xml:base="https://www.cisa.gov/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>All CISA Advisories</title>
+    <link>https://www.cisa.gov/</link>
+    <item>
+      <title>CISA Adds Two Known Exploited Vulnerabilities to Catalog</title>
+      <link>https://www.cisa.gov/news-events/alerts/2026/10/04/cisa-adds-two-known-exploited-vulnerabilities-catalog</link>
+      <description>&lt;p&gt;CISA has added two new vulnerabilities to its KEV Catalog.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;CVE-2026-88779 Citrix NetScaler Improper Restriction of Operations within the Bounds of a Memory Buffer Vulnerability&lt;/li&gt;&lt;li&gt;CVE-2026-102490 Zammad GmbH Zammad Improper Privilege Management Vulnerability&lt;/li&gt;&lt;/ul&gt;</description>
+      <pubDate>Sat, 04 Oct 2026 12:00:00 +0000</pubDate>
+      <dc:creator>CISA</dc:creator>
+    </item>
+    <item>
+      <title>GeoServer WMS GetMap Remote Code Execution Advisory</title>
+      <link>https://www.cisa.gov/news-events/alerts/2026/09/30/geoserver-advisory</link>
+      <description>&lt;p&gt;OSGeo GeoServer versions before 2.27.3 allow remote code execution. CVE-2026-55555.&lt;/p&gt;</description>
+      <pubDate>Wed, 30 Sep 2026 15:30:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>ICS Advisory with no CVE and an old date</title>
+      <link>https://www.cisa.gov/news-events/ics-advisories/icsa-26-001-01</link>
+      <description>&lt;p&gt;Old advisory.&lt;/p&gt;</description>
+      <pubDate>Mon, 05 Jan 2026 10:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>
