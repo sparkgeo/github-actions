@@ -156,13 +156,28 @@ Every scanning workflow in this repo produces findings that map to one row of th
 
 Advanced tier only: EPSS ≥ 0.10 or a CISA KEV listing uplifts any CVE to **Critical** (issue #80).
 
+### Decision outcomes
+
+Every finding older than 14 days carries exactly one `outcome:*` label with its evidence on the issue. The four outcomes map onto CISA SSVC so a client or auditor using SSVC reads them directly.
+
+| Outcome | Label | Evidence on the issue | SSVC |
+|---|---|---|---|
+| **Fix** | `outcome:fix` | Merged PR and passing re-scan; for a configuration, rule, or control change, the re-validation result (prevented or detected, [`docs/validation.md` § 6](docs/validation.md#6-re-validation-gate)) | Act |
+| **Mitigate** | `outcome:mitigate` | A compensating control recorded as *prevented* under emulation, or every layer of the control decomposition recorded as prevented or detected. The finding stays open one SLA row lower; the downgrade expires when the next run no longer shows *prevented* | Attend |
+| **Monitor** | `outcome:monitor` | The detection rule that fires for the technique, confirmed under emulation. The finding stays open and is re-reviewed each cycle | Track\* |
+| **Accept** | `outcome:accept` | The approved [security exception](.github/ISSUE_TEMPLATE/security-exception.yml). Re-enters validation when the asset, the control it relied on, or the threat intelligence around it changes, not only at expiry; the [trigger table](docs/validation.md#3-trigger-table) is the signal | Track |
+
+**AI-generated findings**: a finding raised by a model (LLM diff review, AI test sweep, pentest agent) enters the SLA table only with a reproducer, an exploited status, or a traced path from input to sink attached. Otherwise it carries `ai-informational` and starts no clock. A model's downgrade of a Critical is a recommendation until a person records the outcome.
+
+**Forensic triage**: a KEV-listed CVE giving total control on a publicly exposed asset is `sla:critical` plus `forensic-triage`. Assume the asset was reached before the patch: scope in 0–2 hours, preserve evidence in 2–24 hours before patching, contain in 6–24 hours, analysis at 24–48 hours, escalation decision with a triage report at 48–72 hours (CISA BOD 26-04 sequence, SecOps plan Step 22).
+
 ### Process
 
 1. **Triage** the finding into the tracking issue within one working day. Label it `security-finding` plus one `sla:*` label from [`docs/findings-labels.md`](docs/findings-labels.md). The SLA clock starts now.
 2. **Fix** inside the window. The PR that fixes it closes the issue.
 3. **Re-validation before close** when the fix is a configuration, rule, or control change: the technique is re-run and recorded as prevented or detected before the issue closes ([`docs/validation.md` § 6](docs/validation.md#6-re-validation-gate)). Code fixes close on the merged PR plus a passing re-scan.
-4. **Exception** when a fix cannot land in time: open a [security exception request](.github/ISSUE_TEMPLATE/security-exception.yml). Exceptions are written, time-boxed (90 days maximum), require a compensating control, and are signed off by the SecOps lead. They are re-reviewed at expiry. No finding receives a second exception without escalation to the accountable executive. Secret findings are not eligible: rotate the credential.
-5. **Monthly review**: open findings past their deadline and expiring exceptions are reviewed in the monthly security meeting.
+4. **Exception** when a fix cannot land in time: open a [security exception request](.github/ISSUE_TEMPLATE/security-exception.yml). Exceptions are written, time-boxed (90 days maximum), require a compensating control recorded as *prevented* under emulation, and are signed off by the SecOps lead. They are re-reviewed at expiry and re-enter validation earlier when the asset, the control, or the threat intelligence changes. No finding receives a second exception without the executive sponsor's sign-off. Secret findings are not eligible: rotate the credential.
+5. **Monthly review**: open findings past their deadline, findings older than 14 days with no `outcome:*` label, and expiring exceptions are reviewed in the monthly security meeting.
 
 ## Reporting a security vulnerability
 

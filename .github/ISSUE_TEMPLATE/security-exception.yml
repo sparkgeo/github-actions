@@ -1,12 +1,12 @@
 name: Security exception request
 description: Request a time-boxed exception (90 days maximum) for a security finding that cannot be fixed inside its SLA.
 title: "[exception] <finding reference>"
-labels: ["exception", "security-finding"]
+labels: ["exception", "security-finding", "outcome:accept"]
 body:
   - type: markdown
     attributes:
       value: |
-        Exceptions are written, time-boxed (90 days maximum), require a compensating control, and are signed off by the SecOps lead. They are re-reviewed at expiry. No finding receives a second exception without escalation to the accountable executive. **Secret / credential findings are not eligible: revoke and rotate within 24 hours.**
+        Exceptions are written, time-boxed (90 days maximum), require a compensating control recorded as *prevented* under emulation, and are signed off by the SecOps lead. They are re-reviewed at expiry, and earlier when the asset, the control, or the threat intelligence changes. No finding receives a second exception without the executive sponsor's sign-off. **Secret / credential findings are not eligible: revoke and rotate within 24 hours.**
 
         SLA rows and the workflow mapping: `CONTRIBUTING.md`, section "Findings and SLAs".
   - type: input
@@ -81,7 +81,7 @@ body:
     id: compensating-control
     attributes:
       label: Compensating control
-      description: What reduces the risk while the exception is open, and where it is enforced (network policy, WAF rule, feature flag, monitoring, ...).
+      description: What reduces the risk while the exception is open, where it is enforced (network policy, WAF rule, feature flag, monitoring, ...), and a link to the validation run that recorded the technique as *prevented* by it (`docs/validation.md`). *Detected* does not qualify.
     validations:
       required: true
   - type: textarea
@@ -91,6 +91,31 @@ body:
       description: How and when the finding will be fixed for good, and who owns it.
     validations:
       required: true
+  - type: checkboxes
+    id: re-entry
+    attributes:
+      label: Re-entry triggers
+      description: The exception is re-reviewed before expiry when any of these happens. Tick the ones that apply to this finding so the trigger table in `docs/validation.md` can name it.
+      options:
+        - label: The asset changes exposure, moves environment, or joins the high-value list
+        - label: The compensating control changes, is retired, or stops showing *prevented* in a validation run
+        - label: A KEV entry, advisory, or threat-intelligence spike names the vulnerable product or technique
+  - type: dropdown
+    id: exception-count
+    attributes:
+      label: Is this a second exception for the same finding?
+      description: A second exception needs the executive sponsor's sign-off in a comment, in addition to the SecOps lead.
+      options:
+        - "No, first exception"
+        - "Yes, second exception (executive sponsor sign-off required)"
+    validations:
+      required: true
+  - type: input
+    id: executive-sponsor
+    attributes:
+      label: Executive sponsor sign-off (second exception only)
+      description: GitHub handle of the executive sponsor. Required when the answer above is yes; approval is a comment on this issue.
+      placeholder: "@handle"
   - type: input
     id: secops-lead
     attributes:
@@ -104,8 +129,6 @@ body:
     attributes:
       label: Acknowledgements
       options:
-        - label: This is the first exception requested for this finding (a second one needs escalation to the accountable executive).
-          required: true
         - label: The compensating control is in place before approval, not after.
           required: true
         - label: The requested expiry is at most 90 days from approval and the finding will be re-reviewed on that date.
