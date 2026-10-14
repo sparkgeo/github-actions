@@ -1,0 +1,4 @@
+[{"fuzzer":"*original","domain":"example.com","dns_a":["203.0.113.10"]},
+ {"fuzzer":"homoglyph","domain":"examp1e.com","dns_a":["192.0.2.66"],"dns_ns":["ns1.parking.test"]},
+ {"fuzzer":"omission","domain":"exampl.com"},
+ {"fuzzer":"addition","domain":"examplea.com","dns_mx":["mail.examplea.com"]}]

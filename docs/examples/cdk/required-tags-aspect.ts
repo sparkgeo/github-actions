@@ -20,6 +20,7 @@ export const REQUIRED: Record<string, TagSpec> = {
   project: { pattern: /^[a-z0-9-]{3,40}$/ },
   environment: { enum: ['dev', 'staging', 'prod', 'shared'] },
   'data-class': { enum: ['public', 'internal', 'confidential', 'restricted'] },
+  exposure: { enum: ['public', 'internal'] },
 };
 
 export class RequiredTagsAspect implements IAspect {

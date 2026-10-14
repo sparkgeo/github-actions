@@ -20,5 +20,6 @@ resource "azurerm_resource_group" "main" {
     project     = "fixture"
     environment = "dev"
     data-class  = "internal"
+    exposure    = "internal"
   }
 }

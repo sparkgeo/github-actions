@@ -19,7 +19,7 @@ inputs:
     required: true
   required-tags:
     description: "Comma-separated tag keys a taggable resource must carry (policies/tags/standard.yml)."
-    default: "owner,project,environment,data-class"
+    default: "owner,project,environment,data-class,exposure"
   account:
     description: "Cloud account id to record on every resource (plans do not carry it)."
     default: ""

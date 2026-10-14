@@ -1,0 +1,11 @@
+{
+  "$comment": "Scope of the weekly external attack-surface scan (easm-scan.yml, issue #184, SecOps plan Step 31). Scan only what we own or operate. Every domain and range needs an owner and an authorisation: 'owned' for Sparkgeo's own registrations, otherwise a reference to the client's written authorisation (ticket or document), without which the entry is refused by check-scope. known_hosts lists internet-facing hosts the asset register cannot name (the register lists cloud resources, not DNS names it did not create). exclude lists hosts that must never be probed. See docs/easm.md.",
+  "domains": [
+    {"domain": "sparkgeo.com", "owner": "team-platform", "authorisation": "owned"}
+  ],
+  "cidrs": [],
+  "known_hosts": [
+    {"host": "www.sparkgeo.com", "owner": "team-platform"}
+  ],
+  "exclude": []
+}

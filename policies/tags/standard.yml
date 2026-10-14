@@ -20,6 +20,9 @@ tags:
     data-class:
       description: Highest data classification tier the resource stores or processes (docs/data-classification.md, issue #100).
       enum: [public, internal, confidential, restricted]
+    exposure:
+      description: Whether the resource is reachable from the internet (public) or only from inside the network (internal). Seeds the external attack-surface scan (docs/easm.md, issue #184) and the Step 25 asset-context modifier.
+      enum: [public, internal]
   optional:
     cost-center:
       description: Finance cost centre, when billing is split below project level.

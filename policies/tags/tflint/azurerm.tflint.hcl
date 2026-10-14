@@ -9,5 +9,5 @@ plugin "azurerm" {
 
 rule "azurerm_resource_missing_tags" {
   enabled = true
-  tags    = ["owner", "project", "environment", "data-class"]
+  tags    = ["owner", "project", "environment", "data-class", "exposure"]
 }

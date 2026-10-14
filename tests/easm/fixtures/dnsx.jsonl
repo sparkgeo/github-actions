@@ -1,0 +1,8 @@
+{"host":"www.example.com","a":["203.0.113.10"]}
+{"host":"api.example.com","a":["203.0.113.11"]}
+{"host":"tiles.example.com","cname":["d123.cloudfront.net"],"a":["203.0.113.12"]}
+{"host":"staging-geoserver.example.com","a":["203.0.113.20"]}
+{"host":"old.example.com"}
+{"host":"dangling.example.com","cname":["gone-bucket.s3-website-us-west-2.amazonaws.com"]}
+{"host":"donotscan.example.com","a":["203.0.113.99"]}
+{"host":"portal.client.example","a":["198.51.100.5"]}

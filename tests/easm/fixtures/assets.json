@@ -1,0 +1,6 @@
+{"generated_at": "2026-10-07T05:00:00Z", "counts": {"repos": 1, "assets": 3},
+ "assets": [
+  {"repo": "sparkgeo/geo-api", "id": "aws_route53_record.api", "type": "aws_route53_record", "name": "api.example.com.", "tags": {"owner": "team-api", "exposure": "public"}},
+  {"repo": "sparkgeo/geo-api", "id": "aws_cloudfront_distribution.tiles", "type": "aws_cloudfront_distribution", "name": "tiles.example.com", "tags": {"owner": "team-geo", "exposure": "public"}},
+  {"repo": "sparkgeo/geo-api", "id": "aws_s3_bucket.ingest", "type": "aws_s3_bucket", "name": "ingest", "tags": {"owner": "team-api", "exposure": "internal"}}
+ ]}

@@ -15,6 +15,7 @@ provider "google" {
     project     = "fixture"
     environment = "dev"
     data-class  = "internal"
+    exposure    = "internal"
   }
 }
 

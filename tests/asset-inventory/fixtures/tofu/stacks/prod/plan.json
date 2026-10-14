@@ -17,13 +17,15 @@
        "owner": "team-platform",
        "project": "prescient",
        "environment": "prod",
-       "data-class": "confidential"
+       "data-class": "confidential",
+       "exposure": "internal"
       },
       "tags_all": {
        "owner": "team-platform",
        "project": "prescient",
        "environment": "prod",
-       "data-class": "confidential"
+       "data-class": "confidential",
+       "exposure": "internal"
       }
      }
     },
@@ -116,13 +118,15 @@
          "owner": "team-platform",
          "project": "prescient",
          "environment": "prod",
-         "data-class": "confidential"
+         "data-class": "confidential",
+         "exposure": "internal"
         },
         "tags_all": {
          "owner": "team-platform",
          "project": "prescient",
          "environment": "prod",
-         "data-class": "confidential"
+         "data-class": "confidential",
+         "exposure": "internal"
         }
        }
       }
@@ -144,13 +148,15 @@
            "owner": "team-platform",
            "project": "prescient",
            "environment": "production",
-           "data-class": "confidential"
+           "data-class": "confidential",
+           "exposure": "internal"
           },
           "tags_all": {
            "owner": "team-platform",
            "project": "prescient",
            "environment": "production",
-           "data-class": "confidential"
+           "data-class": "confidential",
+           "exposure": "internal"
           }
          },
          "index": 0

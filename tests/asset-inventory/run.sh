@@ -38,10 +38,10 @@ run tofu tofu "${FIX}/tofu"
 [ "${rc}" -eq 0 ] || fail "tofu rc ${rc}: $(cat "${TMP}/tofu/log")"
 expected="$(cat <<'EOT'
 stacks/dev google_storage_bucket.assets google_storage_bucket assets us-central1 -
-stacks/prod aws_iam_role.app aws_iam_role app us-west-2 data-class,environment,owner,project
+stacks/prod aws_iam_role.app aws_iam_role app us-west-2 data-class,environment,exposure,owner,project
 stacks/prod aws_s3_bucket.ingest aws_s3_bucket ingest us-west-2 -
-stacks/prod aws_s3_bucket.logs["a"] aws_s3_bucket logs us-west-2 data-class,environment,project
-stacks/prod aws_s3_bucket.logs["b"] aws_s3_bucket logs us-west-2 data-class,environment,project
+stacks/prod aws_s3_bucket.logs["a"] aws_s3_bucket logs us-west-2 data-class,environment,exposure,project
+stacks/prod aws_s3_bucket.logs["b"] aws_s3_bucket logs us-west-2 data-class,environment,exposure,project
 stacks/prod module.net.aws_vpc.main aws_vpc main us-west-2 -
 stacks/prod module.net.module.subnets.aws_subnet.private[0] aws_subnet private us-west-2 -
 stacks/prod random_id.suffix random_id suffix null -
@@ -59,7 +59,7 @@ ${actual}"
 [ "$(inv tofu '.counts | "\(.resources) \(.taggable) \(.violations)"')" = "8 7 3" ] || fail "tofu counts $(inv tofu '.counts')"
 [ "$(inv tofu '.stack_kind')" = "tofu" ] || fail "stack_kind"
 [ "$(inv tofu '.generated_at')" = "${NOW}" ] || fail "generated_at"
-[ "$(inv tofu '.required_tags | join(",")')" = "owner,project,environment,data-class" ] || fail "required_tags"
+[ "$(inv tofu '.required_tags | join(",")')" = "owner,project,environment,data-class,exposure" ] || fail "required_tags"
 [ "$(output tofu resource-count)" = "8" ] || fail "resource-count output"
 [ "$(output tofu violation-count)" = "3" ] || fail "violation-count output"
 [ "$(output tofu report-path)" = "${TMP}/tofu/report.md" ] || fail "report-path output"
@@ -77,8 +77,8 @@ echo "== cdk: templates, cdk path as source, taggable heuristics"
 run cdk cdk "${FIX}/cdk/cdk.out"
 [ "${rc}" -eq 0 ] || fail "cdk rc ${rc}: $(cat "${TMP}/cdk/log")"
 expected="$(cat <<'EOT'
-Prod AppRole4D5E6F AWS::IAM::Role true Prod/App/Role/Resource data-class,environment,owner,project
-Prod Events7G8H9I AWS::SNS::Topic true Prod/Events/Resource data-class,project
+Prod AppRole4D5E6F AWS::IAM::Role true Prod/App/Role/Resource data-class,environment,exposure,owner,project
+Prod Events7G8H9I AWS::SNS::Topic true Prod/Events/Resource data-class,exposure,project
 Prod EventsPermission AWS::Lambda::Permission false Prod/Events/Permission -
 Prod IngestBucket1A2B3C AWS::S3::Bucket true Prod/Ingest/Resource -
 EOT

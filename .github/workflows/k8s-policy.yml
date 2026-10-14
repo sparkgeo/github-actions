@@ -34,7 +34,7 @@ on:
         default: false
         type: boolean
       require-tags:
-        description: 'Enforce the Sparkgeo tagging standard as required labels (owner, project, environment, data-class)'
+        description: 'Enforce the Sparkgeo tagging standard as required labels (owner, project, environment, data-class, exposure)'
         default: true
         type: boolean
       actions-ref:
