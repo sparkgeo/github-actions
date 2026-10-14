@@ -151,6 +151,7 @@ Every scanning workflow in this repo produces findings that map to one row of th
 | `k8s-policy.yml` | conftest | Org policy violation (registry, pinning, resources, root, privileged) | Every `deny` is **High**. It blocks the PR; an exception needs a `data-path` override or the exception process below. |
 | `sast-precommit.yml` | semgrep | Code pattern | `ERROR` **High**, `WARNING` **Medium**, `INFO` **Low**. |
 | `sast-scan.yml` | CodeQL | Code vulnerability | Rule `security-severity` score to the matching row; unscored rules are reported and never block. |
+| Validation runs: `stratus-red-team.yml` (#178), manual Atomic Red Team sessions, control decomposition | Stratus Red Team, Atomic Red Team | A technique recorded as *missed* by the deployed controls | Always **High**; the issue carries `validation:miss`. A High-tier trigger (unknown internet-facing asset, KEV hit on an inventoried product, release on a high-value asset) is validated within 72 hours, a Medium-tier one within 7 days: [`docs/validation.md`](docs/validation.md). |
 | `lint-*.yml`, `test-*.yml`, `github-actionlint`, `zizmor`, `kubeconform` | various | Correctness, style, coverage | Not security findings. Must pass to merge; no SLA row. |
 
 Advanced tier only: EPSS ≥ 0.10 or a CISA KEV listing uplifts any CVE to **Critical** (issue #80).
@@ -159,8 +160,9 @@ Advanced tier only: EPSS ≥ 0.10 or a CISA KEV listing uplifts any CVE to **Cri
 
 1. **Triage** the finding into the tracking issue within one working day. Label it `security-finding` plus one `sla:*` label from [`docs/findings-labels.md`](docs/findings-labels.md). The SLA clock starts now.
 2. **Fix** inside the window. The PR that fixes it closes the issue.
-3. **Exception** when a fix cannot land in time: open a [security exception request](.github/ISSUE_TEMPLATE/security-exception.yml). Exceptions are written, time-boxed (90 days maximum), require a compensating control, and are signed off by the SecOps lead. They are re-reviewed at expiry. No finding receives a second exception without escalation to the accountable executive. Secret findings are not eligible: rotate the credential.
-4. **Monthly review**: open findings past their deadline and expiring exceptions are reviewed in the monthly security meeting.
+3. **Re-validation before close** when the fix is a configuration, rule, or control change: the technique is re-run and recorded as prevented or detected before the issue closes ([`docs/validation.md` § 6](docs/validation.md#6-re-validation-gate)). Code fixes close on the merged PR plus a passing re-scan.
+4. **Exception** when a fix cannot land in time: open a [security exception request](.github/ISSUE_TEMPLATE/security-exception.yml). Exceptions are written, time-boxed (90 days maximum), require a compensating control, and are signed off by the SecOps lead. They are re-reviewed at expiry. No finding receives a second exception without escalation to the accountable executive. Secret findings are not eligible: rotate the credential.
+5. **Monthly review**: open findings past their deadline and expiring exceptions are reviewed in the monthly security meeting.
 
 ## Reporting a security vulnerability
 
