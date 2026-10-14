@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Normalise one upstream threat feed into the mirror's common envelope.
 
-Usage: normalize.py --feed <kev|epss|threatfox|feodo|urlhaus> --input FILE
+Usage: normalize.py --feed <kev|epss|threatfox|feodo|urlhaus|advisories|vulnrichment>
+                    --input FILE
                     --output FILE [--previous FILE] [--now ISO8601]
 
 Envelope: {"feed", "fetched_at", "source_url", "count", "dropped_count",
            "skipped_count", "meta", "entries": [...]}
-Entry:    {"value", "type" (cve|ip|cidr|domain|url), "confidence" (0-100),
+Entry:    {"value", "type" (cve|ip|cidr|domain|url|advisory), "confidence" (0-100),
            "first_seen"?, "last_seen"?, "expires_at"?, "meta"?}
 
 Expiry (SecOps plan Step 27 IOC lifecycle): ip 30 days, url 60, domain 90,
-cve never. The clock runs from last_seen when the feed has it, else
+advisory 90, cve never. The clock runs from last_seen when the feed has it, else
 first_seen. Expired entries are dropped and counted.
 
 Exit codes: 0 ok; 1 unreadable or empty feed; 2 entry count fell by more
@@ -24,10 +25,14 @@ import gzip
 import io
 import json
 import os
+import re
 import sys
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta, timezone
 
-EXPIRY_DAYS = {"ip": 30, "url": 60, "domain": 90, "cve": None, "cidr": 30}
+EXPIRY_DAYS = {"ip": 30, "url": 60, "domain": 90, "cve": None, "cidr": 30, "advisory": 90}
+CVE_RE = re.compile(r"CVE-\d{4}-\d{4,}")
 
 SOURCE_URLS = {
     "kev": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
@@ -35,6 +40,8 @@ SOURCE_URLS = {
     "threatfox": "https://threatfox.abuse.ch/export/json/recent/",
     "feodo": "https://feodotracker.abuse.ch/downloads/ipblocklist.json",
     "urlhaus": "https://urlhaus.abuse.ch/downloads/csv_recent/",
+    "advisories": "https://www.cisa.gov/cybersecurity-advisories/all.xml",
+    "vulnrichment": "https://github.com/cisagov/vulnrichment",
 }
 
 MAX_DROP_RATIO = 0.5
@@ -88,6 +95,7 @@ def parse_kev(text):
                 "vendor": v.get("vendorProject"), "product": v.get("product"),
                 "name": v.get("vulnerabilityName"), "due_date": v.get("dueDate"),
                 "ransomware": v.get("knownRansomwareCampaignUse"),
+                "forensic_triage": v.get("forensicTriage"),
             },
         ))
     return out, 0, {"catalog_version": data.get("catalogVersion"), "date_released": data.get("dateReleased")}
@@ -154,7 +162,56 @@ def parse_urlhaus(text):
     return out, 0, {}
 
 
-PARSERS = {"kev": parse_kev, "epss": parse_epss, "threatfox": parse_threatfox, "feodo": parse_feodo, "urlhaus": parse_urlhaus}
+def parse_advisories(text):
+    """CISA 'All Advisories' RSS: one entry per item, keyed by link; CVE ids pulled from title and description."""
+    out = []
+    for item in ET.fromstring(text).iter("item"):
+        link = (item.findtext("link") or "").strip()
+        if not link:
+            continue
+        title = (item.findtext("title") or "").strip()
+        desc = item.findtext("description") or ""
+        try:
+            published = parsedate_to_datetime(item.findtext("pubDate") or "")
+        except (TypeError, ValueError):
+            published = None
+        cves = sorted(set(CVE_RE.findall(title + " " + desc)))
+        out.append(entry(link, "advisory", 100, first_seen=published, meta={"title": title, "cves": cves}))
+    return out, 0, {}
+
+
+def parse_vulnrichment(text):
+    """{"records": [<CVE JSON 5 record>...]} as assembled by the mirror from cisagov/vulnrichment.
+
+    Keeps the CISA ADP SSVC decision points (exploitation, automatable, technical impact)
+    and the highest CVSS base score found in any container."""
+    out, skipped = [], 0
+    for rec in json.loads(text).get("records", []):
+        cve = (rec.get("cveMetadata") or {}).get("cveId")
+        if not cve:
+            skipped += 1
+            continue
+        meta = {"exploitation": None, "automatable": None, "technical_impact": None, "cvss": None}
+        containers = rec.get("containers") or {}
+        for c in [containers.get("cna") or {}] + list(containers.get("adp") or []):
+            for m in c.get("metrics") or []:
+                other = m.get("other") or {}
+                if other.get("type") == "ssvc":
+                    for opt in (other.get("content") or {}).get("options") or []:
+                        for k, v in opt.items():
+                            key = k.lower().replace(" ", "_")
+                            if key in meta:
+                                meta[key] = str(v).lower()
+                for key in ("cvssV4_0", "cvssV3_1", "cvssV3_0"):
+                    score = (m.get(key) or {}).get("baseScore")
+                    if score is not None and (meta["cvss"] is None or score > meta["cvss"]):
+                        meta["cvss"] = float(score)
+        out.append(entry(cve, "cve", 100, meta=meta))
+    return out, skipped, {}
+
+
+PARSERS = {"kev": parse_kev, "epss": parse_epss, "threatfox": parse_threatfox, "feodo": parse_feodo,
+           "urlhaus": parse_urlhaus, "advisories": parse_advisories, "vulnrichment": parse_vulnrichment}
 
 
 def apply_expiry(entries, now):
@@ -213,7 +270,7 @@ def main():
         with open(summary, "a") as f:
             f.write(f"| {args.feed} | {len(entries)} | {dropped} | {skipped} |\n")
 
-    if args.previous:
+    if args.previous and args.feed != "vulnrichment":  # its count follows the KEV window, not an outage
         try:
             with open(args.previous) as f:
                 prev = int(json.load(f).get("count", 0))

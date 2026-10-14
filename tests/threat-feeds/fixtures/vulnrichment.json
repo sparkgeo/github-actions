@@ -1,0 +1,16 @@
+{"records": [
+ {"dataType": "CVE_RECORD", "dataVersion": "5.1",
+  "cveMetadata": {"cveId": "CVE-2026-102490", "state": "PUBLISHED"},
+  "containers": {
+   "cna": {"metrics": [{"cvssV3_1": {"baseScore": 7.8, "vectorString": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"}}]},
+   "adp": [{"title": "CISA ADP Vulnrichment",
+            "metrics": [{"other": {"type": "ssvc", "content": {"timestamp": "2026-10-02T16:27:22.630800Z",
+                         "options": [{"Exploitation": "active"}, {"Automatable": "no"}, {"Technical Impact": "total"}]}}},
+                        {"cvssV3_1": {"baseScore": 8.8, "vectorString": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"}}]}]}},
+ {"dataType": "CVE_RECORD", "dataVersion": "5.1",
+  "cveMetadata": {"cveId": "CVE-2026-88779", "state": "PUBLISHED"},
+  "containers": {"cna": {}, "adp": [{"title": "CISA ADP Vulnrichment",
+            "metrics": [{"other": {"type": "ssvc", "content": {"timestamp": "2026-10-04T10:00:00Z",
+                         "options": [{"Exploitation": "active"}, {"Automatable": "yes"}, {"Technical Impact": "partial"}]}}}]}]}},
+ {"dataType": "CVE_RECORD", "containers": {}}
+]}

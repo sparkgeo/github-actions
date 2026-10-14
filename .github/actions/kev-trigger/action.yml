@@ -1,0 +1,48 @@
+name: "KEV Trigger"
+description: |
+  Matches the KEV entries and CISA advisories added inside a window against
+  the products listed in policies/threat-intel/products.json, with exposure
+  and owners from the asset register when it is given, and writes
+  matches.json (issue #187, SecOps plan Step 27 Standard). Opening the
+  validation-trigger issues is the caller's job (kev-trigger.yml does it).
+inputs:
+  feeds-dir:
+    description: "Directory from the threat-feeds composite (kev.json, advisories.json, vulnrichment.json)."
+    required: true
+  products:
+    description: "Product list, JSON."
+    default: "policies/threat-intel/products.json"
+  register:
+    description: "register/assets.json from asset-register-rollup.yml; optional."
+    default: ""
+  window-days:
+    description: "How far back a KEV dateAdded or advisory pubDate may be to count as new."
+    default: "7"
+  output:
+    description: "Where to write matches.json."
+    default: "${{ runner.temp }}/kev-trigger/matches.json"
+outputs:
+  matches:
+    description: "Path of matches.json."
+    value: ${{ inputs.output }}
+  match-count:
+    description: "Number of matches."
+    value: ${{ steps.match.outputs.count }}
+runs:
+  using: "composite"
+  steps:
+    - id: match
+      shell: bash
+      env:
+        FEEDS_DIR: ${{ inputs.feeds-dir }}
+        PRODUCTS: ${{ inputs.products }}
+        REGISTER: ${{ inputs.register }}
+        WINDOW: ${{ inputs.window-days }}
+        OUTPUT: ${{ inputs.output }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$(dirname "${OUTPUT}")"
+        args=(--feeds-dir "${FEEDS_DIR}" --products "${PRODUCTS}" --window-days "${WINDOW}" --output "${OUTPUT}")
+        [ -n "${REGISTER}" ] && args+=(--register "${REGISTER}")
+        python3 -I "${GITHUB_ACTION_PATH}/match.py" "${args[@]}"
+        echo "count=$(jq '.matches | length' "${OUTPUT}")" >> "${GITHUB_OUTPUT}"

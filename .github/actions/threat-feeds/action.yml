@@ -2,20 +2,21 @@ name: "Threat Feeds"
 description: |
   Downloads the normalised threat-intelligence snapshot published by this
   repo's daily mirror (threat-feeds-mirror.yml, issue #109): CISA KEV, FIRST
-  EPSS, abuse.ch ThreatFox, Feodo Tracker and URLhaus, each as one JSON file
+  EPSS, abuse.ch ThreatFox, Feodo Tracker and URLhaus, CISA advisories and
+  the CISA Vulnrichment SSVC values for recent KEV entries, each as one JSON file
   with a common envelope and the IOC expiry policy already applied. Verifies
   SHA256SUMS and caches the set per release, so a consuming workflow talks
   only to GitHub (github.com, api.github.com, release-assets.githubusercontent.com)
   and never to the upstream feed hosts.
 
-  Entry schema: {value, type (cve|ip|cidr|domain|url), confidence 0-100,
+  Entry schema: {value, type (cve|ip|cidr|domain|url|advisory), confidence 0-100,
   first_seen?, last_seen?, expires_at?, meta?}. See README "Threat Feeds".
 
   Required permissions on calling job: contents: read
 inputs:
   feeds:
-    description: "Comma-separated subset of kev, epss, threatfox, feodo, urlhaus."
-    default: "kev,epss,threatfox,feodo,urlhaus"
+    description: "Comma-separated subset of kev, epss, threatfox, feodo, urlhaus, advisories, vulnrichment."
+    default: "kev,epss,threatfox,feodo,urlhaus,advisories,vulnrichment"
   ref:
     description: "`latest`, a date (YYYY-MM-DD) for that day's snapshot, or a full release tag."
     default: "latest"

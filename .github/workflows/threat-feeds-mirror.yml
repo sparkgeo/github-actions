@@ -2,7 +2,9 @@ name: Threat Feeds Mirror
 
 # Daily mirror of the free threat-intelligence feeds that CI gates consume
 # (SecOps plan Step 27, issue #109). Fetches CISA KEV, FIRST EPSS, and the
-# abuse.ch ThreatFox, Feodo Tracker and URLhaus exports, normalises each to
+# abuse.ch ThreatFox, Feodo Tracker and URLhaus exports, the CISA advisories
+# RSS, and the Vulnrichment SSVC record of every KEV entry added in the last
+# 30 days (issue #187), normalises each to
 # one JSON envelope with the IOC expiry policy applied, and publishes the set
 # with SHA256SUMS as assets on a dated release (threat-feeds-YYYY-MM-DD) and
 # a rolling `threat-feeds-latest` release. Consuming workflows read the mirror
@@ -45,6 +47,7 @@ jobs:
             threatfox.abuse.ch:443
             feodotracker.abuse.ch:443
             urlhaus.abuse.ch:443
+            raw.githubusercontent.com:443
             github.com:443
             api.github.com:443
             uploads.github.com:443
@@ -71,6 +74,29 @@ jobs:
           fetch threatfox.json https://threatfox.abuse.ch/export/json/recent/
           fetch feodo.json    https://feodotracker.abuse.ch/downloads/ipblocklist.json
           fetch urlhaus.csv   https://urlhaus.abuse.ch/downloads/csv_recent/
+          fetch advisories.xml https://www.cisa.gov/cybersecurity-advisories/all.xml
+
+      - name: Fetch Vulnrichment records for recent KEV entries
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="${RUNNER_TEMP}/raw"; VR="${RAW}/vulnrichment"
+          mkdir -p "${VR}"
+          cutoff="$(date -u -d '30 days ago' +%F)"
+          # cisagov/vulnrichment layout: <year>/<n div 1000>xxx/CVE-<year>-<n>.json
+          jq -r --arg c "${cutoff}" '.vulnerabilities[] | select(.dateAdded >= $c) | .cveID' "${RAW}/kev.json" \
+            | sort -u | while IFS= read -r cve; do
+                year="${cve:4:4}"; n="${cve:9}"; prefix="$(( 10#${n} / 1000 ))xxx"
+                url="https://raw.githubusercontent.com/cisagov/vulnrichment/develop/${year}/${prefix}/${cve}.json"
+                curl -sSfL --max-time 60 --retry 2 -o "${VR}/${cve}.json" "${url}" \
+                  || { echo "::warning title=threat-feeds vulnrichment::no record for ${cve}"; rm -f "${VR}/${cve}.json"; }
+              done
+          if compgen -G "${VR}/*.json" > /dev/null; then
+            jq -s '{records: .}' "${VR}"/*.json > "${RAW}/vulnrichment.json"
+          else
+            jq -n '{records: []}' > "${RAW}/vulnrichment.json"
+          fi
+          echo "vulnrichment records: $(jq '.records | length' "${RAW}/vulnrichment.json")"
 
       - name: Download previous snapshot
         shell: bash
@@ -99,7 +125,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
           failed=0
           : > "${RUNNER_TEMP}/notes.md"
-          for spec in kev:kev.json epss:epss.csv.gz threatfox:threatfox.json feodo:feodo.json urlhaus:urlhaus.csv; do
+          for spec in kev:kev.json epss:epss.csv.gz threatfox:threatfox.json feodo:feodo.json urlhaus:urlhaus.csv advisories:advisories.xml vulnrichment:vulnrichment.json; do
             feed="${spec%%:*}"; file="${spec#*:}"
             args=(--feed "${feed}" --input "${RAW}/${file}" --output "${OUT}/${feed}.json")
             [ -f "${PREV}/${feed}.json" ] && args+=(--previous "${PREV}/${feed}.json")

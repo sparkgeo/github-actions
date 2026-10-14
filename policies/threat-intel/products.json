@@ -1,0 +1,11 @@
+{
+  "$comment": "Products Sparkgeo runs that the asset register cannot name (the register lists cloud resources, not the software on them). One entry per product: `match` are case-insensitive substrings tested against the KEV vendorProject, product and vulnerability name and against advisory titles; `repos` are the repositories that deploy it (the trigger issue is opened there when a cross-repo token is configured, and their register records supply exposure and owners); `exposure` is the fallback when the register has no public record for those repos. Reviewed when a product is added or retired; the kev-trigger job summary lists new KEV entries that matched nothing. Issue #187.",
+  "products": [
+    {"name": "GeoServer", "vendor": "OSGeo", "match": ["geoserver"], "repos": [], "exposure": "public", "owner": "team-geo"},
+    {"name": "PostGIS", "vendor": "PostGIS", "match": ["postgis", "postgresql"], "repos": [], "exposure": "internal", "owner": "team-platform"},
+    {"name": "MapProxy", "vendor": "MapProxy", "match": ["mapproxy"], "repos": [], "exposure": "public", "owner": "team-geo"},
+    {"name": "pgAdmin", "vendor": "pgAdmin", "match": ["pgadmin"], "repos": [], "exposure": "internal", "owner": "team-platform"},
+    {"name": "Keycloak", "vendor": "Keycloak", "match": ["keycloak"], "repos": [], "exposure": "public", "owner": "team-platform"},
+    {"name": "GitHub Actions runner", "vendor": "GitHub", "match": ["github actions", "actions runner"], "repos": ["sparkgeo/github-actions"], "exposure": "internal", "owner": "team-platform"}
+  ]
+}

@@ -1,0 +1,5 @@
+{"products": [
+  {"name": "Citrix NetScaler", "vendor": "Citrix", "match": ["netscaler"], "repos": ["sparkgeo/geo-api"], "exposure": "internal", "owner": "team-edge"},
+  {"name": "GeoServer", "vendor": "OSGeo", "match": ["geoserver"], "repos": ["sparkgeo/prescient-infra"], "exposure": "public"},
+  {"name": "Unmatched product", "match": ["nothing-here"], "repos": []}
+]}
