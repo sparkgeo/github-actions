@@ -1,0 +1,3 @@
+# Deployment-package fixture (issue #183): an old requests pins known CVEs so
+# the package scan in ci.yml has something to find.
+requests==2.19.1

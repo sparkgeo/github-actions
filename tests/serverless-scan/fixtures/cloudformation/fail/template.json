@@ -1,0 +1,22 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "SharedRole": {"Type": "AWS::IAM::Role", "Properties": {
+      "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+      "Policies": [{"PolicyName": "everything", "PolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": ["s3:*", "iam:PassRole"], "Resource": "*"}]}}]}},
+    "ExportLogGroup": {"Type": "AWS::Logs::LogGroup", "Properties": {"LogGroupName": "/aws/lambda/export"}},
+    "ExportFunction": {"Type": "AWS::Lambda::Function", "Properties": {
+      "FunctionName": "export", "Handler": "app.handler", "Runtime": "python3.12",
+      "Code": {"S3Bucket": "artifacts", "S3Key": "export.zip"},
+      "Role": {"Fn::GetAtt": ["SharedRole", "Arn"]},
+      "Environment": {"Variables": {"API_KEY": "AKIAIOSFODNN7EXAMPLE"}}}},
+    "ReportFunction": {"Type": "AWS::Lambda::Function", "Properties": {
+      "FunctionName": "report", "Handler": "app.handler", "Runtime": "python3.12",
+      "Code": {"S3Bucket": "artifacts", "S3Key": "report.zip"},
+      "Role": {"Fn::GetAtt": ["SharedRole", "Arn"]}}},
+    "OrphanFunction": {"Type": "AWS::Lambda::Function", "Properties": {
+      "FunctionName": "orphan", "Handler": "app.handler", "Runtime": "python3.12",
+      "Code": {"S3Bucket": "artifacts", "S3Key": "orphan.zip"},
+      "Role": "arn:aws:iam::123456789012:role/hand-made"}}
+  }
+}

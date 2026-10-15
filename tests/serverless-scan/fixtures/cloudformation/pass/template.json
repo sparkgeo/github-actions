@@ -1,0 +1,22 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "EnvKey": {"Type": "AWS::KMS::Key", "Properties": {"Description": "lambda environment", "KeyPolicy": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"AWS": {"Fn::Sub": "arn:aws:iam::${AWS::AccountId}:root"}}, "Action": "kms:*", "Resource": "*"}]}}},
+    "Dlq": {"Type": "AWS::SQS::Queue", "Properties": {"QueueName": "ingest-dlq"}},
+    "IngestRole": {"Type": "AWS::IAM::Role", "Properties": {
+      "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+      "Policies": [{"PolicyName": "ingest", "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", "Action": ["sqs:SendMessage"], "Resource": {"Fn::GetAtt": ["Dlq", "Arn"]}},
+        {"Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::GetAtt": ["IngestLogGroup", "Arn"]}}]}}]}},
+    "IngestLogGroup": {"Type": "AWS::Logs::LogGroup", "Properties": {"LogGroupName": "/aws/lambda/ingest", "RetentionInDays": 30}},
+    "IngestFunction": {"Type": "AWS::Lambda::Function", "Properties": {
+      "FunctionName": "ingest", "Handler": "app.handler", "Runtime": "python3.12",
+      "Code": {"S3Bucket": "artifacts", "S3Key": "ingest.zip"},
+      "Role": {"Fn::GetAtt": ["IngestRole", "Arn"]},
+      "ReservedConcurrentExecutions": 5,
+      "KmsKeyArn": {"Fn::GetAtt": ["EnvKey", "Arn"]},
+      "Environment": {"Variables": {"STAGE": "prod"}},
+      "DeadLetterConfig": {"TargetArn": {"Fn::GetAtt": ["Dlq", "Arn"]}},
+      "LoggingConfig": {"LogFormat": "JSON", "LogGroup": {"Ref": "IngestLogGroup"}}}}
+  }
+}

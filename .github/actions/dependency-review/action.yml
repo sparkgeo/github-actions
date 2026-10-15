@@ -10,6 +10,9 @@ inputs:
   allow-dependencies-licenses:
     description: "Comma-separated purls exempt from the license check (e.g. pkg:githubactions/owner/repo). Use for tools run in CI but not redistributed, where a copyleft licence does not apply."
     default: ""
+  allow-ghsas:
+    description: "Comma-separated GHSA ids to allow, for dependencies that are vulnerable on purpose (test fixtures). Each entry needs a comment in the calling workflow saying why."
+    default: ""
   comment-summary-in-pr:
     description: "Post a summary comment on the PR: always|on-failure|never"
     default: "on-failure"
@@ -37,6 +40,7 @@ runs:
         fail-on-severity: ${{ inputs.fail-on-severity }}
         allow-licenses: ${{ inputs.allow-licenses }}
         allow-dependencies-licenses: ${{ inputs.allow-dependencies-licenses }}
+        allow-ghsas: ${{ inputs.allow-ghsas }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
     - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
       if: ${{ inputs.base-ref != '' }}
@@ -46,4 +50,5 @@ runs:
         fail-on-severity: ${{ inputs.fail-on-severity }}
         allow-licenses: ${{ inputs.allow-licenses }}
         allow-dependencies-licenses: ${{ inputs.allow-dependencies-licenses }}
+        allow-ghsas: ${{ inputs.allow-ghsas }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}

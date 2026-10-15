@@ -1,0 +1,28 @@
+# Serverless policy pack (issue #183, plan Step 17 Standard): every function
+# references an IAM role declared in the same configuration, so the role is
+# reviewed with the function and not a shared or hand-made ARN string. The
+# shared-role count across functions is serverless-roles.py (graph policies
+# cannot count references).
+metadata:
+  id: "SPK_SLS_1"
+  name: "Lambda function references a role declared in this configuration"
+  category: "IAM"
+  guideline: "https://github.com/sparkgeo/github-actions/blob/main/docs/serverless.md"
+definition:
+  and:
+    - cond_type: filter
+      attribute: resource_type
+      operator: within
+      value:
+        - aws_lambda_function
+        - AWS::Lambda::Function
+        - AWS::Serverless::Function
+    - cond_type: connection
+      resource_types:
+        - aws_lambda_function
+        - AWS::Lambda::Function
+        - AWS::Serverless::Function
+      connected_resource_types:
+        - aws_iam_role
+        - AWS::IAM::Role
+      operator: exists

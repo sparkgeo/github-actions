@@ -1,0 +1,20 @@
+# Curated checkov checks for serverless functions (issue #183, plan Step 17
+# Standard): the function's own role without wildcard grants, a log group with
+# retention, a dead-letter queue, no secrets or plaintext environment. One id
+# per line; text after # is a comment. docs/serverless.md explains each.
+CKV_AWS_116   # Lambda has a dead-letter queue (SPK_SLS_4 in the issue text)
+CKV_AWS_115   # Lambda sets a function-level concurrency limit
+CKV_AWS_45    # no hard-coded secrets in Lambda environment variables
+CKV_AWS_173   # Lambda environment variables encrypted with a CMK
+CKV_AWS_66    # CloudWatch log group specifies retention days
+CKV_AWS_287   # IAM policy does not allow credentials exposure (Terraform)
+CKV_AWS_288   # IAM policy does not allow data exfiltration (Terraform)
+CKV_AWS_289   # IAM policy does not allow permissions management without constraints (Terraform)
+CKV_AWS_290   # IAM policy does not allow write access without constraints (Terraform)
+CKV_AWS_355   # no "*" resource for restrictable actions (Terraform policy resources)
+CKV_AWS_356   # no "*" resource for restrictable actions (Terraform policy documents)
+CKV_AWS_107   # IAM policy does not allow credentials exposure (CloudFormation)
+CKV_AWS_108   # IAM policy does not allow data exfiltration (CloudFormation)
+CKV_AWS_109   # IAM policy does not allow permissions management without constraints (CloudFormation)
+CKV_AWS_110   # IAM policy does not allow privilege escalation (CloudFormation)
+CKV_AWS_111   # IAM policy does not allow write access without constraints (CloudFormation)
