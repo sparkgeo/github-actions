@@ -1,0 +1,32 @@
+[
+  {
+    "template-id": "exposed-gitmodules",
+    "info": {
+      "name": ".gitmodules File Exposed",
+      "severity": "high"
+    },
+    "type": "http",
+    "host": "127.0.0.1",
+    "matched-at": "http://127.0.0.1:8080/.gitmodules"
+  },
+  {
+    "template-id": "tech-detect",
+    "info": {
+      "name": "Wappalyzer Technology Detection",
+      "severity": "info"
+    },
+    "type": "http",
+    "host": "http://127.0.0.1:8080",
+    "matched-at": "http://127.0.0.1:8080"
+  },
+  {
+    "template-id": "fixture-medium",
+    "info": {
+      "name": "Fixture medium finding",
+      "severity": "medium"
+    },
+    "type": "http",
+    "host": "http://127.0.0.1:8080",
+    "matched-at": "http://127.0.0.1:8080/x"
+  }
+]

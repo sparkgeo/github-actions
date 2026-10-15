@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| DAST Nuclei | [`dast-nuclei.yml`](.github/workflows/dast-nuclei.yml) | `workflow_call` | Reusable nuclei gate: pinned templates (CVEs, misconfigurations, exposures by default) against a running preview or staging URL; rate-limited; SARIF to the Security tab; fails at or above `fail-on-severity` (#66) |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Nuclei | [`nuclei`](.github/actions/nuclei/action.yml) | Installs checksum-verified nuclei and a pinned, checksum-verified nuclei-templates release (cached by version); scans with rate limiting and interactsh off by default; SARIF upload; annotates and gates on severity | `target-url` (required), `templates` (default: `cves,misconfiguration,exposures`), `tags` (default: `""`), `fail-on-severity` (default: `high`), `rate-limit` (default: `50`), `concurrency` (default: `10`), `interactsh` (default: `false`), `headers` (default: `""`), `version` (default: `3.11.1`), `templates-version` (default: `10.5.0`), `sarif-upload` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,40 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### DAST Nuclei
+
+[nuclei](https://github.com/projectdiscovery/nuclei) runs community-maintained templates for known CVEs, exposed files and admin panels, and misconfigurations against a running application (SecOps plan Step 5). The ZAP baseline finds classes of weakness; nuclei finds specific known issues. Run both against the same preview URL.
+
+```yaml
+jobs:
+  nuclei:
+    if: github.event.deployment_status.state == 'success'
+    permissions:
+      contents: read
+      security-events: write  # drop when sarif-upload: false
+    uses: sparkgeo/github-actions/.github/workflows/dast-nuclei.yml@<SHA>
+    with:
+      target-url: ${{ github.event.deployment_status.environment_url }}
+      fail-on-severity: high
+      actions-ref: <SHA>
+    secrets:
+      SCAN_HEADERS: ${{ secrets.PREVIEW_SCAN_HEADERS }}  # optional, e.g. "Authorization: Bearer ..."
+```
+
+**Templates.** The templates come from a pinned nuclei-templates release, checked against its published checksum and cached by version, so a scan never picks up an unreviewed template. `templates` lists directories or files in that release; a bare name is looked up under `http/` (`cves` is `http/cves`). `tags` narrows the selection, for example `templates: cves` with `tags: wordpress`. Bump `templates-version` the way you bump any pinned tool.
+
+**Load on shared staging.** The defaults keep a scan polite:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `rate-limit` | 50 requests per second | nuclei's own default is 150 |
+| `concurrency` | 10 templates in parallel | nuclei's own default is 25 |
+| `interactsh` | `false` | No out-of-band callbacks to ProjectDiscovery's public server; the templates that need them are skipped |
+
+A full run of the default directories sends several thousand requests, so lower `rate-limit` for a fragile environment. Run only against environments you own; the weekly active scan (#68) is the place for heavier settings.
+
+`tests/dast-nuclei/run.sh` checks the gate against a recorded export. The `dast-nuclei` CI job serves `tests/dast-nuclei/fixtures/site`, which deliberately exposes a `.gitmodules` file, and asserts that the high-severity `exposed-gitmodules` template finds it and fails the gate.
 
 ## Consuming repo CI setup
 

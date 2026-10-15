@@ -1,0 +1,162 @@
+name: "nuclei"
+description: |
+  Template-driven DAST with nuclei (SecOps plan Step 5; issue #66): known
+  CVEs, misconfigurations, exposed files and panels on a running target.
+  It complements the ZAP baseline (#65), which finds classes of weakness;
+  nuclei finds specific known issues.
+
+  Installs a pinned nuclei release binary and a pinned nuclei-templates
+  release, each checked against its release's SHA-256 list. The templates
+  are cached by version, so a run never fetches them unpinned. Results go to
+  SARIF (code scanning, category nuclei) and to JSON, which gate.py
+  annotates and gates on fail-on-severity.
+
+  Scans are polite by default, so they do not overload shared staging:
+  - rate-limit is 50 requests per second;
+  - concurrency is 10 templates in parallel;
+  - interactsh (out-of-band callbacks to a public ProjectDiscovery server)
+    is off unless enabled, which also skips the templates that need it.
+
+  Required permissions on the calling job: contents: read, plus
+  security-events: write when sarif-upload is true.
+inputs:
+  target-url:
+    description: "URL of the running application, including the protocol."
+    required: true
+  templates:
+    description: "Comma-separated template directories or files in the templates release; a bare name is looked up under http/ (cves = http/cves)."
+    default: "cves,misconfiguration,exposures"
+  tags:
+    description: "Optional comma-separated tags (cve, exposure, misconfig); they narrow the selected templates to those carrying a tag."
+    default: ""
+  fail-on-severity:
+    description: "Lowest severity that fails the job: info, low, medium, high, critical, or none."
+    default: "high"
+  rate-limit:
+    description: "Maximum requests per second (nuclei -rl)."
+    default: "50"
+  concurrency:
+    description: "Templates run in parallel (nuclei -c)."
+    default: "10"
+  interactsh:
+    description: "Allow out-of-band interactsh callbacks (sends data to a public ProjectDiscovery server)."
+    default: "false"
+  headers:
+    description: "Optional newline-separated 'Name: value' headers for an authenticated scan; pass a secret, never a literal."
+    default: ""
+  version:
+    description: "nuclei release (no leading v)."
+    default: "3.11.1"
+  templates-version:
+    description: "nuclei-templates release (no leading v)."
+    default: "10.5.0"
+  sarif-upload:
+    description: "Upload SARIF to the Security tab."
+    default: "true"
+outputs:
+  blocking-count:
+    description: "Findings at or above fail-on-severity."
+    value: ${{ steps.gate.outputs.blocking-count }}
+  high-count:
+    description: "High-severity findings."
+    value: ${{ steps.gate.outputs.high-count }}
+  critical-count:
+    description: "Critical-severity findings."
+    value: ${{ steps.gate.outputs.critical-count }}
+  results:
+    description: "Path of the JSON export."
+    value: ${{ steps.scan.outputs.results }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install nuclei
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/projectdiscovery/nuclei/releases/download/v${VERSION}"
+        ZIP="nuclei_${VERSION}_linux_amd64.zip"
+        curl -sSfL -o "${TMP}/${ZIP}" "${BASE}/${ZIP}"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/nuclei_${VERSION}_checksums.txt"
+        ( cd "${TMP}" && grep " ${ZIP}\$" checksums.txt | sha256sum -c - )
+        unzip -q -o "${TMP}/${ZIP}" nuclei -d "${TMP}"
+        # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
+        install "${TMP}/nuclei" "${RUNNER_TEMP}/nuclei"
+
+    - name: Restore cached templates
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ${{ runner.temp }}/nuclei-templates
+        key: nuclei-templates-${{ inputs.templates-version }}
+
+    - name: Download templates
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        TVERSION: ${{ inputs.templates-version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        TAR="nuclei-templates-${TVERSION}.tar.gz"
+        # The release's checksum list covers GitHub's source archive of the tag.
+        curl -sSfL -o "${TMP}/${TAR}" "https://github.com/projectdiscovery/nuclei-templates/archive/refs/tags/v${TVERSION}.tar.gz"
+        curl -sSfL -o "${TMP}/checksums.txt" \
+          "https://github.com/projectdiscovery/nuclei-templates/releases/download/v${TVERSION}/nuclei-templates-${TVERSION}_checksums.txt"
+        ( cd "${TMP}" && grep " ${TAR}\$" checksums.txt | sha256sum -c - )
+        mkdir -p "${RUNNER_TEMP}/nuclei-templates"
+        tar -xzf "${TMP}/${TAR}" -C "${RUNNER_TEMP}/nuclei-templates" --strip-components=1
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target-url }}
+        TEMPLATES: ${{ inputs.templates }}
+        TAGS: ${{ inputs.tags }}
+        RATE: ${{ inputs.rate-limit }}
+        CONCURRENCY: ${{ inputs.concurrency }}
+        INTERACTSH: ${{ inputs.interactsh }}
+        HEADERS: ${{ inputs.headers }}
+      run: |
+        set -euo pipefail
+        case "${TARGET}" in http://*|https://*) ;; *) echo "::error title=nuclei::target-url must start with http:// or https://"; exit 1 ;; esac
+        ROOT="${RUNNER_TEMP}/nuclei-templates"
+        OUT="${RUNNER_TEMP}/nuclei-out"; mkdir -p "${OUT}"
+        args=(-u "${TARGET}" -duc -nc -silent -rl "${RATE}" -c "${CONCURRENCY}" -se "${OUT}/nuclei.sarif" -je "${OUT}/nuclei.json")
+        [ "${INTERACTSH}" = "true" ] || args+=(-ni)
+        paths=()
+        IFS=',' read -r -a entries <<< "${TEMPLATES}"
+        for e in "${entries[@]}"; do
+          e="$(echo "${e}" | xargs)"; [ -n "${e}" ] || continue
+          case "${e}" in /*|*..*) echo "::error title=nuclei::template entry '${e}' must be relative to the templates release"; exit 1 ;; esac
+          if [ -e "${ROOT}/${e}" ]; then paths+=("${ROOT}/${e}")
+          elif [ -e "${ROOT}/http/${e}" ]; then paths+=("${ROOT}/http/${e}")
+          else echo "::error title=nuclei::no template directory or file '${e}' in nuclei-templates; use the tags input for tags"; exit 1; fi
+        done
+        [ "${#paths[@]}" -gt 0 ] || { echo "::error title=nuclei::templates selects nothing"; exit 1; }
+        args+=(-t "$(IFS=,; echo "${paths[*]}")")
+        [ -z "${TAGS}" ] || args+=(-tags "${TAGS}")
+        while IFS= read -r h; do [ -z "${h}" ] || args+=(-H "${h}"); done <<< "${HEADERS}"
+        "${RUNNER_TEMP}/nuclei" "${args[@]}" > "${OUT}/nuclei.txt" 2>&1 || { cat "${OUT}/nuclei.txt"; exit 1; }
+        tail -n 20 "${OUT}/nuclei.txt"
+        echo "results=${OUT}/nuclei.json" >> "${GITHUB_OUTPUT}"
+        [ -s "${OUT}/nuclei.sarif" ] && echo "sarif=${OUT}/nuclei.sarif" >> "${GITHUB_OUTPUT}" || true
+
+    - name: Upload SARIF
+      if: inputs.sarif-upload == 'true' && steps.scan.outputs.sarif != ''
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif }}
+        category: nuclei
+      continue-on-error: true
+
+    - name: Annotate and gate
+      id: gate
+      shell: bash
+      env:
+        RESULTS: ${{ steps.scan.outputs.results }}
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+      run: python3 -I "${GITHUB_ACTION_PATH}/gate.py" --results "${RESULTS}" --fail-on "${FAIL_ON}" >> "${GITHUB_OUTPUT}"
