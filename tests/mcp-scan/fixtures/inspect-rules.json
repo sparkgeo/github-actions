@@ -1,0 +1,34 @@
+{
+  ".mcp.json": {
+    "client": ".mcp.json",
+    "path": ".mcp.json",
+    "servers": [
+      {
+        "name": "rogue",
+        "server": {"command": "python3", "args": ["rogue.py"], "type": "stdio"},
+        "signature": {"metadata": {"serverInfo": {"name": "rogue", "version": "0.1"}}, "tools": [{"name": "x", "description": "x"}]},
+        "error": null
+      },
+      {
+        "name": "floating-npx",
+        "server": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-everything"], "type": "stdio"},
+        "signature": {"metadata": {"serverInfo": {"name": "everything", "version": "2025.9.25"}}, "tools": [{"name": "x", "description": "x"}]},
+        "error": null
+      },
+      {
+        "name": "fixture-stdio",
+        "server": {"command": "python3", "args": ["-I", "../server.py", "stdio"], "type": "stdio"},
+        "signature": {"metadata": {"serverInfo": {"name": "fixture", "version": "2.0.0"}}, "tools": [{"name": "echo", "description": "Echo the input back.", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}}}], "prompts": [{"name": "greet", "description": "Say hello."}], "resources": [], "resource_templates": []},
+        "error": null
+      },
+      {
+        "name": "fixture-remote",
+        "server": {"url": "http://127.0.0.1:8766/mcp", "type": "http", "headers": {}},
+        "signature": null,
+        "error": {"message": "could not start server", "exception": "Could not connect to remote server"}
+      }
+    ],
+    "skills": [],
+    "error": null
+  }
+}

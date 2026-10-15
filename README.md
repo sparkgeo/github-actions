@@ -15,6 +15,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | AI Inventory Check | [`ai-inventory-check.yml`](.github/workflows/ai-inventory-check.yml) | `workflow_call` | Reusable gate for the AI agent registry: every file that configures an agent, assistant or MCP server (patterns in [`policies/ai/agent-config-patterns.txt`](policies/ai/agent-config-patterns.txt)) needs a row in `docs/ai-agents.md` with owner, class, risk tier, lifecycle state and kill switch (#102) |
+| MCP Scan | [`mcp-scan.yml`](.github/workflows/mcp-scan.yml) | `workflow_call` | Reusable gate for MCP servers and skills: every declared server must be on [`policies/ai/mcp-allowlist.json`](policies/ai/mcp-allowlist.json) at its pinned command line or URL and version, with tool-description hashes matching `.mcp-scan.lock`; `local-only` keeps descriptions on the runner (#103) |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
@@ -43,6 +44,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | AI Inventory | [`ai-inventory`](.github/actions/ai-inventory/action.yml) | Matches agent configuration files against the pattern list, parses the inventory table, fails on an uncovered file, a file covered only by a retired row, or a row missing owner, class, risk tier, lifecycle state or kill switch; job summary with a row template | `inventory-path` (default: `docs/ai-agents.md`), `patterns-file` (default: bundled list), `extra-patterns`, `exclude` (default: `.git,node_modules,.sparkgeo-github-actions,.sparkgeo-policies`) |
+| MCP Scan | [`mcp-scan`](.github/actions/mcp-scan/action.yml) | Runs `snyk-agent-scan inspect` over the MCP config files, hashes each server's tool, prompt and resource descriptions and each skill file, fails on an unknown or unpinned server, a changed hash, or (with `local-only: false`) a Snyk risk score at or above `fail-on`; job summary and annotations | `config-paths` (empty: auto-detect), `allowlist` (default: bundled), `lock-file` (default: `.mcp-scan.lock`), `update-lock`, `local-only` (default: `true`), `fail-on` (default: `high`), `skills`, `server-timeout`, `version` (default: `0.6.8`) |
 
 ### GitHub Actionlint
 
@@ -392,6 +394,20 @@ jobs:
 ```
 
 The check fails on: a matched file with no row whose `Config path` glob covers it; a file covered only by a `retired` row; a row with an empty `Owner`, `Class`, `Risk tier`, `Lifecycle state` or `Kill switch`; a value outside the enums (`class`, `risk tier`, `lifecycle state`, the two yes/no columns). A row whose path matches no file is a warning. The job summary lists every matched file with the row that covers it and prints a row template. The [security-agent rule](docs/ai-security-agent-rule.md) (#186) is the ten-row checklist every CI-hosted reviewer, tester, scanner or pentest agent satisfies before it gets a credential, with the workflow input that satisfies each row.
+
+### MCP Scan (servers and skills as supply chain)
+
+SecOps plan Step 26 (issue #103): MCP servers and skills are pinned by version and tool-description hash, scanned before registration and re-reviewed on update, and taken only from the reviewed list in [`policies/ai/mcp-allowlist.json`](policies/ai/mcp-allowlist.json). The gate connects to every declared server, hashes what it serves, and fails the PR on a server that is not on the list, not at its pinned command line, URL or version, or whose descriptions no longer match the repository's `.mcp-scan.lock`; skills are pinned by file hash the same way. `local-only` (default) keeps descriptions on the runner; `local-only: false` adds the Snyk analysis and gates on `fail-on`. The scanner starts every declared stdio server, so call it on trusted branches only. Setup, the allowlist schema and the lock update flow: [`docs/mcp-scan.md`](docs/mcp-scan.md).
+
+```yaml
+jobs:
+  mcp-scan:
+    permissions:
+      contents: read
+    uses: sparkgeo/github-actions/.github/workflows/mcp-scan.yml@<SHA>
+    with:
+      actions-ref: <SHA>   # same SHA as above
+```
 
 ## Consuming repo CI setup
 

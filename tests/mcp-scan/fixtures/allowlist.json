@@ -1,0 +1,42 @@
+{
+  "description": "Reviewed MCP servers and skills for the mcp-scan tests. Same schema as policies/ai/mcp-allowlist.json.",
+  "servers": [
+    {
+      "name": "fixture-stdio",
+      "source": "tests/mcp-scan/fixtures/server.py",
+      "version": "1.0.0",
+      "command": "python3 -I ../server.py stdio",
+      "hash": "sha256:35c62fd256db28498991717720d4dd0e97dca97a1162958943e368ebcaeda5a2",
+      "reviewed": "2026-10-14",
+      "reviewer": "ms280690"
+    },
+    {
+      "name": "fixture-remote",
+      "source": "tests/mcp-scan/fixtures/server.py",
+      "version": "1.0.0",
+      "url": "http://127.0.0.1:8765/mcp",
+      "hash": "sha256:35c62fd256db28498991717720d4dd0e97dca97a1162958943e368ebcaeda5a2",
+      "reviewed": "2026-10-14",
+      "reviewer": "ms280690"
+    },
+    {
+      "name": "floating-npx",
+      "source": "npm:@modelcontextprotocol/server-everything",
+      "version": "2025.9.25",
+      "command": "npx -y @modelcontextprotocol/server-everything",
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "reviewed": "2026-10-14",
+      "reviewer": "ms280690"
+    }
+  ],
+  "skills": [
+    {
+      "path": ".claude/skills/deploy/SKILL.md",
+      "source": "this repository",
+      "version": "1",
+      "hash": "sha256:b9099d2deafbdde7563b70567f51dc8a978a8d69d0209d5b35b5c4c9276a12ad",
+      "reviewed": "2026-10-14",
+      "reviewer": "ms280690"
+    }
+  ]
+}

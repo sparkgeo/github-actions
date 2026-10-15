@@ -1,0 +1,122 @@
+name: "MCP Scan"
+description: |
+  Scans the repository's MCP server configuration with snyk-agent-scan (the
+  former invariantlabs mcp-scan) and gates on the reviewed allowlist
+  (policies/ai/mcp-allowlist.json) and the tool-description lockfile
+  (.mcp-scan.lock): a server that is not on the list, not at its pinned
+  command line, URL or version, or whose tool descriptions changed since the
+  lock was written fails the job; skills and plugin manifests are pinned by
+  file hash the same way (SecOps plan Step 26, issue #103). Findings and
+  errors go to the job summary and as annotations.
+
+  local-only (default true) runs `inspect`, which connects to the declared
+  servers and reads their descriptions on the runner only. local-only=false
+  also runs `scan`, which sends the descriptions to the Snyk analysis API
+  and gates on its risk scores with fail-on. Either mode starts every stdio
+  server the configuration declares, so run it on trusted branches only.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  config-paths:
+    description: "Comma-separated MCP config files; empty auto-detects .mcp.json, mcp.json, .vscode/mcp.json, .cursor/mcp.json, .gemini/settings.json, opencode.json and **/mcp-config*.json."
+    default: ""
+  allowlist:
+    description: "Allowlist JSON; empty uses the bundled policies/ai/mcp-allowlist.json."
+    default: ""
+  lock-file:
+    description: "Lockfile of tool-description and skill hashes, relative to the repository root."
+    default: ".mcp-scan.lock"
+  update-lock:
+    description: "Rewrite the lockfile from the observed hashes before checking (local review runs only)."
+    default: "false"
+  local-only:
+    description: "Do not send tool descriptions to the Snyk analysis API; local checks only."
+    default: "true"
+  fail-on:
+    description: "Minimum analysis risk band to fail on when local-only is false: high|medium|low."
+    default: "high"
+  skills:
+    description: "Comma-separated globs of skill and plugin manifest files pinned by hash."
+    default: ".claude/skills/*/SKILL.md,.claude-plugin/plugin.json,.claude-plugin/marketplace.json"
+  server-timeout:
+    description: "Seconds to wait for each MCP server."
+    default: "10"
+  version:
+    description: "snyk-agent-scan version (PyPI)."
+    default: "0.6.8"
+outputs:
+  server-count:
+    description: "MCP servers declared."
+    value: ${{ steps.check.outputs.server-count }}
+  skill-count:
+    description: "Skill files matched."
+    value: ${{ steps.check.outputs.skill-count }}
+  error-count:
+    description: "Errors found."
+    value: ${{ steps.check.outputs.error-count }}
+runs:
+  using: "composite"
+  steps:
+    - id: configs
+      shell: bash
+      env:
+        CONFIGS: ${{ inputs.config-paths }}
+      run: |
+        set -euo pipefail
+        if [ -z "${CONFIGS}" ]; then
+          # shellcheck disable=SC2016
+          CONFIGS="$(find . -maxdepth 4 \( -name .git -o -name node_modules -o -name '.sparkgeo-*' \) -prune -o -type f \
+            \( -path ./.mcp.json -o -path ./mcp.json -o -path ./.vscode/mcp.json -o -path ./.cursor/mcp.json \
+               -o -path ./.gemini/settings.json -o -path ./opencode.json -o -name 'mcp-config*.json' \) -print \
+            | sed 's|^\./||' | sort | paste -sd, -)"
+        fi
+        echo "list=${CONFIGS}" >> "${GITHUB_OUTPUT}"
+        echo "MCP configuration files: ${CONFIGS:-none}"
+
+    # pipx is preinstalled on GitHub-hosted runners; `pipx run` keeps the
+    # scanner out of the repository's Python environment. --no-skills: skills
+    # are hashed by check.py; the inspect command only reads MCP servers.
+    - id: inspect
+      shell: bash
+      env:
+        CONFIGS: ${{ steps.configs.outputs.list }}
+        VERSION: ${{ inputs.version }}
+        TIMEOUT: ${{ inputs.server-timeout }}
+        LOCAL_ONLY: ${{ inputs.local-only }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/mcp-scan"
+        mkdir -p "${OUT}"
+        echo '{}' > "${OUT}/inspect.json"
+        echo '{}' > "${OUT}/scan.json"
+        echo "dir=${OUT}" >> "${GITHUB_OUTPUT}"
+        [ -n "${CONFIGS}" ] || exit 0
+        IFS=',' read -r -a FILES <<< "${CONFIGS}"
+        pipx run --spec "snyk-agent-scan==${VERSION}" snyk-agent-scan inspect --json --dangerously-run-mcp-servers \
+          --no-skills --server-timeout "${TIMEOUT}" --storage-file "${OUT}/store" "${FILES[@]}" > "${OUT}/inspect.json"
+        if [ "${LOCAL_ONLY}" != "true" ]; then
+          SKILL_DIRS=()
+          [ -d .claude/skills ] && SKILL_DIRS=(.claude/skills)
+          # scan sends tool descriptions to api.snyk.io; no --ci so check.py applies fail-on
+          pipx run --spec "snyk-agent-scan==${VERSION}" snyk-agent-scan scan --json --dangerously-run-mcp-servers \
+            --server-timeout "${TIMEOUT}" --storage-file "${OUT}/store" "${FILES[@]}" "${SKILL_DIRS[@]}" > "${OUT}/scan.json"
+        fi
+
+    - id: check
+      shell: bash
+      env:
+        OUT: ${{ steps.inspect.outputs.dir }}
+        ALLOWLIST: ${{ inputs.allowlist }}
+        BUNDLED: ${{ github.action_path }}/../../../policies/ai/mcp-allowlist.json
+        LOCK: ${{ inputs.lock-file }}
+        UPDATE: ${{ inputs.update-lock }}
+        LOCAL_ONLY: ${{ inputs.local-only }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        SKILLS: ${{ inputs.skills }}
+      run: |
+        set -euo pipefail
+        ARGS=(--root . --inspect "${OUT}/inspect.json" --allowlist "${ALLOWLIST:-${BUNDLED}}" --lock "${LOCK}" \
+              --skills "${SKILLS}" --fail-on "${FAIL_ON}" --output "${OUT}/report.json")
+        [ "${UPDATE}" = "true" ] && ARGS+=(--write-lock)
+        [ "${LOCAL_ONLY}" = "true" ] || ARGS+=(--scan "${OUT}/scan.json")
+        python3 -I "${GITHUB_ACTION_PATH}/check.py" "${ARGS[@]}"

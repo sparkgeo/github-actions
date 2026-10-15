@@ -1,0 +1,81 @@
+name: MCP Scan
+
+# Reusable PR gate (issue #103, plan Step 26): MCP servers and skills are
+# untrusted supply chain, pinned by version and tool-description hash,
+# scanned before registration and re-reviewed on update. A configuration that
+# declares a server not on policies/ai/mcp-allowlist.json, at another command
+# line, URL or version, or whose descriptions no longer match .mcp-scan.lock
+# fails the job. See docs/mcp-scan.md.
+#
+# The scanner starts every stdio server the configuration declares, so call
+# this on trusted branches only (not pull_request_target, not fork PRs with
+# secrets). local-only (default) keeps tool descriptions on the runner;
+# local-only: false sends them to the Snyk analysis API.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable.
+
+on:
+  workflow_call:
+    inputs:
+      config-paths:
+        description: 'Comma-separated MCP config files; empty auto-detects'
+        default: ''
+        type: string
+      fail-on:
+        description: 'Minimum finding level to fail: high|medium|low (local-only: false only)'
+        default: 'high'
+        type: string
+      local-only:
+        description: 'Do not send tool descriptions to the Snyk analysis API; use local checks only'
+        default: true
+        type: boolean
+      allowlist-path:
+        description: 'Allowlist JSON in the calling repository; empty uses the bundled policies/ai/mcp-allowlist.json'
+        default: ''
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          and the allowlist from. Pin this to the SAME SHA you pinned
+          mcp-scan.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      server-count:
+        description: 'MCP servers declared'
+        value: ${{ jobs.scan.outputs.server-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`.
+jobs:
+  scan:
+    name: MCP scan
+    runs-on: ubuntu-latest
+    outputs:
+      server-count: ${{ steps.scan.outputs.server-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout mcp-scan composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: scan
+        uses: ./.sparkgeo-github-actions/.github/actions/mcp-scan
+        with:
+          config-paths: ${{ inputs.config-paths }}
+          fail-on: ${{ inputs.fail-on }}
+          local-only: ${{ inputs.local-only }}
+          allowlist: ${{ inputs.allowlist-path }}
