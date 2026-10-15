@@ -13,6 +13,10 @@ activities:
     data_categories: [location, contact]
     classification: confidential
     stores: [aws_rds_cluster.app, aws_s3_bucket.ingest]
+    subject_keys:
+      - {table: users, column: id}
+      - {table: location_events, column: user_id}
+      - {table: audit_log, column: subject_id, erase: anonymise}
     sinks: [sendgrid]
     retention: 90d
     processor_dpa: [docs/dpa/sendgrid.pdf]

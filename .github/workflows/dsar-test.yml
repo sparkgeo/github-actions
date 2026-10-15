@@ -1,0 +1,158 @@
+name: DSAR Test
+
+# Reusable scheduled harness (issue #122, plan Step 36 Standard): the plan
+# wants DSAR export and erasure scripts tested annually; running this monthly
+# against a synthetic subject turns that into a green check with a dated log.
+# The calling repository owns scripts/dsar/export.sh and erase.sh and the
+# subject_keys in ropa.yml (#119); this workflow owns the database, the
+# subject and the assertions. Evidence (export bundle, assertion log) is
+# retained 400 days. On a scheduled failure one dsar-failure issue is opened
+# or updated.
+#
+# Caller permissions: contents: read, plus issues: write for open-issue.
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com and Docker Hub (the
+# database image).
+
+on:
+  workflow_call:
+    inputs:
+      database:
+        description: 'postgis|postgres'
+        default: 'postgis'
+        type: string
+      migrate-command:
+        description: 'Command that applies the schema to an empty database (DATABASE_URL is set)'
+        required: true
+        type: string
+      seed-command:
+        description: 'Command that inserts the synthetic subject; receives SUBJECT_ID, SUBJECT_EMAIL, SUBJECT_NAME, SUBJECT_PHONE, SUBJECT_TRAIL'
+        required: true
+        type: string
+      export-command:
+        description: 'Export script, run as <command> <subject-id>, writes to DSAR_OUT'
+        default: 'scripts/dsar/export.sh'
+        type: string
+      erase-command:
+        description: 'Erasure script, run as <command> <subject-id>'
+        default: 'scripts/dsar/erase.sh'
+        type: string
+      ropa-path:
+        description: 'ropa.yml with subject_keys'
+        default: 'ropa.yml'
+        type: string
+      activities:
+        description: 'Comma-separated activity ids to test; empty tests all with subject_keys'
+        default: ''
+        type: string
+      open-issue:
+        description: 'On a scheduled failure, open or update an issue labelled dsar-failure'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned dsar-test.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      failed:
+        description: 'Assertions failed'
+        value: ${{ jobs.dsar.outputs.failed }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions.
+jobs:
+  dsar:
+    name: DSAR export and erasure
+    runs-on: ubuntu-latest
+    outputs:
+      failed: ${{ steps.harness.outputs.failed }}
+    services:
+      db:
+        # Pinned by digest: postgis/postgis 16-3.5 or postgres 16.
+        image: ${{ inputs.database == 'postgis' && 'postgis/postgis@sha256:94146ac37bc61e2322f88016056c5920729cb8c64c8542ed590af8fc2abdac07' || 'postgres@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d' }}
+        env:
+          POSTGRES_PASSWORD: dsar
+          POSTGRES_DB: dsar
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:dsar@127.0.0.1:5432/dsar
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout dsar-test composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Migrate
+        env:
+          MIGRATE_COMMAND: ${{ inputs.migrate-command }}
+        run: bash -euo pipefail -c "${MIGRATE_COMMAND}"
+
+      - id: harness
+        continue-on-error: true
+        uses: ./.sparkgeo-github-actions/.github/actions/dsar-test
+        with:
+          ropa-path: ${{ inputs.ropa-path }}
+          activities: ${{ inputs.activities }}
+          seed-command: ${{ inputs.seed-command }}
+          export-command: ${{ inputs.export-command }}
+          erase-command: ${{ inputs.erase-command }}
+          output-dir: ${{ runner.temp }}/dsar-evidence
+
+      # The annual evidence window: 400 days keeps at least one full year of
+      # monthly runs, with margin.
+      - name: Upload evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: dsar-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/dsar-evidence/
+          retention-days: 400
+          if-no-files-found: warn
+
+      - name: Open or update the failure issue
+        if: ${{ always() && inputs.open-issue && steps.harness.outcome == 'failure' && github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          LOG: ${{ runner.temp }}/dsar-evidence/dsar-log.md
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh label create dsar-failure --description "The scheduled DSAR export/erasure test failed" --color B60205 --force > /dev/null
+          TITLE="DSAR test failed: export or erasure script no longer passes"
+          { echo "The scheduled DSAR harness failed: ${RUN_URL}"; echo; [ -f "${LOG}" ] && grep '^- FAIL' "${LOG}"; echo; echo "Fix the script, rerun the workflow, and close this when green. The 30-day clock for a real request does not pause (docs/dsar.md)."; } > "${RUNNER_TEMP}/issue.md"
+          ID="$(gh issue list --label dsar-failure --state open --json number,title | jq -r --arg t "${TITLE}" '.[] | select(.title == $t) | .number' | head -1)"
+          if [ -n "${ID}" ]; then
+            gh issue comment "${ID}" --body-file "${RUNNER_TEMP}/issue.md"
+          else
+            gh issue create --title "${TITLE}" --label dsar-failure --body-file "${RUNNER_TEMP}/issue.md"
+          fi
+
+      - name: Outcome
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.harness.outcome }}
+          FAILED: ${{ steps.harness.outputs.failed }}
+        run: |
+          [ "${OUTCOME}" != "failure" ] || { echo "::error title=dsar::${FAILED:-?} assertion(s) failed; see the summary and the evidence artefact"; exit 1; }
