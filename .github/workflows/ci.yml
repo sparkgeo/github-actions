@@ -76,6 +76,85 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Runtime scanners (#179): exporter fixtures, then a throwaway kind cluster:
+  # install both operators with the composite, run a workload with known CVEs,
+  # wait for Kubescape's per-workload manifest, export it and load the export
+  # through the runtime-relevance composite. Audit egress: images and
+  # vulnerability databases come from several registries and CDNs.
+  runtime-scanners:
+    name: Runtime Scanners (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Exporter and annotator fixtures
+        run: tests/runtime-scanners/run.sh
+
+      - name: Create kind cluster
+        run: kind create cluster --name ci --wait 180s
+
+      - uses: ./.github/actions/runtime-scanners
+        with:
+          cluster-name: kind-ci
+          exclude-namespaces: local-path-storage
+          kubescape-values: tests/runtime-scanners/kubescape-ci.yaml
+          timeout: 15m
+
+      - name: Run a workload and wait for relevancy data
+        run: |
+          set -euo pipefail
+          kubectl apply -f tests/runtime-scanners/workload.yaml
+          kubectl -n demo rollout status deployment/web --timeout 5m
+          # Kubescape writes the per-workload ("filtered") manifest into its own
+          # namespace, labelled with the workload's namespace.
+          for i in $(seq 120); do
+            n="$(kubectl get vulnerabilitymanifests.spdx.softwarecomposition.kubescape.io -A \
+              -l kubescape.io/context=filtered,kubescape.io/workload-namespace=demo -o name 2>/dev/null | wc -l)"
+            if [ "${n}" -gt 0 ]; then echo "filtered manifest after ${i} polls"; exit 0; fi
+            sleep 15
+          done
+          echo "::error::no relevancy data after 30 minutes"
+          kubectl get pods -A
+          kubectl -n security-scanners logs deploy/kubevuln --tail=40 || true
+          kubectl -n security-scanners logs ds/node-agent --tail=40 | grep -iE 'error|profile|learning|completed' || true
+          exit 1
+
+      - name: Collect and export
+        if: always()
+        env:
+          OUT_DIR: ${{ runner.temp }}/runtime-collect
+        run: |
+          set -euo pipefail
+          bash .github/actions/runtime-relevance/collect.sh
+          python3 -I .github/actions/runtime-relevance/export.py --input "${OUT_DIR}" --cluster kind-ci \
+            --output "${OUT_DIR}/runtime-relevance.json"
+          # The demo workload must be classified from its filtered manifest, not left unknown.
+          jq -e '[.entries[] | select(.workload == "demo/Deployment/web")] | length > 0 and all(.relevant != "unknown")' \
+            "${OUT_DIR}/runtime-relevance.json"
+
+      - id: relevance
+        uses: ./.github/actions/runtime-relevance
+        with:
+          export-file: ${{ runner.temp }}/runtime-collect/runtime-relevance.json
+
+      - name: Upload collected objects
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: runtime-collect
+          path: ${{ runner.temp }}/runtime-collect
+          retention-days: 7
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

@@ -1,0 +1,339 @@
+{
+ "apiVersion": "spdx.softwarecomposition.kubescape.io/v1beta1",
+ "kind": "VulnerabilityManifest",
+ "metadata": {
+  "name": "docker.io-library-nginx-sha256-b997b0db9c2bc0a2fb803ced5fb9ff3a757e54903a28ada3e50412cc3ab7822f-b7822f",
+  "namespace": "security-scanners",
+  "labels": {
+   "kubescape.io/context": "non-filtered",
+   "kubescape.io/image-id": "docker-io-library-nginx-sha256-b997b0db9c2bc0a2fb803ced5fb9ff3a",
+   "kubescape.io/image-name": "docker-io-library-nginx"
+  },
+  "annotations": {
+   "kubescape.io/cve-matching-mode": "adaptive",
+   "kubescape.io/image-id": "docker.io/library/nginx@sha256:b997b0db9c2bc0a2fb803ced5fb9ff3a757e54903a28ada3e50412cc3ab7822f",
+   "kubescape.io/image-tag": "docker.io/library/nginx@sha256:b997b0db9c2bc0a2fb803ced5fb9ff3a757e54903a28ada3e50412cc3ab7822f",
+   "kubescape.io/resource-size": "1007920",
+   "kubescape.io/scan-id": "replicaset-web-678fbbfc98-nginx-4165-35df-v1-42-3-v0-104-1-matching-adaptive",
+   "kubescape.io/status": "ready",
+   "kubescape.io/tool-version": "v1.42.3"
+  },
+  "creationTimestamp": "2026-10-15T21:19:40Z"
+ },
+ "spec": {
+  "metadata": {
+   "report": {
+    "createdAt": null
+   },
+   "tool": {
+    "databaseVersion": "2f1597f25b5089e966272b251eb4d1f9977e59d57029af1c8810deb6e5321aa2",
+    "name": "",
+    "version": "v0.104.1-matching-adaptive"
+   },
+   "withRelevancy": false
+  },
+  "payload": {
+   "matches": [
+    {
+     "artifact": {
+      "name": "libwebp6",
+      "version": "0.6.1-2.1+deb11u1",
+      "type": "deb",
+      "purl": "pkg:deb/debian/libwebp6@0.6.1-2.1%2Bdeb11u1?arch=amd64&distro=debian-11&upstream=libwebp"
+     },
+     "relatedVulnerabilities": [
+      {
+       "cvss": null,
+       "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-4863",
+       "description": "Heap buffer overflow in libwebp in Google Chrome prior to 116.0.5845.187 and libwebp 1.3.2 allowed a remote attacker to perform an out of bounds memory write via a crafted HTML page. (Chromium security severity: Critical)",
+       "id": "CVE-2023-4863",
+       "namespace": "nvd:cpe",
+       "severity": "High",
+       "urls": [
+        "http://www.openwall.com/lists/oss-security/2023/09/21/4",
+        "http://www.openwall.com/lists/oss-security/2023/09/22/1",
+        "http://www.openwall.com/lists/oss-security/2023/09/22/3",
+        "http://www.openwall.com/lists/oss-security/2023/09/22/4",
+        "http://www.openwall.com/lists/oss-security/2023/09/22/5",
+        "http://www.openwall.com/lists/oss-security/2023/09/22/6",
+        "http://www.openwall.com/lists/oss-security/2023/09/22/7",
+        "http://www.openwall.com/lists/oss-security/2023/09/22/8",
+        "http://www.openwall.com/lists/oss-security/2023/09/26/1",
+        "http://www.openwall.com/lists/oss-security/2023/09/26/7",
+        "http://www.openwall.com/lists/oss-security/2023/09/28/1",
+        "http://www.openwall.com/lists/oss-security/2023/09/28/2",
+        "http://www.openwall.com/lists/oss-security/2023/09/28/4",
+        "https://adamcaudill.com/2023/09/14/whose-cve-is-it-anyway/",
+        "https://blog.isosceles.com/the-webp-0day/",
+        "https://bugzilla.suse.com/show_bug.cgi?id=1215231",
+        "https://chromereleases.googleblog.com/2023/09/stable-channel-update-for-desktop_11.html",
+        "https://crbug.com/1479274",
+        "https://en.bandisoft.com/honeyview/history/",
+        "https://github.com/webmproject/libwebp/commit/902bc9190331343b2017211debcec8d2ab87e17a",
+        "https://github.com/webmproject/libwebp/releases/tag/v1.3.2",
+        "https://lists.debian.org/debian-lts-announce/2023/09/msg00015.html",
+        "https://lists.debian.org/debian-lts-announce/2023/09/msg00016.html",
+        "https://lists.debian.org/debian-lts-announce/2023/09/msg00017.html",
+        "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/6T655QF7CQ3DYAMPFV7IECQYGDEUIVVT/",
+        "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/FYYKLG6CRGEDTNRBSU26EEWAO6D6U645/",
+        "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/KUQ7CTX3W372X3UY56VVNAHCH6H2F4X3/",
+        "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/OZDGWWMJREPAGKWCJKSCM4WYLANSKIFX/",
+        "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/PYZV7TMKF4QHZ54SFJX54BDN52VHGGCX/",
+        "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/WHOLML7N2G5KCAZXFWC5IDFFHSQS5SDB/",
+        "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/WTRUIS3564P7ZLM2S2IH4Y4KZ327LI4I/",
+        "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-4863",
+        "https://news.ycombinator.com/item?id=37478403",
+        "https://security-tracker.debian.org/tracker/CVE-2023-4863",
+        "https://security.gentoo.org/glsa/202309-05",
+        "https://security.gentoo.org/glsa/202401-10",
+        "https://security.netapp.com/advisory/ntap-20230929-0011/",
+        "https://sethmlarson.dev/security-developer-in-residence-weekly-report-16",
+        "https://stackdiary.com/critical-vulnerability-in-webp-codec-cve-2023-4863/",
+        "https://www.bentley.com/advisories/be-2023-0001/",
+        "https://www.bleepingcomputer.com/news/google/google-fixes-another-chrome-zero-day-bug-exploited-in-attacks/",
+        "https://www.debian.org/security/2023/dsa-5496",
+        "https://www.debian.org/security/2023/dsa-5497",
+        "https://www.debian.org/security/2023/dsa-5498",
+        "https://www.mozilla.org/en-US/security/advisories/mfsa2023-40/",
+        "https://www.vicarius.io/vsociety/posts/zero-day-webp-vulnerability-cve-2023-4863",
+        "https://www.cisa.gov/known-exploited-vulnerabilities-catalog?field_cve=CVE-2023-4863"
+       ]
+      }
+     ],
+     "vulnerability": {
+      "id": "CVE-2023-4863",
+      "severity": "High",
+      "namespace": "debian:distro:debian:11",
+      "fix": {
+       "state": "fixed",
+       "versions": [
+        "0.6.1-2.1+deb11u2"
+       ]
+      }
+     }
+    },
+    {
+     "artifact": {
+      "name": "libc6",
+      "version": "2.31-13+deb11u6",
+      "type": "deb",
+      "purl": "pkg:deb/debian/libc6@2.31-13%2Bdeb11u6?arch=amd64&distro=debian-11&upstream=glibc"
+     },
+     "relatedVulnerabilities": [
+      {
+       "cvss": null,
+       "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-4911",
+       "description": "A buffer overflow was discovered in the GNU C Library's dynamic loader ld.so while processing the GLIBC_TUNABLES environment variable. This issue could allow a local attacker to use maliciously crafted GLIBC_TUNABLES environment variables when launching binaries with SUID permission to execute code with elevated privileges.",
+       "id": "CVE-2023-4911",
+       "namespace": "nvd:cpe",
+       "severity": "High",
+       "urls": [
+        "https://access.redhat.com/errata/RHSA-2023:5453",
+        "https://access.redhat.com/errata/RHSA-2023:5454",
+        "https://access.redhat.com/errata/RHSA-2023:5455",
+        "https://access.redhat.com/errata/RHSA-2023:5476",
+        "https://access.redhat.com/errata/RHSA-2024:0033",
+        "https://access.redhat.com/security/cve/CVE-2023-4911",
+        "https://bugzilla.redhat.com/show_bug.cgi?id=2238352",
+        "https://www.qualys.com/2023/10/03/cve-2023-4911/looney-tunables-local-privilege-escalation-glibc-ld-so.txt",
+        "https://www.qualys.com/cve-2023-4911/",
+        "http://packetstormsecurity.com/files/174986/glibc-ld.so-Local-Privilege-Escalation.html",
+        "http://packetstormsecurity.com/files/176288/Glibc-Tunables-Privilege-Escalation.html",
+        "http://seclists.org/fulldisclosure/2023/Oct/11",
+        "http://www.openwall.com/lists/oss-security/2023/10/03/2",
+        "http://www.openwall.com/lists/oss-security/2023/10/03/3",
+        "http://www.openwall.com/lists/oss-security/2023/10/05/1",
+        "http://www.openwall.com/lists/oss-security/2023/10/13/11",
+        "http://www.openwall.com/lists/oss-security/2023/10/14/3",
+        "http://www.openwall.com/lists/oss-security/2023/10/14/5",
+        "http://www.openwall.com/lists/oss-security/2023/10/14/6",
+        "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/4DBUQRRPB47TC3NJOUIBVWUGFHBJAFDL/",
+        "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/DFG4P76UHHZEWQ26FWBXG76N2QLKKPZA/",
+        "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/NDAQWHTSVOCOZ5K6KPIWKRT3JX4RTZUR/",
+        "https://security.gentoo.org/glsa/202310-03",
+        "https://security.netapp.com/advisory/ntap-20231013-0006/",
+        "https://www.debian.org/security/2023/dsa-5514",
+        "https://www.exploit-db.com/exploits/52479",
+        "https://cert-portal.siemens.com/productcert/html/ssa-082556.html",
+        "https://cert-portal.siemens.com/productcert/html/ssa-794697.html",
+        "https://cert-portal.siemens.com/productcert/html/ssa-831302.html",
+        "https://www.cisa.gov/known-exploited-vulnerabilities-catalog?field_cve=CVE-2023-4911"
+       ]
+      }
+     ],
+     "vulnerability": {
+      "id": "CVE-2023-4911",
+      "severity": "High",
+      "namespace": "debian:distro:debian:11",
+      "fix": {
+       "state": "fixed",
+       "versions": [
+        "2.31-13+deb11u7"
+       ]
+      }
+     }
+    },
+    {
+     "artifact": {
+      "name": "libssl1.1",
+      "version": "1.1.1n-0+deb11u5",
+      "type": "deb",
+      "purl": "pkg:deb/debian/libssl1.1@1.1.1n-0%2Bdeb11u5?arch=amd64&distro=debian-11&upstream=openssl"
+     },
+     "relatedVulnerabilities": [
+      {
+       "cvss": null,
+       "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2024-2511",
+       "description": "Issue summary: Some non-default TLS server configurations can cause unbounded\nmemory growth when processing TLSv1.3 sessions\n\nImpact summary: An attacker may exploit certain server configurations to trigger\nunbounded memory growth that would lead to a Denial of Service\n\nThis problem can occur in TLSv1.3 if the non-default SSL_OP_NO_TICKET option is\nbeing used (but not if early_data support is also configured and the default\nanti-replay protection is in use). In this case, under certain conditions, the\nsession cache can get into an incorrect state and it will fail to flush properly\nas it fills. The session cache will continue to grow in an unbounded manner. A\nmalicious client could deliberately create the scenario for this failure to\nforce a Denial of Service. It may also happen by accident in normal operation.\n\nThis issue only affects TLS servers supporting TLSv1.3. It does not affect TLS\nclients.\n\nThe FIPS modules in 3.2, 3.1 and 3.0 are not affected by this issue. OpenSSL\n1.0.2 is also not affected by this issue.",
+       "id": "CVE-2024-2511",
+       "namespace": "nvd:cpe",
+       "severity": "Medium",
+       "urls": [
+        "https://github.com/openssl/openssl/commit/7e4d731b1c07201ad9374c1cd9ac5263bdf35bce",
+        "https://github.com/openssl/openssl/commit/b52867a9f618bb955bed2a3ce3db4d4f97ed8e5d",
+        "https://github.com/openssl/openssl/commit/e9d7083e241670332e0443da0f0d4ffb52829f08",
+        "https://github.openssl.org/openssl/extended-releases/commit/5f8d25770ae6437db119dfc951e207271a326640",
+        "https://www.openssl.org/news/secadv/20240408.txt",
+        "http://www.openwall.com/lists/oss-security/2024/04/08/5",
+        "https://lists.debian.org/debian-lts-announce/2024/10/msg00033.html",
+        "https://lists.debian.org/debian-lts-announce/2024/11/msg00000.html",
+        "https://security.netapp.com/advisory/ntap-20240503-0013/",
+        "https://cert-portal.siemens.com/productcert/html/ssa-265688.html",
+        "https://cert-portal.siemens.com/productcert/html/ssa-354112.html",
+        "https://cert-portal.siemens.com/productcert/html/ssa-398330.html",
+        "https://cert-portal.siemens.com/productcert/html/ssa-613116.html",
+        "https://cert-portal.siemens.com/productcert/html/ssa-769027.html",
+        "https://cert-portal.siemens.com/productcert/html/ssa-915275.html"
+       ]
+      }
+     ],
+     "vulnerability": {
+      "id": "CVE-2024-2511",
+      "severity": "Medium",
+      "namespace": "debian:distro:debian:11",
+      "fix": {
+       "state": "fixed",
+       "versions": [
+        "1.1.1w-0+deb11u2"
+       ]
+      }
+     }
+    },
+    {
+     "artifact": {
+      "name": "perl-base",
+      "version": "5.32.1-4+deb11u2",
+      "type": "deb",
+      "purl": "pkg:deb/debian/perl-base@5.32.1-4%2Bdeb11u2?arch=amd64&distro=debian-11&upstream=perl"
+     },
+     "relatedVulnerabilities": [
+      {
+       "cvss": null,
+       "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-31484",
+       "description": "CPAN.pm before 2.35 does not verify TLS certificates when downloading distributions over HTTPS.",
+       "id": "CVE-2023-31484",
+       "namespace": "nvd:cpe",
+       "severity": "High",
+       "urls": [
+        "http://www.openwall.com/lists/oss-security/2023/04/29/1",
+        "http://www.openwall.com/lists/oss-security/2023/05/03/3",
+        "http://www.openwall.com/lists/oss-security/2023/05/03/5",
+        "http://www.openwall.com/lists/oss-security/2023/05/07/2",
+        "https://blog.hackeriet.no/perl-http-tiny-insecure-tls-default-affects-cpan-modules/",
+        "https://github.com/andk/cpanpm/pull/175",
+        "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/BM6UW55CNFUTNGD5ZRKGUKKKFDJGMFHL/",
+        "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/LEGCEOKFJVBJ2QQ6S2H4NAEWTUERC7SB/",
+        "https://metacpan.org/dist/CPAN/changes",
+        "https://security.netapp.com/advisory/ntap-20240621-0007/",
+        "https://www.openwall.com/lists/oss-security/2023/04/18/14",
+        "https://lists.debian.org/debian-lts-announce/2024/10/msg00017.html"
+       ]
+      }
+     ],
+     "vulnerability": {
+      "id": "CVE-2023-31484",
+      "severity": "High",
+      "namespace": "debian:distro:debian:11",
+      "fix": {
+       "state": "fixed",
+       "versions": [
+        "5.32.1-4+deb11u4"
+       ]
+      }
+     }
+    },
+    {
+     "artifact": {
+      "name": "libpcre3",
+      "version": "2:8.39-13",
+      "type": "deb",
+      "purl": "pkg:deb/debian/libpcre3@2%3A8.39-13?arch=amd64&distro=debian-11&upstream=pcre3"
+     },
+     "relatedVulnerabilities": [
+      {
+       "cvss": null,
+       "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2017-11164",
+       "description": "In PCRE 8.41, the OP_KETRMAX feature in the match function in pcre_exec.c allows stack exhaustion (uncontrolled recursion) when processing a crafted regular expression.",
+       "id": "CVE-2017-11164",
+       "namespace": "nvd:cpe",
+       "severity": "High",
+       "urls": [
+        "http://openwall.com/lists/oss-security/2017/07/11/3",
+        "http://www.openwall.com/lists/oss-security/2023/04/11/1",
+        "http://www.openwall.com/lists/oss-security/2023/04/12/1",
+        "http://www.securityfocus.com/bid/99575",
+        "https://lists.apache.org/thread.html/rf9fa47ab66495c78bb4120b0754dd9531ca2ff0430f6685ac9b07772%40%3Cdev.mina.apache.org%3E"
+       ]
+      }
+     ],
+     "vulnerability": {
+      "id": "CVE-2017-11164",
+      "severity": "Negligible",
+      "namespace": "debian:distro:debian:11",
+      "fix": {
+       "state": "not-fixed",
+       "versions": null
+      }
+     }
+    },
+    {
+     "artifact": {
+      "name": "apt",
+      "version": "2.2.4",
+      "type": "deb",
+      "purl": "pkg:deb/debian/apt@2.2.4?arch=amd64&distro=debian-11"
+     },
+     "relatedVulnerabilities": [
+      {
+       "cvss": null,
+       "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2011-3374",
+       "description": "It was found that apt-key in apt, all versions, do not correctly validate gpg keys with the master keyring, leading to a potential man-in-the-middle attack.",
+       "id": "CVE-2011-3374",
+       "namespace": "nvd:cpe",
+       "severity": "Low",
+       "urls": [
+        "https://access.redhat.com/security/cve/cve-2011-3374",
+        "https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=642480",
+        "https://people.canonical.com/~ubuntu-security/cve/2011/CVE-2011-3374.html",
+        "https://seclists.org/fulldisclosure/2011/Sep/221",
+        "https://security-tracker.debian.org/tracker/CVE-2011-3374",
+        "https://snyk.io/vuln/SNYK-LINUX-APT-116518",
+        "https://ubuntu.com/security/CVE-2011-3374"
+       ]
+      }
+     ],
+     "vulnerability": {
+      "id": "CVE-2011-3374",
+      "severity": "Negligible",
+      "namespace": "debian:distro:debian:11",
+      "fix": {
+       "state": "not-fixed",
+       "versions": null
+      }
+     }
+    }
+   ]
+  }
+ },
+ "status": {}
+}

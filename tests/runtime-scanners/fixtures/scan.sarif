@@ -1,0 +1,17 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {"driver": {"name": "Trivy", "rules": []}},
+      "results": [
+        {"ruleId": "CVE-2023-0001", "message": {"text": "Package: libssl3\nInstalled Version: 3.0.9\nVulnerability CVE-2023-0001"}},
+        {"ruleId": "CVE-2023-0002", "message": {"text": "Package: libxml2\nInstalled Version: 2.9.14\nVulnerability CVE-2023-0002"}},
+        {"ruleId": "CVE-2023-0003", "message": {"text": "Package: perl-base\nInstalled Version: 5.36\nVulnerability CVE-2023-0003"}},
+        {"ruleId": "CVE-2023-0004", "message": {"text": "Package: zlib1g\nInstalled Version: 1.2.13"}},
+        {"ruleId": "CVE-2023-9999", "message": {"text": "Package: bash\nInstalled Version: 5.2"}},
+        {"ruleId": "CVE-2023-0002-libxml2", "message": {"text": "grype-style rule id"}, "properties": {"tags": ["security"]}},
+        {"ruleId": "DS002", "message": {"text": "misconfiguration, not a CVE"}}
+      ]
+    }
+  ]
+}
