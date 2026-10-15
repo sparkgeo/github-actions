@@ -1,0 +1,8 @@
+Gobra 1.1-SNAPSHOT (@)
+(c) Copyright ETH Zurich 2012 - 2024
+05:44:10.360 [main] INFO viper.gobra.Gobra - Verifying package generic - generic [05:44:10]
+05:44:10.605 [thread-5] ERROR viper.gobra.reporting.FileWriterReporter - Error at: <generic/generic.go:4:13> no viable alternative at input '['
+func Identity[T any](x T) T { return x }
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+05:44:10.756 [thread-20] ERROR viper.gobra.Gobra - Gobra found 1 error.

@@ -1,0 +1,142 @@
+name: "Gobra"
+description: |
+  Deductive verification of pure Go packages with Gobra (SecOps plan Step
+  39, issue #129): the `//@ requires` / `//@ ensures` annotations are
+  discharged through Viper and Z3. Runs the digest-pinned
+  ghcr.io/viperproject/gobra image per package with --module and --include
+  set from go.mod, a Viper cache file per run, and a time limit per package.
+  Errors become annotations in three categories: verification (a contract
+  does not hold), unsupported (Go outside Gobra's parser or loader, so the
+  package was not verified) and typecheck (the annotated program was
+  rejected). Writes gobra.json, the brief and summary.json.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  working-directory:
+    description: "Go module root (go.mod)."
+    default: "."
+  packages:
+    description: "Comma-separated package directories relative to working-directory; empty takes the directories of changed files whose map entry carries the gobra rung (map-json)."
+    default: ""
+  map-json:
+    description: "verify-map.json written by the verify-map composite; used when packages is empty."
+    default: ""
+  gobra-image:
+    description: "Gobra image, pinned by digest (docs/approved-actions.md)."
+    default: "ghcr.io/viperproject/gobra@sha256:d9dc17cdb3725818943a6224872628610e130c349e059ad393ef4f88878cca19"
+  java-xss:
+    description: "Java stack size; raise on StackOverflowError."
+    default: "1g"
+  java-xmx:
+    description: "Java heap."
+    default: "4g"
+  package-timeout-minutes:
+    description: "Wall clock per package."
+    default: "15"
+  backend:
+    description: "Viper backend: VSWITHSILICON (default; the ViperServer backends are the ones that read and write cache-file), SILICON, CARBON or VSWITHCARBON."
+    default: "VSWITHSILICON"
+  cache-file:
+    description: "Viper cache file relative to working-directory (restore and save it with actions/cache to skip unchanged methods; ViperServer backends only)."
+    default: ".gobra/cache.json"
+  fail-on-unsupported:
+    description: "Block when a package uses Go that Gobra cannot parse or load."
+    default: "true"
+  output-dir:
+    description: "Where gobra-*.txt, gobra.json, the brief and summary.json go."
+    default: "verify-gobra-artifacts"
+  gate:
+    description: "Exit 1 on a blocking finding."
+    default: "true"
+outputs:
+  gobra:
+    description: "0 when every package verified, 1 otherwise; empty when no package was in scope."
+    value: ${{ steps.brief.outputs.gobra }}
+  packages:
+    description: "Packages verified."
+    value: ${{ steps.brief.outputs.packages }}
+  verification-errors:
+    description: "Obligations Gobra could not prove."
+    value: ${{ steps.brief.outputs.verification-errors }}
+  unsupported:
+    description: "Unsupported-construct errors."
+    value: ${{ steps.brief.outputs.unsupported }}
+  blocking:
+    description: "Blocking findings."
+    value: ${{ steps.brief.outputs.blocking }}
+runs:
+  using: "composite"
+  steps:
+    - id: scope
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        MAP: ${{ inputs.map-json }}
+        OUT: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        ART="$(mkdir -p "${OUT}" && cd "${OUT}" && pwd)"
+        PREFIX="$(git rev-parse --show-prefix 2>/dev/null || true)"
+        if [ -n "${PACKAGES}" ]; then
+          tr ',' '\n' <<< "${PACKAGES}" | xargs -r -n1 | sort -u > "${ART}/packages.txt"
+        elif [ -n "${MAP}" ] && [ -f "${MAP}" ]; then
+          # map.json keys are repository-relative; strip this module's prefix
+          jq -r --arg p "${PREFIX}" '.files | to_entries[] | select(.value.rungs | index("gobra")) | .key
+            | select(endswith(".go") and (endswith("_test.go") | not)) | select(startswith($p)) | ltrimstr($p)' "${MAP}" \
+            | xargs -r -n1 dirname | sort -u > "${ART}/packages.txt"
+        else
+          : > "${ART}/packages.txt"
+        fi
+        MODULE="$(sed -n 's/^module[[:space:]]\+//p' go.mod 2>/dev/null | head -1)"
+        [ -n "${MODULE}" ] || { echo "::error title=gobra::no go.mod with a module line in $(pwd)"; exit 1; }
+        echo "  $(wc -l < "${ART}/packages.txt") package(s); module ${MODULE}"
+        { echo "art=${ART}"; echo "module=${MODULE}"; echo "prefix=${PREFIX}"; echo "count=$(wc -l < "${ART}/packages.txt")"; } >> "${GITHUB_OUTPUT}"
+
+    - id: verify
+      if: steps.scope.outputs.count != '0'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+        MODULE: ${{ steps.scope.outputs.module }}
+        PREFIX: ${{ steps.scope.outputs.prefix }}
+        IMAGE: ${{ inputs.gobra-image }}
+        XSS: ${{ inputs.java-xss }}
+        XMX: ${{ inputs.java-xmx }}
+        PKG_TIMEOUT: ${{ inputs.package-timeout-minutes }}
+        CACHE: ${{ inputs.cache-file }}
+        BACKEND: ${{ inputs.backend }}
+      run: |
+        set -euo pipefail
+        case "${IMAGE}" in *@sha256:*) ;; *) echo "::error title=gobra::gobra-image must be pinned by digest (image@sha256:...)"; exit 1 ;; esac
+        docker pull -q "${IMAGE}" > /dev/null
+        mkdir -p "$(dirname "${CACHE}")"
+        while IFS= read -r pkg; do
+          [ -d "${pkg}" ] || { echo "::warning title=gobra::${pkg} is not a directory; skipped"; continue; }
+          n="$(echo "${pkg}" | tr '/.' '__')"
+          rc=0
+          timeout "$((PKG_TIMEOUT * 60))" docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "${PWD}:/work" -w /work --entrypoint java "${IMAGE}" \
+            "-Xss${XSS}" "-Xmx${XMX}" -XX:-UseContainerSupport -jar /gobra/gobra.jar \
+            -p "${pkg}" -m "${MODULE}" -I . --backend "${BACKEND}" --cacheFile "/work/${CACHE}" > "${ART}/gobra-${n}.txt" 2>&1 || rc=$?
+          [ "${rc}" -eq 124 ] && echo "Error at: <${pkg}/:1:1> verification timed out after ${PKG_TIMEOUT} minutes" >> "${ART}/gobra-${n}.txt"
+          python3 -I "${GITHUB_ACTION_PATH}/gobra.py" parse --log "${ART}/gobra-${n}.txt" --package "${pkg}" --rc "${rc}" \
+            --root "${PREFIX}" --output "${ART}/gobra-${n}.json"
+        done < "${ART}/packages.txt"
+
+    - id: brief
+      shell: bash
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+        FAIL_UNSUPPORTED: ${{ inputs.fail-on-unsupported }}
+        GATE: ${{ inputs.gate }}
+      run: |
+        set -euo pipefail
+        ARGS=(--art "${ART}")
+        [ "${FAIL_UNSUPPORTED}" = "true" ] && ARGS+=(--fail-on-unsupported)
+        [ "${GATE}" = "true" ] && ARGS+=(--gate)
+        rc=0
+        python3 -I "${GITHUB_ACTION_PATH}/gobra.py" brief "${ARGS[@]}" || rc=$?
+        cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+        exit "${rc}"

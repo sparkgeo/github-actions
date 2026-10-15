@@ -1,0 +1,149 @@
+name: Verify (Gobra)
+
+# Reusable PR check (issue #129, plan Step 39): deductive verification of
+# pure Go packages. `go test -fuzz` (verify-go.yml, #126) refutes; Gobra
+# proves: the `//@ requires` / `//@ ensures` annotations are discharged
+# through Viper and Z3. Runs the digest-pinned ghcr.io/viperproject/gobra
+# image per package (listed in docs/approved-actions.md), with --module and
+# --include from go.mod and the Viper cache restored between runs.
+# Verification and type-check errors block; Go outside Gobra's subset is
+# reported as "unsupported" (blocking unless fail-on-unsupported is false),
+# never skipped silently. One rolling PR comment, artefacts 30 days, gate
+# last.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com, ghcr.io and
+# pkg-containers.githubusercontent.com (the image), PyPI (the map's jsonschema).
+
+on:
+  workflow_call:
+    inputs:
+      packages:
+        description: 'Comma-separated package directories relative to working-directory; empty takes changed files whose verify.yml entry carries the gobra rung'
+        default: ''
+        type: string
+      working-directory:
+        description: 'Go module root (go.mod)'
+        default: '.'
+        type: string
+      map-path:
+        description: 'verify.yml in the repository'
+        default: 'verify.yml'
+        type: string
+      gobra-image:
+        description: 'Pinned by digest in the approved actions registry'
+        default: 'ghcr.io/viperproject/gobra@sha256:d9dc17cdb3725818943a6224872628610e130c349e059ad393ef4f88878cca19'
+        type: string
+      fail-on-unsupported:
+        description: 'Block when a mapped package uses Go that Gobra cannot parse or load'
+        default: true
+        type: boolean
+      timeout-minutes:
+        description: 'Wall clock per package'
+        default: 20
+        type: number
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned verify-gobra.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      gobra:
+        description: '0 when every package verified, 1 otherwise; empty when no package was in scope'
+        value: ${{ jobs.gobra.outputs.gobra }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants contents: read and pull-requests: write (the
+# rolling comment).
+jobs:
+  gobra:
+    name: Verify Gobra
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      gobra: ${{ steps.gobra.outputs.gobra }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the base must be reachable for the changed-files diff
+
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout verify composites
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: map
+        if: inputs.packages == ''
+        uses: ./.sparkgeo-github-actions/.github/actions/verify-map
+        with:
+          map-path: ${{ inputs.map-path }}
+          output-path: ${{ runner.temp }}/verify-map.json
+
+      # Viper caches verified methods by content; a hit skips them.
+      - name: Restore Viper cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ inputs.working-directory }}/.gobra/cache.json
+          key: gobra-${{ hashFiles(format('{0}/**/*.go', inputs.working-directory)) }}
+          restore-keys: gobra-
+
+      - id: gobra
+        uses: ./.sparkgeo-github-actions/.github/actions/gobra
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          packages: ${{ inputs.packages }}
+          map-json: ${{ inputs.packages == '' && format('{0}/verify-map.json', runner.temp) || '' }}
+          gobra-image: ${{ inputs.gobra-image }}
+          package-timeout-minutes: ${{ inputs.timeout-minutes }}
+          fail-on-unsupported: ${{ inputs.fail-on-unsupported }}
+          output-dir: ${{ runner.temp }}/verify-gobra
+          gate: 'false'
+
+      - name: Save Viper cache
+        if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ inputs.working-directory }}/.gobra/cache.json
+          key: gobra-${{ hashFiles(format('{0}/**/*.go', inputs.working-directory)) }}
+
+      - name: Post the brief
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BRIEF: ${{ runner.temp }}/verify-gobra/verify-brief.md
+        run: |
+          [ -f "${BRIEF}" ] || exit 0
+          gh pr comment "${PR}" --body-file "${BRIEF}" --edit-last --create-if-none \
+            || gh pr comment "${PR}" --body-file "${BRIEF}" || true
+
+      - name: Keep the raw artefacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: verify-gobra-${{ github.event.pull_request.number || github.run_id }}
+          path: ${{ runner.temp }}/verify-gobra
+          retention-days: 30
+
+      # Last, after the brief is posted, so a red build always arrives with its
+      # explanation attached to the PR.
+      - name: Gate
+        if: always()
+        env:
+          SUMMARY: ${{ runner.temp }}/verify-gobra/summary.json
+        run: |
+          [ -f "${SUMMARY}" ] || { echo "::error title=verify-gobra::no summary.json; the verify step did not finish"; exit 1; }
+          jq -r '.gate.warn[] | "  warn: " + .' "${SUMMARY}"
+          jq -r '.gate.fail[] | "  FAIL: " + .' "${SUMMARY}"
+          jq -e '.gate.fail | length == 0' "${SUMMARY}" > /dev/null

@@ -58,6 +58,20 @@ The plan keeps two self-contained reference workflows beside each other, uncommi
 **/geometry/** **/geom/** **/crs/** **/projection*/** **/transform*/** **/tiles/** **/tile*/** **/index*/** **/h3/** **/s2/** **/quadkey*
 ```
 
+### 5.5 Gobra: `verify-gobra.yml` (#129)
+
+Packages come from the `packages` input, or from the changed non-test `.go` files whose `verify.yml` entry carries the `gobra` rung (a rung on a `go` path in the map, not a separate tool). Each runs in the digest-pinned `ghcr.io/viperproject/gobra` image (v26.02, OpenJDK 21) as `java -jar /gobra/gobra.jar -p <pkg> -m <module from go.mod> -I . --backend VSWITHSILICON --cacheFile .gobra/cache.json`, under `package-timeout-minutes`. Errors are annotated at the annotation line and sorted into three categories:
+
+| Category | Means | Gate |
+|---|---|---|
+| verification | Viper could not prove an obligation: a postcondition, assertion, call precondition, permission or loop invariant | blocks |
+| typecheck | Gobra rejected the annotated program before verifying: ghost code calling an impure function, a non-`pure` function in a contract, Go outside the subset | blocks |
+| unsupported | Gobra's parser or loader does not accept the Go: generics, an import it cannot resolve (`reflect` and most of the standard library have no Gobra stubs) | blocks; advisory with `fail-on-unsupported: false` |
+
+Write annotated code as small pure functions over basic types. Gobra reserves `by`, `ghost`, `pure` and other specification keywords, so they cannot be Go identifiers in a verified package. Contracts may only call functions marked `//@ pure` (with `//@ decreases`), and there is no `<==>` (write `(a) == (b)`).
+
+**Runtime.** The image is 695 MB, about 20 to 30 s to pull. JVM start and Gobra's setup take about 3 s per package. The example's four functions verify in about 5 s in total. Budget from there: a package of a few dozen annotated functions over integers stays within a minute or two. Quantifiers over slices and heap permissions are what grow it. Split by package before raising `package-timeout-minutes`. The Viper cache only works with the ViperServer backends (`VSWITHSILICON`, the default; plain `SILICON` writes no cache). The workflow restores `.gobra/cache.json` keyed on the hash of the module's `.go` files, with a `gobra-` prefix fallback, so unchanged methods are skipped.
+
 ## 6. The map: `verify.yml`
 
 Schema: [`policies/verification/verify.schema.json`](../policies/verification/verify.schema.json); example with all three languages and the cross-language tools: [`examples/verify.yml`](examples/verify.yml). One entry per path glob: `risk` (`high`, `medium`, `low`), `rungs` (lowest first), `tool` (inferred from the extension when absent), `targets` for Dafny compile targets, `covers` for the implementation globs a model stands for, `budget` overrides. `verify-map.yml` validates the file, resolves the changed files to their entries (longest glob wins) or to the fallback, and writes `verify-map.json` (`files`, `mapped`, `bare_high_risk`, `by_tool`) for the other workflows. A changed high-risk path with no rung is a warning at Baseline and fails with `strict-high-risk`; an implementation change under a model's `covers` without a change to the model is a warning.

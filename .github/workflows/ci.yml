@@ -116,6 +116,52 @@ jobs:
         run: |
           { [ "${FALLBACK}" = "true" ] && [ "${MAPPED}" = "0" ] && [ "${ERRORS}" = "0" ]; } || { echo "::error title=verify-map::expected fallback mode with nothing mapped and no errors; got fallback=${FALLBACK} mapped=${MAPPED} errors=${ERRORS}"; exit 1; }
 
+  verify-gobra:
+    name: Verify Gobra
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fixtures (recorded logs)
+        run: tests/verify-gobra/run.sh
+
+      # Live: the example verifies; the fixture module yields one error per
+      # category (a false postcondition, generics, an impure call in a
+      # postcondition), each blocking.
+      - id: example
+        uses: ./.github/actions/gobra
+        with:
+          working-directory: docs/examples/verify/go-gobra
+          packages: orient
+          output-dir: ${{ runner.temp }}/gobra-example
+
+      - id: fixtures
+        uses: ./.github/actions/gobra
+        with:
+          working-directory: tests/verify-gobra/fixtures/mod
+          packages: bad,generic,purity
+          output-dir: ${{ runner.temp }}/gobra-fixtures
+          gate: 'false'
+
+      - name: Outcome
+        env:
+          EXAMPLE: ${{ steps.example.outputs.gobra }}
+          VERIFICATION: ${{ steps.fixtures.outputs.verification-errors }}
+          UNSUPPORTED: ${{ steps.fixtures.outputs.unsupported }}
+          BLOCKING: ${{ steps.fixtures.outputs.blocking }}
+        run: |
+          { [ "${EXAMPLE}" = "0" ] && [ "${VERIFICATION}" = "1" ] && [ "${UNSUPPORTED}" = "1" ] && [ "${BLOCKING}" = "3" ]; } \
+            || { echo "::error title=verify-gobra::expected the example verified and one blocking finding per category; got example=${EXAMPLE} verification=${VERIFICATION} unsupported=${UNSUPPORTED} blocking=${BLOCKING}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
