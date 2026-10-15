@@ -137,6 +137,9 @@ jobs:
 
       # The example module at tier standard: contracts, CrossHair, properties,
       # mutmut. The changed list is fixed so the run is the same on every PR.
+      # tiles/ is a high-risk path and encode/decode are "Not confirmed", so
+      # tier standard must report exactly that one blocking finding; gate off
+      # here, the Outcome step asserts it.
       - name: Changed list
         run: echo tiles/quadkey.py > "${RUNNER_TEMP}/changed.txt"
 
@@ -147,6 +150,7 @@ jobs:
           changed-list: ${{ runner.temp }}/changed.txt
           tier: standard
           output-dir: ${{ runner.temp }}/verify-python
+          gate: 'false'
 
       - name: Fixtures
         env:
@@ -159,8 +163,13 @@ jobs:
           BARE: ${{ steps.self.outputs.bare-high-risk }}
           SCORE: ${{ steps.self.outputs.mutation-score }}
           BLOCKING: ${{ steps.self.outputs.blocking }}
+          SUMMARY: ${{ runner.temp }}/verify-python/summary.json
         run: |
-          { [ "${CEX}" = "0" ] && [ "${BARE}" = "0" ] && [ -n "${SCORE}" ] && [ "${BLOCKING}" = "0" ]; } || { echo "::error title=verify-python::expected no counterexample, no bare high-risk function, a mutation score and nothing blocking; got counterexamples=${CEX} bare=${BARE} score=${SCORE} blocking=${BLOCKING}"; exit 1; }
+          reason="$(jq -r '.gate.fail[0] // ""' "${SUMMARY}")"
+          { [ "${CEX}" = "0" ] && [ "${BARE}" = "0" ] && [ -n "${SCORE}" ] && [ "${BLOCKING}" = "1" ] \
+            && [[ "${reason}" == *"on high-risk paths not confirmed within budget (tier standard)" ]] \
+            && [ "$(jq '.exhausted' "${SUMMARY}")" -ge 3 ]; } \
+            || { echo "::error title=verify-python::expected no counterexample, no bare high-risk function, a mutation score, child() confirmed and only the tier-standard unconfirmed block; got counterexamples=${CEX} bare=${BARE} score=${SCORE} blocking=${BLOCKING} reason=${reason}"; exit 1; }
 
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
