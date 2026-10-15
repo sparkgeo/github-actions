@@ -1,0 +1,99 @@
+# Structured-PII rules for gitleaks (issue #98, SecOps plan Step 23 Baseline).
+# Loaded next to the default secret rules by the gitleaks composite
+# (extra-config) and by the secrets-precommit.yml / secrets-scan.yml
+# `pii-rules` switch; vendor it into a repository as .gitleaks-pii.toml for
+# the pre-commit hook. Rule ids carry the PII- prefix so findings are told
+# apart from secrets. Go RE2 syntax: no lookaheads, no Luhn, so the patterns
+# are brand- and format-tight and the published test numbers are allowlisted.
+# Which rules block per data tier: docs/data-classification.md section 4.
+title = "Sparkgeo structured PII rules"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "PII-CREDIT_CARD"
+description = "Payment card number (Visa, Mastercard, Amex, Discover), with or without separators"
+regex = '''\b(?:4\d{3}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}|(?:5[1-5]\d{2}|2[2-7]\d{2})[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}|3[47]\d{2}[ -]?\d{6}[ -]?\d{5}|6(?:011|5\d{2})[ -]?\d{4}[ -]?\d{4}[ -]?\d{4})\b'''
+tags = ["pii", "structured", "pci"]
+
+    [[rules.allowlists]]
+    description = "Published test card numbers (Stripe, Braintree, PayPal docs)"
+    regexes = [
+      '''4111[ -]?1111[ -]?1111[ -]?1111''',
+      '''4242[ -]?4242[ -]?4242[ -]?4242''',
+      '''4012[ -]?8888[ -]?8888[ -]?1881''',
+      '''5555[ -]?5555[ -]?5555[ -]?4444''',
+      '''5105[ -]?1051[ -]?0510[ -]?5100''',
+      '''2223[ -]?0031[ -]?2200[ -]?3222''',
+      '''3782[ -]?822463[ -]?10005''',
+      '''3714[ -]?496353[ -]?98431''',
+      '''6011[ -]?1111[ -]?1111[ -]?1117''',
+      '''6011[ -]?0009[ -]?9013[ -]?9424''',
+    ]
+
+[[rules]]
+id = "PII-US_SSN"
+description = "US Social Security Number in the 3-2-4 dashed form"
+regex = '''\b[0-8]\d{2}-\d{2}-\d{4}\b'''
+tags = ["pii", "structured"]
+
+    [[rules.allowlists]]
+    description = "Never-issued areas and groups (000, 666, 00 group, 0000 serial) and the SSA advertising numbers"
+    regexes = [
+      '''^(?:000|666)-''',
+      '''-00-''',
+      '''-0000$''',
+      '''^078-05-1120$''',
+      '''^219-09-9999$''',
+      '''^123-45-6789$''',
+    ]
+
+[[rules]]
+id = "PII-CA_SIN"
+description = "Canadian Social Insurance Number in the 3-3-3 spaced or dashed form"
+regex = '''\b[1-79]\d{2}[ -]\d{3}[ -]\d{3}\b'''
+tags = ["pii", "structured"]
+
+    [[rules.allowlists]]
+    description = "Sequences and the Service Canada example"
+    regexes = [
+      '''^123[ -]456[ -]789$''',
+      '''^111[ -]111[ -]111$''',
+      '''^046[ -]454[ -]286$''',
+      '''^(?:1{3}[ -]1{3}[ -]1{3}|2{3}[ -]2{3}[ -]2{3}|3{3}[ -]3{3}[ -]3{3}|4{3}[ -]4{3}[ -]4{3}|5{3}[ -]5{3}[ -]5{3}|6{3}[ -]6{3}[ -]6{3}|7{3}[ -]7{3}[ -]7{3}|8{3}[ -]8{3}[ -]8{3}|9{3}[ -]9{3}[ -]9{3})$''',
+    ]
+
+[[rules]]
+id = "PII-IBAN_CODE"
+description = "IBAN in compact form for the common European countries (length-checked per country)"
+regex = '''\b(?:GB\d{2}[A-Z]{4}\d{14}|DE\d{20}|FR\d{12}[A-Z0-9]{11}\d{2}|NL\d{2}[A-Z]{4}\d{10}|ES\d{22}|IT\d{2}[A-Z]\d{10}[A-Z0-9]{12}|CH\d{7}[A-Z0-9]{12}|BE\d{14}|AT\d{18}|IE\d{2}[A-Z]{4}\d{14}|PT\d{23}|SE\d{22}|NO\d{13}|DK\d{16}|FI\d{16}|PL\d{26})\b'''
+tags = ["pii", "structured"]
+
+    [[rules.allowlists]]
+    description = "IBAN registry example numbers used in documentation"
+    regexes = [
+      '''^GB82WEST12345698765432$''',
+      '''^GB33BUKB20201555555555$''',
+      '''^DE89370400440532013000$''',
+      '''^FR1420041010050500013M02606$''',
+      '''^NL91ABNA0417164300$''',
+      '''^ES9121000418450200051332$''',
+      '''^IT60X0542811101000000123456$''',
+      '''^CH9300762011623852957$''',
+      '''^BE68539007547034$''',
+    ]
+
+[[rules]]
+id = "PII-E164_PHONE"
+description = "International phone number with country code (+CC, 10 to 15 digits, separators allowed)"
+regex = '''\+(?:[1-9]\d{0,2})[ -]?(?:\(\d{2,4}\)|\d{2,4})[ -]?\d{3,4}[ -]?\d{3,4}\b'''
+tags = ["pii", "structured"]
+
+    [[rules.allowlists]]
+    description = "Reserved fictional ranges: North American 555-01xx, UK Ofcom drama numbers, version-like strings"
+    regexes = [
+      '''555[ -]?01\d{2}$''',
+      '''\+44[ -]?\(?0?\)?[ -]?(?:7700[ -]?900|20[ -]?7946[ -]?0|113[ -]?496[ -]?0|1632[ -]?960)''',
+      '''\+1[ -]?\(?555\)?''',
+    ]

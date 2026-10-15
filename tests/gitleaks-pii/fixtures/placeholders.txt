@@ -1,0 +1,18 @@
+# Documented placeholders that the PII rules must NOT report (docs/data-classification.md section 5).
+card_visa_test     = 4111 1111 1111 1111
+card_visa_stripe   = 4242424242424242
+card_mc_test       = 5555-5555-5555-4444
+card_amex_test     = 3782 822463 10005
+card_discover_test = 6011111111111117
+ssn_advert         = 078-05-1120
+ssn_sequence       = 123-45-6789
+ssn_never_issued   = 666-12-3456
+ssn_zero_group     = 219-00-9999
+sin_sequence       = 123-456-789
+sin_service_canada = 046 454 286
+sin_repeat         = 222 222 222
+iban_gb_example    = GB82WEST12345698765432
+iban_de_example    = DE89370400440532013000
+iban_fr_example    = FR1420041010050500013M02606
+phone_fictional_na = +1 604 555 0199
+phone_fictional_uk = +44 7700 900123

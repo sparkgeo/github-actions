@@ -24,6 +24,9 @@ inputs:
   fail-on-finding:
     description: "Hard-fail the step on any secret finding. Set false to report without blocking."
     default: "true"
+  extra-config:
+    description: "Path to an additional gitleaks rule file merged on top of config-path (or the default rules), e.g. the bundled policies/pii/gitleaks-pii.toml. Applied only if the file exists."
+    default: ""
 runs:
   using: "composite"
   steps:
@@ -49,13 +52,28 @@ runs:
       shell: bash
       env:
         CONFIG_PATH: ${{ inputs.config-path }}
+        EXTRA_CONFIG: ${{ inputs.extra-config }}
         FAIL_ON_FINDING: ${{ inputs.fail-on-finding }}
         PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
         PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
       run: |
         set -euo pipefail
         ARGS=(--redact --verbose --no-banner)
-        if [ -f "${CONFIG_PATH}" ]; then
+        if [ -n "${EXTRA_CONFIG}" ] && [ -f "${EXTRA_CONFIG}" ]; then
+          # Merge: the extra rules extend the repo's config (or the defaults).
+          # gitleaks allows one [extend] per file, so the extra file's own
+          # [extend] header is dropped and replaced by one pointing at the
+          # repo config; chain depth stays within gitleaks' limit of 2.
+          MERGED="${RUNNER_TEMP}/gitleaks-merged.toml"
+          if [ -f "${CONFIG_PATH}" ]; then
+            printf '[extend]\npath = "%s"\n\n' "$(realpath "${CONFIG_PATH}")" > "${MERGED}"
+          else
+            printf '[extend]\nuseDefault = true\n\n' > "${MERGED}"
+          fi
+          awk '/^\[\[rules\]\]/{p=1} p' "${EXTRA_CONFIG}" >> "${MERGED}"
+          echo "Using Gitleaks config: ${CONFIG_PATH} + ${EXTRA_CONFIG}"
+          ARGS+=(--config "${MERGED}")
+        elif [ -f "${CONFIG_PATH}" ]; then
           echo "Using Gitleaks config: ${CONFIG_PATH}"
           ARGS+=(--config "${CONFIG_PATH}")
         fi
