@@ -1,0 +1,16 @@
+# Verdaccio for the registry-config CI test: no uplinks, so it can only serve
+# what the test publishes, and anonymous read.
+storage: /verdaccio/storage/data
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    max_users: 10
+uplinks: {}
+packages:
+  "**":
+    access: $all
+    publish: $authenticated
+log:
+  type: stdout
+  format: pretty
+  level: http

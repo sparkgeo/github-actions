@@ -101,6 +101,61 @@ jobs:
           npx --yes --package renovate@44.161.1 renovate-config-validator --strict default.json
           npx --yes --package renovate@44.161.1 renovate-config-validator --strict .github/renovate-global.json
 
+  # Proxy registry (#231): unit checks, then a local Verdaccio and pypiserver with no
+  # upstream, the public registries blackholed in /etc/hosts, and real npm ci
+  # and pip install through the composite's config. Audit, not block: Docker
+  # Hub serves image blobs from rotating hosts, and the /etc/hosts blackhole is
+  # what makes a bypass fail here.
+  registry-config:
+    name: Registry Config
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Unit checks
+        run: tests/registry-config/run.sh
+
+      - name: Start local proxies, publish fixtures, blackhole public registries
+        run: tests/registry-config/e2e.sh setup
+
+      - id: registry
+        uses: ./.github/actions/registry-config
+        with:
+          npm-url: http://localhost:4873/
+          pypi-url: http://localhost:8080/simple/
+          go-url: http://localhost:3000/
+          hf-url: http://localhost:8080/
+
+      - name: Install fixtures through the proxies
+        run: tests/registry-config/e2e.sh install
+
+      - id: docker
+        uses: ./.github/actions/registry-config
+        with:
+          docker-mirror: http://localhost:5000
+
+      - name: Check outputs, GOPROXY and the Docker mirror
+        env:
+          CONFIGURED: ${{ steps.registry.outputs.configured }}
+          HF: ${{ steps.registry.outputs.hf-endpoint }}
+          DOCKER_CONFIGURED: ${{ steps.docker.outputs.configured }}
+        run: |
+          set -euo pipefail
+          [ "${CONFIGURED}" = "npm,pypi,go,huggingface" ]
+          [ "${HF}" = "http://localhost:8080/" ]
+          [ "${DOCKER_CONFIGURED}" = "docker" ]
+          [ "$(go env GOPROXY)" = "http://localhost:3000/" ]
+          docker info --format '{{json .RegistryConfig.Mirrors}}' | tee /dev/stderr | grep -q 'http://localhost:5000/'
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
