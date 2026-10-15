@@ -1,0 +1,150 @@
+name: PII Data Flow
+
+# Reusable PR workflow (issue #99, plan Step 23 Standard): privado maps where
+# personal data enters, is stored and logged, and leaves the application; the
+# PR gets one updating comment with the flows the PR adds relative to the
+# default branch's baseline (the privado-baseline artefact from the last push
+# to the default branch), and the full report is uploaded. fail-on-new-sinks
+# turns a new third-party sink or destination into a failure. The map feeds
+# the RoPA (#119) and the retention table (#120).
+#
+# Caller permissions: contents: read, actions: read (baseline download),
+# pull-requests: write (the comment).
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com and public.ecr.aws (the
+# image); the scan itself is offline and nothing is uploaded to privado.ai.
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory to scan'
+        default: '.'
+        type: string
+      fail-on-new-sinks:
+        description: 'Fail when the PR introduces a new third-party data sink not in the baseline'
+        default: false
+        type: boolean
+      extra-args:
+        description: 'Additional privado-core scan flags'
+        default: ''
+        type: string
+      comment:
+        description: 'Post or update the PR comment'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned pii-dataflow.yml to, so
+          the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      new-third-party-count:
+        description: 'Third-party sinks and destinations not in the baseline'
+        value: ${{ jobs.dataflow.outputs.new-third-party-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions.
+jobs:
+  dataflow:
+    name: PII data flow
+    runs-on: ubuntu-latest
+    outputs:
+      new-third-party-count: ${{ steps.scan.outputs.new-third-party-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout privado composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      # The baseline is the privado-baseline artefact of the newest run on the
+      # default branch; a PR without one is reported in full, not diffed.
+      - name: Fetch the default-branch baseline
+        id: baseline
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016  # $b is a jq variable
+          ID="$(gh api "repos/${GH_REPO}/actions/artifacts?name=privado-baseline&per_page=100" \
+            | jq -r --arg b "${DEFAULT_BRANCH}" '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == $b)] | sort_by(.created_at) | last | .id // empty')"
+          if [ -n "${ID}" ]; then
+            gh api "repos/${GH_REPO}/actions/artifacts/${ID}/zip" > "${RUNNER_TEMP}/baseline.zip"
+            mkdir -p "${RUNNER_TEMP}/baseline" && unzip -qo "${RUNNER_TEMP}/baseline.zip" -d "${RUNNER_TEMP}/baseline"
+            echo "path=${RUNNER_TEMP}/baseline/privado.json" >> "${GITHUB_OUTPUT}"
+            echo "baseline: artefact ${ID}"
+          else
+            echo "path=" >> "${GITHUB_OUTPUT}"
+            echo "no privado-baseline artefact on ${DEFAULT_BRANCH} yet"
+          fi
+
+      - id: scan
+        continue-on-error: true
+        uses: ./.sparkgeo-github-actions/.github/actions/privado
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          baseline: ${{ steps.baseline.outputs.path }}
+          fail-on-new-sinks: ${{ inputs.fail-on-new-sinks }}
+          extra-args: ${{ inputs.extra-args }}
+          comment-path: ${{ runner.temp }}/pii-dataflow-comment.md
+
+      - name: Upload report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: privado-report
+          path: |
+            ${{ inputs.working-directory }}/.privado/privado.json
+            ${{ inputs.working-directory }}/.privado/report.json
+          if-no-files-found: ignore
+
+      # The next PR diffs against this; one artefact per push to the default branch.
+      - name: Upload baseline
+        if: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: privado-baseline
+          path: ${{ inputs.working-directory }}/.privado/privado.json
+          retention-days: 90
+
+      - name: Post or update the PR comment
+        if: ${{ always() && inputs.comment && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BODY_FILE: ${{ runner.temp }}/pii-dataflow-comment.md
+        run: |
+          set -euo pipefail
+          [ -s "${BODY_FILE}" ] || exit 0
+          ID="$(gh api "repos/${GH_REPO}/issues/${PR}/comments?per_page=100" --jq '[.[] | select(.body | startswith("<!-- pii-dataflow -->"))] | first | .id // empty')"
+          if [ -n "${ID}" ]; then
+            gh api -X PATCH "repos/${GH_REPO}/issues/comments/${ID}" -F body=@"${BODY_FILE}" > /dev/null
+          else
+            gh pr comment "${PR}" --body-file "${BODY_FILE}"
+          fi
+
+      - name: Outcome
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+          NEW: ${{ steps.scan.outputs.new-third-party-count }}
+        run: |
+          [ "${OUTCOME}" != "failure" ] || { echo "::error title=pii-dataflow::${NEW:-?} new third-party sink(s) or destination(s), or the scan failed; see the summary"; exit 1; }

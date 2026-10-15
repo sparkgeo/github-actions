@@ -1,0 +1,622 @@
+{
+  "RepoConfigMetaData" : [
+  ],
+  "monolithJsonPath" : [
+  ],
+  "language" : "python",
+  "privadoLanguageEngineVersion" : "0.1.5",
+  "privadoMainVersion" : "1.3.73-392\n",
+  "gitMetadata" : {
+    
+  },
+  "violations" : [
+    {
+      "policyId" : "Threats.Leakage.isDataLeakingToLog",
+      "policyDetails" : {
+        "name" : "PII data is written to the log files",
+        "policyType" : "threat",
+        "description" : "Sensitive Data written to log files or file system may lead to unauthorized access or exposure to potential attack.",
+        "fix" : "It is not recommended to log Sensitive Data to log files or the file system. The data must be encrypted if it is absolutely necessary to log it.",
+        "action" : "",
+        "tags" : {
+          "CWE-359" : "https://cwe.mitre.org/data/definitions/359.html",
+          "CWE-532" : "https://cwe.mitre.org/data/definitions/532.html",
+          "MSTG-STORAGE-3" : "https://github.com/OWASP/owasp-mstg/blob/master/Document/0x05d-Testing-Data-Storage.md#Testing-Logs-for-Sensitive-Data-MSTG-STORAGE-3",
+          "MITRE" : "Sharing.Exposure"
+        }
+      },
+      "dataFlow" : [
+        {
+          "sourceId" : "Data.Sensitive.ContactData.EmailAddress",
+          "sinkId" : "Leakages.Log.Info",
+          "pathIds" : [
+            "70-71-96-101"
+          ]
+        }
+      ],
+      "processing" : null
+    }
+  ],
+  "PropertyFileSkippedByDirCount" : {
+    "currentFilesInDirLimit" : "10",
+    "skipList" : [
+    ]
+  },
+  "androidPermissions" : [
+  ],
+  "privadoCoreVersion" : "1.1.175-78",
+  "sinks" : [
+    {
+      "sourceType" : "Sinks",
+      "sinkType" : "storages",
+      "id" : "Storages.Android.SQLite.ReadAndWrite",
+      "name" : "SQLite",
+      "domains" : [
+        "sqlite.org"
+      ],
+      "apiUrl" : [
+      ],
+      "databaseDetails" : {
+        "dbName" : "",
+        "dbVendor" : "",
+        "dbLocation" : "",
+        "dbOperation" : "",
+        "configFile" : "",
+        "schema" : null
+      }
+    },
+    {
+      "sourceType" : "Sinks",
+      "sinkType" : "third_parties",
+      "id" : "Sinks.ThirdParties.API.api.example-crm.com",
+      "name" : "Third Party API api.example-crm.com",
+      "domains" : [
+      ],
+      "apiUrl" : [
+        "\"https://api.example-crm.com/v1/contacts\""
+      ],
+      "databaseDetails" : {
+        "dbName" : "",
+        "dbVendor" : "",
+        "dbLocation" : "",
+        "dbOperation" : "",
+        "configFile" : "",
+        "schema" : null
+      }
+    }
+  ],
+  "privadoCLIVersion" : "Not Detected",
+  "collections" : [
+    {
+      "collectionId" : "Collections.Ktor",
+      "name" : "Ktor Kotlin Framework",
+      "isSensitive" : false,
+      "collections" : [
+        {
+          "sourceId" : "Data.Sensitive.PersonalIdentification.FirstName",
+          "occurrences" : [
+            {
+              "endPoint" : "/signup",
+              "sample" : "first_name",
+              "lineNumber" : 18,
+              "columnNumber" : 5,
+              "fileName" : "app.py",
+              "excerpt" : "\n\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"] /* <===  */ \n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)"
+            }
+          ]
+        },
+        {
+          "sourceId" : "Data.Sensitive.ContactData.EmailAddress",
+          "occurrences" : [
+            {
+              "endPoint" : "/signup",
+              "sample" : "email",
+              "lineNumber" : 17,
+              "columnNumber" : 5,
+              "fileName" : "app.py",
+              "excerpt" : "CRM_URL = \"https://api.example-crm.com/v1/contacts\"\n\n\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"] /* <===  */ \n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))"
+            }
+          ]
+        },
+        {
+          "sourceId" : "Data.Sensitive.ContactData.PhoneNumber",
+          "occurrences" : [
+            {
+              "endPoint" : "/signup",
+              "sample" : "phone",
+              "lineNumber" : 19,
+              "columnNumber" : 5,
+              "fileName" : "app.py",
+              "excerpt" : "\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\") /* <===  */ \n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "repoName" : "code",
+  "processing" : [
+    {
+      "sourceId" : "Data.Sensitive.PersonalIdentification.FirstName",
+      "occurrences" : [
+        {
+          "sample" : "tmp5[\"firstName\"]",
+          "lineNumber" : 23,
+          "columnNumber" : 33,
+          "fileName" : "app.py",
+          "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <===  */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+          "arguments" : null
+        }
+      ]
+    },
+    {
+      "sourceId" : "Data.Sensitive.ContactData.EmailAddress",
+      "occurrences" : [
+        {
+          "sample" : "email",
+          "lineNumber" : 22,
+          "columnNumber" : 86,
+          "fileName" : "app.py",
+          "excerpt" : "    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone)) /* <=== ANY */ \n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")",
+          "arguments" : null
+        }
+      ]
+    },
+    {
+      "sourceId" : "Data.Sensitive.ContactData.PhoneNumber",
+      "occurrences" : [
+        {
+          "sample" : "phone",
+          "lineNumber" : 19,
+          "columnNumber" : 5,
+          "fileName" : "app.py",
+          "excerpt" : "\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\") /* <=== flask.py:<module>.request.<member>(form).get */ \n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}",
+          "arguments" : null
+        }
+      ]
+    }
+  ],
+  "dataFlow" : {
+    "storages" : [
+    ],
+    "internal_apis" : [
+    ],
+    "leakages" : [
+      {
+        "sourceId" : "Data.Sensitive.ContactData.EmailAddress",
+        "sinks" : [
+          {
+            "sinkType" : "leakages",
+            "id" : "Leakages.Log.Info",
+            "name" : "Log Info",
+            "category" : "",
+            "domains" : [
+            ],
+            "sensitivity" : "",
+            "isSensitive" : false,
+            "tags" : {
+              
+            },
+            "apiUrl" : [
+            ],
+            "databaseDetails" : {
+              "dbName" : "",
+              "dbVendor" : "",
+              "dbLocation" : "",
+              "dbOperation" : "",
+              "configFile" : "",
+              "schema" : null
+            },
+            "paths" : [
+              {
+                "pathId" : "70-71-96-101",
+                "path" : [
+                  {
+                    "sample" : "request.form[\"email\"]",
+                    "lineNumber" : 17,
+                    "columnNumber" : 13,
+                    "fileName" : "app.py",
+                    "excerpt" : "CRM_URL = \"https://api.example-crm.com/v1/contacts\"\n\n\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"] /* <===  */ \n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "email",
+                    "lineNumber" : 17,
+                    "columnNumber" : 5,
+                    "fileName" : "app.py",
+                    "excerpt" : "CRM_URL = \"https://api.example-crm.com/v1/contacts\"\n\n\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"] /* <=== ANY */ \n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "email",
+                    "lineNumber" : 20,
+                    "columnNumber" : 31,
+                    "fileName" : "app.py",
+                    "excerpt" : "@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email) /* <=== ANY */ \n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}\n",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "log.info(\"signup for %s\", email)",
+                    "lineNumber" : 20,
+                    "columnNumber" : 5,
+                    "fileName" : "app.py",
+                    "excerpt" : "@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email) /* <=== logging.py */ \n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}\n",
+                    "arguments" : null
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "third_parties" : [
+      {
+        "sourceId" : "Data.Sensitive.ContactData.PhoneNumber",
+        "sinks" : [
+          {
+            "sinkType" : "third_parties",
+            "id" : "Sinks.ThirdParties.API.api.example-crm.com",
+            "name" : "Third Party API api.example-crm.com",
+            "category" : "",
+            "domains" : [
+            ],
+            "sensitivity" : "",
+            "isSensitive" : false,
+            "tags" : {
+              
+            },
+            "apiUrl" : [
+              "\"https://api.example-crm.com/v1/contacts\""
+            ],
+            "databaseDetails" : {
+              "dbName" : "",
+              "dbVendor" : "",
+              "dbLocation" : "",
+              "dbOperation" : "",
+              "configFile" : "",
+              "schema" : null
+            },
+            "paths" : [
+              {
+                "pathId" : "80-90-91-92-93-105-162-161-165-171",
+                "path" : [
+                  {
+                    "sample" : "\"phone\"",
+                    "lineNumber" : 19,
+                    "columnNumber" : 30,
+                    "fileName" : "app.py",
+                    "excerpt" : "\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\") /* <===  */ \n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "tmp0",
+                    "lineNumber" : 19,
+                    "columnNumber" : 13,
+                    "fileName" : "app.py",
+                    "excerpt" : "\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\") /* <=== flask.py:<module>.request.<member>(form) */ \n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "tmp0.get(\"phone\", \"\")",
+                    "lineNumber" : 19,
+                    "columnNumber" : 13,
+                    "fileName" : "app.py",
+                    "excerpt" : "\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\") /* <=== flask.py */ \n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "tmp0 = request.form\ntmp0.get(\"phone\", \"\")",
+                    "lineNumber" : 19,
+                    "columnNumber" : 13,
+                    "fileName" : "app.py",
+                    "excerpt" : "\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\") /* <===  */ \n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "phone",
+                    "lineNumber" : 19,
+                    "columnNumber" : 5,
+                    "fileName" : "app.py",
+                    "excerpt" : "\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\") /* <=== flask.py:<module>.request.<member>(form).get */ \n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "phone",
+                    "lineNumber" : 22,
+                    "columnNumber" : 105,
+                    "fileName" : "app.py",
+                    "excerpt" : "    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone)) /* <=== flask.py:<module>.request.<member>(form).get */ \n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "phone",
+                    "lineNumber" : 23,
+                    "columnNumber" : 84,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <=== flask.py:<module>.request.<member>(form).get */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "tmp5[\"phone\"]",
+                    "lineNumber" : 23,
+                    "columnNumber" : 33,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <===  */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "tmp5 = {}\ntmp5[\"email\"] = email\ntmp5[\"firstName\"] = first_name\ntmp5[\"phone\"] = phone\ntmp5",
+                    "lineNumber" : 23,
+                    "columnNumber" : 33,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <===  */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "requests.post(CRM_URL, json = tmp5 = {}\ntmp5[\"email\"] = email\ntmp5[\"firstName\"] = first_name\ntmp5[\"phone\"] = phone\ntmp5, timeout = 5)",
+                    "lineNumber" : 23,
+                    "columnNumber" : 5,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <=== requests.py */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "sourceId" : "Data.Sensitive.ContactData.EmailAddress",
+        "sinks" : [
+          {
+            "sinkType" : "third_parties",
+            "id" : "Sinks.ThirdParties.API.api.example-crm.com",
+            "name" : "Third Party API api.example-crm.com",
+            "category" : "",
+            "domains" : [
+            ],
+            "sensitivity" : "",
+            "isSensitive" : false,
+            "tags" : {
+              
+            },
+            "apiUrl" : [
+              "\"https://api.example-crm.com/v1/contacts\""
+            ],
+            "databaseDetails" : {
+              "dbName" : "",
+              "dbVendor" : "",
+              "dbLocation" : "",
+              "dbOperation" : "",
+              "configFile" : "",
+              "schema" : null
+            },
+            "paths" : [
+              {
+                "pathId" : "71-96-103-152-151-165-171",
+                "path" : [
+                  {
+                    "sample" : "email",
+                    "lineNumber" : 17,
+                    "columnNumber" : 5,
+                    "fileName" : "app.py",
+                    "excerpt" : "CRM_URL = \"https://api.example-crm.com/v1/contacts\"\n\n\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"] /* <=== ANY */ \n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "email",
+                    "lineNumber" : 20,
+                    "columnNumber" : 31,
+                    "fileName" : "app.py",
+                    "excerpt" : "@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email) /* <=== ANY */ \n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}\n",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "email",
+                    "lineNumber" : 22,
+                    "columnNumber" : 86,
+                    "fileName" : "app.py",
+                    "excerpt" : "    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone)) /* <=== ANY */ \n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "email",
+                    "lineNumber" : 23,
+                    "columnNumber" : 43,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <=== ANY */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "tmp5[\"email\"]",
+                    "lineNumber" : 23,
+                    "columnNumber" : 33,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <===  */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "tmp5 = {}\ntmp5[\"email\"] = email\ntmp5[\"firstName\"] = first_name\ntmp5[\"phone\"] = phone\ntmp5",
+                    "lineNumber" : 23,
+                    "columnNumber" : 33,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <===  */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "requests.post(CRM_URL, json = tmp5 = {}\ntmp5[\"email\"] = email\ntmp5[\"firstName\"] = first_name\ntmp5[\"phone\"] = phone\ntmp5, timeout = 5)",
+                    "lineNumber" : 23,
+                    "columnNumber" : 5,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <=== requests.py */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "sourceId" : "Data.Sensitive.PersonalIdentification.FirstName",
+        "sinks" : [
+          {
+            "sinkType" : "third_parties",
+            "id" : "Sinks.ThirdParties.API.api.example-crm.com",
+            "name" : "Third Party API api.example-crm.com",
+            "category" : "",
+            "domains" : [
+            ],
+            "sensitivity" : "",
+            "isSensitive" : false,
+            "tags" : {
+              
+            },
+            "apiUrl" : [
+              "\"https://api.example-crm.com/v1/contacts\""
+            ],
+            "databaseDetails" : {
+              "dbName" : "",
+              "dbVendor" : "",
+              "dbLocation" : "",
+              "dbOperation" : "",
+              "configFile" : "",
+              "schema" : null
+            },
+            "paths" : [
+              {
+                "pathId" : "78-104-157-156-165-171",
+                "path" : [
+                  {
+                    "sample" : "first_name",
+                    "lineNumber" : 18,
+                    "columnNumber" : 5,
+                    "fileName" : "app.py",
+                    "excerpt" : "\n\n@app.post(\"/signup\")\ndef signup():\n    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"] /* <=== ANY */ \n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "first_name",
+                    "lineNumber" : 22,
+                    "columnNumber" : 93,
+                    "fileName" : "app.py",
+                    "excerpt" : "    email = request.form[\"email\"]\n    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone)) /* <=== ANY */ \n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5)\n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "first_name",
+                    "lineNumber" : 23,
+                    "columnNumber" : 63,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <=== ANY */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "tmp5[\"firstName\"]",
+                    "lineNumber" : 23,
+                    "columnNumber" : 33,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <===  */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "tmp5 = {}\ntmp5[\"email\"] = email\ntmp5[\"firstName\"] = first_name\ntmp5[\"phone\"] = phone\ntmp5",
+                    "lineNumber" : 23,
+                    "columnNumber" : 33,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <===  */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  },
+                  {
+                    "sample" : "requests.post(CRM_URL, json = tmp5 = {}\ntmp5[\"email\"] = email\ntmp5[\"firstName\"] = first_name\ntmp5[\"phone\"] = phone\ntmp5, timeout = 5)",
+                    "lineNumber" : 23,
+                    "columnNumber" : 5,
+                    "fileName" : "app.py",
+                    "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <=== requests.py */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+                    "arguments" : null
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "probableSinks" : [
+    "flask.py",
+    "sqlite3.py"
+  ],
+  "createdAt" : 1792036447190,
+  "sinkProcessing" : [
+    {
+      "sinkId" : "Sinks.ThirdParties.API.api.example-crm.com",
+      "occurrences" : [
+        {
+          "sample" : "requests.post(CRM_URL, json = tmp5 = {}\ntmp5[\"email\"] = email\ntmp5[\"firstName\"] = first_name\ntmp5[\"phone\"] = phone\ntmp5, timeout = 5)",
+          "lineNumber" : 23,
+          "columnNumber" : 5,
+          "fileName" : "app.py",
+          "excerpt" : "    first_name = request.form[\"first_name\"]\n    phone = request.form.get(\"phone\", \"\")\n    log.info(\"signup for %s\", email)\n    with sqlite3.connect(\"users.db\") as db:\n        db.execute(\"insert into users (email, first_name, phone) values (?, ?, ?)\", (email, first_name, phone))\n    requests.post(CRM_URL, json={\"email\": email, \"firstName\": first_name, \"phone\": phone}, timeout=5) /* <=== requests.py */ \n    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():",
+          "arguments" : null
+        }
+      ]
+    },
+    {
+      "sinkId" : "Storages.Android.SQLite.ReadAndWrite",
+      "occurrences" : [
+        {
+          "sample" : "sqlite3.connect(\"users.db\")",
+          "lineNumber" : 29,
+          "columnNumber" : 10,
+          "fileName" : "app.py",
+          "excerpt" : "    return {\"ok\": True}\n\n\n@app.get(\"/profile\")\ndef profile():\n    with sqlite3.connect(\"users.db\") as db: /* <=== sqlite3.py */ \n        row = db.execute(\"select email, first_name from users where id = ?\", (request.args[\"id\"],)).fetchone()\n    return {\"email\": row[0], \"first_name\": row[1]}",
+          "arguments" : null
+        }
+      ]
+    }
+  ],
+  "PropertyFileSkippedBySize" : {
+    "currentFileSizeLimit" : "5",
+    "skipLists" : [
+    ]
+  },
+  "localScanPath" : "/app/code",
+  "sources" : [
+    {
+      "sourceType" : "Data Element",
+      "id" : "Data.Sensitive.ContactData.EmailAddress",
+      "name" : "Email Address",
+      "category" : "Contact Data",
+      "sensitivity" : "medium",
+      "isSensitive" : false,
+      "tags" : {
+        "law" : "GDPR"
+      }
+    },
+    {
+      "sourceType" : "Data Element",
+      "id" : "Data.Sensitive.PersonalIdentification.FirstName",
+      "name" : "First Name",
+      "category" : "Personal Identification",
+      "sensitivity" : "low",
+      "isSensitive" : false,
+      "tags" : {
+        "law" : "GDPR"
+      }
+    },
+    {
+      "sourceType" : "Data Element",
+      "id" : "Data.Sensitive.ContactData.PhoneNumber",
+      "name" : "Phone Number",
+      "category" : "Contact Data",
+      "sensitivity" : "medium",
+      "isSensitive" : false,
+      "tags" : {
+        "law" : "GDPR"
+      }
+    }
+  ]
+}

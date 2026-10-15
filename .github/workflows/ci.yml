@@ -76,6 +76,47 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # PII data flow (#99): report.py against a recorded privado.json and a
+  # trimmed baseline, then the live privado image (digest-pinned, offline) on
+  # the fixture app, asserting the three data elements and the third-party
+  # flow it plants. Egress audit, not block: the image comes from
+  # public.ecr.aws through CloudFront.
+  pii-dataflow:
+    name: PII Data Flow
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Recorded report
+        run: tests/pii-dataflow/run.sh
+
+      - id: live
+        uses: ./.github/actions/privado
+        with:
+          working-directory: tests/pii-dataflow/fixtures/app
+          baseline: tests/pii-dataflow/fixtures/privado.json
+          fail-on-new-sinks: "true"
+
+      - name: Outcome
+        env:
+          SOURCES: ${{ steps.live.outputs.source-count }}
+          SINKS: ${{ steps.live.outputs.sink-count }}
+          NEW: ${{ steps.live.outputs.new-third-party-count }}
+        run: |
+          [ "${SOURCES}" = "3" ] || { echo "::error title=pii-dataflow::expected 3 data elements, got ${SOURCES}"; exit 1; }
+          [ "${SINKS}" -ge 2 ] || { echo "::error title=pii-dataflow::expected at least 2 sinks, got ${SINKS}"; exit 1; }
+          [ "${NEW}" = "0" ] || { echo "::error title=pii-dataflow::the recorded baseline should match the live scan, got ${NEW} new third-party item(s)"; exit 1; }
+          jq -e '.destinations == ["https://api.example-crm.com/v1/contacts"]' tests/pii-dataflow/fixtures/app/.privado/report.json > /dev/null
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
