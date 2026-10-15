@@ -38,3 +38,7 @@ The workflow needs the repository's dependency graph (on by default for public r
 ## Fallback without the dependency graph
 
 Where dependency review cannot run (a repository without the dependency graph, an ecosystem GitHub does not resolve, an air-gapped build), the same allowlist is applied locally with [`pip-licenses`](https://pypi.org/project/pip-licenses/) and [`license-checker-rseidelsohn`](https://www.npmjs.com/package/license-checker-rseidelsohn) from a pre-commit hook: copy [`examples/license.pre-commit-config.yaml`](../examples/license.pre-commit-config.yaml) into `.pre-commit-config.yaml` and run it in CI with `lint-precommit.yml`. Both tools read the installed packages, so the hook runs after `pip install` / `npm ci`. The list in that file is this policy's allowed class; keep it in step with this page when the policy changes.
+
+## Related compliance
+
+For a product with digital elements placed on the EU market, licence evidence is part of the third-party component due diligence in the EU Cyber Resilience Act map: [`cra.md`](cra.md).
