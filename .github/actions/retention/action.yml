@@ -1,0 +1,89 @@
+name: "Retention Check"
+description: |
+  Retention and residency enforcement in IaC (SecOps plan Step 36 Standard,
+  issue #120): compares retention.yml (one entry per data store: retention,
+  mechanism, residency) with an OpenTofu plan JSON or a CloudFormation
+  template from CDK synth. Policies SPK_RET_1 to SPK_RET_6 (entry present,
+  S3 lifecycle, log-group retention, RDS backup retention, DynamoDB TTL,
+  AWS Backup expiry) and SPK_RES_1 (residency of sensitive resources,
+  replication and backup-copy destinations). Summary and PR comment list
+  every store: declared, implemented, status. fail-on: none|mismatch|all.
+  Cross-resource comparisons against a declared table are scripts, not
+  checkov graph policies (same reason as the DR and AI policy packs).
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  retention-path:
+    description: "retention.yml in the repository."
+    default: "retention.yml"
+  plan-json:
+    description: "OpenTofu/Terraform plan JSON (tofu show -json plan.out); mutually exclusive with template."
+    default: ""
+  template:
+    description: "CloudFormation template JSON (cdk synth output); the manifest next to it gives the region."
+    default: ""
+  manifest:
+    description: "cdk.out/manifest.json for the stack region; empty tries <template dir>/manifest.json."
+    default: ""
+  region:
+    description: "Region override when the plan or manifest does not say."
+    default: ""
+  fail-on:
+    description: "none|mismatch|all"
+    default: "mismatch"
+  comment-path:
+    description: "Where the PR comment body is written; empty skips it."
+    default: ""
+  output-path:
+    description: "JSON report path."
+    default: "retention-report.json"
+outputs:
+  store-count:
+    description: "Stores declared in retention.yml."
+    value: ${{ steps.check.outputs.store-count }}
+  finding-count:
+    description: "Findings of every kind."
+    value: ${{ steps.check.outputs.finding-count }}
+  error-count:
+    description: "Findings that fail at the chosen level."
+    value: ${{ steps.check.outputs.error-count }}
+runs:
+  using: "composite"
+  steps:
+    # A virtualenv because the runner's python3 has no YAML parser; PyPI is
+    # the only egress.
+    - id: env
+      shell: bash
+      run: |
+        set -euo pipefail
+        ENV="${RUNNER_TEMP}/retention-env"
+        [ -x "${ENV}/bin/python" ] || { python3 -m venv "${ENV}"; "${ENV}/bin/python" -m pip install --quiet --disable-pip-version-check "pyyaml==6.0.3"; }
+        echo "python=${ENV}/bin/python" >> "${GITHUB_OUTPUT}"
+
+    - id: check
+      shell: bash
+      env:
+        PY: ${{ steps.env.outputs.python }}
+        RETENTION: ${{ inputs.retention-path }}
+        PLAN: ${{ inputs.plan-json }}
+        TEMPLATE: ${{ inputs.template }}
+        MANIFEST: ${{ inputs.manifest }}
+        REGION: ${{ inputs.region }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        COMMENT: ${{ inputs.comment-path }}
+        OUTPUT: ${{ inputs.output-path }}
+      run: |
+        set -euo pipefail
+        ARGS=(--retention "${RETENTION}" --fail-on "${FAIL_ON}" --output "${OUTPUT}")
+        if [ -n "${PLAN}" ]; then
+          ARGS+=(--plan-json "${PLAN}")
+        elif [ -n "${TEMPLATE}" ]; then
+          ARGS+=(--template "${TEMPLATE}")
+          M="${MANIFEST:-$(dirname "${TEMPLATE}")/manifest.json}"
+          [ -f "${M}" ] && ARGS+=(--manifest "${M}")
+        else
+          echo "::error title=retention::give plan-json or template"; exit 1
+        fi
+        [ -n "${REGION}" ] && ARGS+=(--region "${REGION}")
+        [ -n "${COMMENT}" ] && ARGS+=(--comment "${COMMENT}")
+        "${PY}" -I "${GITHUB_ACTION_PATH}/check.py" "${ARGS[@]}"

@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| Retention Check | [`retention-check.yml`](.github/workflows/retention-check.yml) | `workflow_call` | Reusable retention and residency gate: `retention.yml` against the OpenTofu plan JSON or the CDK template (S3 lifecycle, log-group retention, RDS backups, DynamoDB TTL, AWS Backup expiry, regions); one updating PR comment per store declared/implemented/status; `fail-on` none/mismatch/all (#120) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Retention Check | [`retention`](.github/actions/retention/action.yml) | Compares `retention.yml` with a plan JSON or CloudFormation template: policies `SPK_RET_1` to `SPK_RET_6` and `SPK_RES_1`; summary, comment body, `retention-report.json` | `retention-path` (default: `retention.yml`), `plan-json`, `template`, `manifest`, `region`, `fail-on` (default: `mismatch`), `comment-path`, `output-path` |
 
 ### GitHub Actionlint
 
@@ -119,6 +121,24 @@ jobs:
           comment-summary-in-pr: always                       # always | on-failure | never
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}  # leave empty on pull_request
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}           # leave empty on pull_request
+```
+
+### Retention Check (retention and residency in IaC)
+
+SecOps plan Step 36 Standard (issue #120): `retention.yml` at the repository root declares, per data store, how long data is kept, by which mechanism, and where it may live; CI compares it with the OpenTofu plan JSON or the CDK synth template and lists every store as declared, implemented and status. S3 lifecycle rules, CloudWatch retention, RDS backup retention, DynamoDB TTL and AWS Backup expiry are checked exactly, sensitive resources and their replication and backup-copy destinations must sit in the allowed regions, and every confidential or restricted store needs an entry. Mechanisms, the backup-expiry position and the GCP and Azure equivalents: [`docs/retention.md`](docs/retention.md); starter: [`docs/examples/retention.yml`](docs/examples/retention.yml).
+
+```yaml
+jobs:
+  retention:
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: sparkgeo/github-actions/.github/workflows/retention-check.yml@<SHA>
+    with:
+      actions-ref: <SHA>   # same SHA as above
+      directory: infra
+      plan-command: tofu init -input=false && tofu plan -input=false -out plan.out && tofu show -json plan.out > plan.json
+      plan-json: plan.json
 ```
 
 ### Storage Optimizer

@@ -1,0 +1,417 @@
+{
+ "format_version": "1.2",
+ "terraform_version": "1.9.0",
+ "planned_values": {
+  "root_module": {
+   "resources": [
+    {
+     "address": "aws_s3_bucket.ingest",
+     "mode": "managed",
+     "type": "aws_s3_bucket",
+     "name": "ingest",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws",
+     "schema_version": 0,
+     "values": {
+      "bucket": "fixture-ingest",
+      "tags": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "confidential"
+      },
+      "tags_all": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "confidential"
+      }
+     }
+    },
+    {
+     "address": "aws_s3_bucket_versioning.ingest",
+     "mode": "managed",
+     "type": "aws_s3_bucket_versioning",
+     "name": "ingest",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws",
+     "schema_version": 0,
+     "values": {
+      "bucket": "fixture-ingest",
+      "versioning_configuration": [
+       {
+        "status": "Enabled"
+       }
+      ]
+     }
+    },
+    {
+     "address": "aws_s3_bucket_lifecycle_configuration.ingest",
+     "mode": "managed",
+     "type": "aws_s3_bucket_lifecycle_configuration",
+     "name": "ingest",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws",
+     "schema_version": 0,
+     "values": {
+      "bucket": "fixture-ingest",
+      "rule": [
+       {
+        "id": "expire",
+        "status": "Enabled",
+        "expiration": [
+         {
+          "days": 365
+         }
+        ],
+        "noncurrent_version_expiration": [
+         {
+          "noncurrent_days": 90
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "address": "aws_s3_bucket.replica",
+     "mode": "managed",
+     "type": "aws_s3_bucket",
+     "name": "replica",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws.west",
+     "schema_version": 0,
+     "values": {
+      "bucket": "fixture-replica",
+      "tags": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "confidential"
+      },
+      "tags_all": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "confidential"
+      }
+     }
+    },
+    {
+     "address": "aws_s3_bucket_replication_configuration.ingest",
+     "mode": "managed",
+     "type": "aws_s3_bucket_replication_configuration",
+     "name": "ingest",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws",
+     "schema_version": 0,
+     "values": {
+      "bucket": "fixture-ingest",
+      "rule": [
+       {
+        "id": "dr",
+        "status": "Enabled",
+        "destination": [
+         {
+          "bucket": null
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "address": "aws_cloudwatch_log_group.api",
+     "mode": "managed",
+     "type": "aws_cloudwatch_log_group",
+     "name": "api",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws",
+     "schema_version": 0,
+     "values": {
+      "name": "/fixture/api",
+      "retention_in_days": 0,
+      "tags": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "internal"
+      },
+      "tags_all": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "internal"
+      }
+     }
+    },
+    {
+     "address": "aws_rds_cluster.app",
+     "mode": "managed",
+     "type": "aws_rds_cluster",
+     "name": "app",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws",
+     "schema_version": 0,
+     "values": {
+      "cluster_identifier": "fixture-app",
+      "engine": "aurora-postgresql",
+      "backup_retention_period": 7,
+      "tags": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "confidential"
+      },
+      "tags_all": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "confidential"
+      }
+     }
+    },
+    {
+     "address": "aws_dynamodb_table.sessions",
+     "mode": "managed",
+     "type": "aws_dynamodb_table",
+     "name": "sessions",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws",
+     "schema_version": 0,
+     "values": {
+      "name": "fixture-sessions",
+      "ttl": [
+       {
+        "enabled": false,
+        "attribute_name": ""
+       }
+      ],
+      "tags": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "restricted"
+      },
+      "tags_all": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "restricted"
+      }
+     }
+    },
+    {
+     "address": "aws_backup_plan.daily",
+     "mode": "managed",
+     "type": "aws_backup_plan",
+     "name": "daily",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws",
+     "schema_version": 0,
+     "values": {
+      "name": "fixture-daily",
+      "rule": [
+       {
+        "rule_name": "daily",
+        "lifecycle": [
+         {
+          "delete_after": 400
+         }
+        ],
+        "copy_action": [
+         {
+          "destination_vault_arn": "arn:aws:backup:eu-west-1:123456789012:backup-vault:dr"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "address": "aws_iam_role.app",
+     "mode": "managed",
+     "type": "aws_iam_role",
+     "name": "app",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws",
+     "schema_version": 0,
+     "values": {
+      "name": "fixture-app",
+      "tags": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "internal"
+      },
+      "tags_all": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "internal"
+      }
+     }
+    },
+    {
+     "address": "aws_s3_bucket.exports",
+     "mode": "managed",
+     "type": "aws_s3_bucket",
+     "name": "exports",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws.east",
+     "schema_version": 0,
+     "values": {
+      "bucket": "fixture-exports",
+      "tags": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "restricted"
+      },
+      "tags_all": {
+       "owner": "team-platform",
+       "project": "fixture",
+       "environment": "prod",
+       "data-class": "restricted"
+      }
+     }
+    },
+    {
+     "address": "aws_s3_bucket_lifecycle_configuration.replica",
+     "mode": "managed",
+     "type": "aws_s3_bucket_lifecycle_configuration",
+     "name": "replica",
+     "provider_name": "registry.opentofu.org/hashicorp/aws",
+     "provider_config_key": "aws.west",
+     "schema_version": 0,
+     "values": {
+      "bucket": "fixture-replica",
+      "rule": [
+       {
+        "id": "expire",
+        "status": "Enabled",
+        "expiration": [
+         {
+          "days": 90
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  }
+ },
+ "resource_changes": [],
+ "configuration": {
+  "provider_config": {
+   "aws": {
+    "name": "aws",
+    "full_name": "registry.opentofu.org/hashicorp/aws",
+    "expressions": {
+     "region": {
+      "constant_value": "ca-central-1"
+     }
+    }
+   },
+   "aws.west": {
+    "name": "aws",
+    "alias": "west",
+    "full_name": "registry.opentofu.org/hashicorp/aws",
+    "expressions": {
+     "region": {
+      "constant_value": "us-west-2"
+     }
+    }
+   },
+   "aws.east": {
+    "name": "aws",
+    "alias": "east",
+    "full_name": "registry.opentofu.org/hashicorp/aws",
+    "expressions": {
+     "region": {
+      "constant_value": "us-east-1"
+     }
+    }
+   }
+  },
+  "root_module": {
+   "resources": [
+    {
+     "address": "aws_s3_bucket_versioning.ingest",
+     "mode": "managed",
+     "type": "aws_s3_bucket_versioning",
+     "name": "ingest",
+     "provider_config_key": "aws",
+     "expressions": {
+      "bucket": {
+       "references": [
+        "aws_s3_bucket.ingest.id",
+        "aws_s3_bucket.ingest"
+       ]
+      }
+     }
+    },
+    {
+     "address": "aws_s3_bucket_lifecycle_configuration.ingest",
+     "mode": "managed",
+     "type": "aws_s3_bucket_lifecycle_configuration",
+     "name": "ingest",
+     "provider_config_key": "aws",
+     "expressions": {
+      "bucket": {
+       "references": [
+        "aws_s3_bucket.ingest.id",
+        "aws_s3_bucket.ingest"
+       ]
+      }
+     }
+    },
+    {
+     "address": "aws_s3_bucket_replication_configuration.ingest",
+     "mode": "managed",
+     "type": "aws_s3_bucket_replication_configuration",
+     "name": "ingest",
+     "provider_config_key": "aws",
+     "expressions": {
+      "bucket": {
+       "references": [
+        "aws_s3_bucket.ingest.id",
+        "aws_s3_bucket.ingest"
+       ]
+      },
+      "rule": {
+       "references": [
+        "aws_s3_bucket.replica.arn",
+        "aws_s3_bucket.replica"
+       ]
+      }
+     }
+    },
+    {
+     "address": "aws_s3_bucket.replica",
+     "mode": "managed",
+     "type": "aws_s3_bucket",
+     "name": "replica",
+     "provider_config_key": "aws.west",
+     "expressions": {}
+    },
+    {
+     "address": "aws_s3_bucket_lifecycle_configuration.replica",
+     "mode": "managed",
+     "type": "aws_s3_bucket_lifecycle_configuration",
+     "name": "replica",
+     "provider_config_key": "aws.west",
+     "expressions": {
+      "bucket": {
+       "references": [
+        "aws_s3_bucket.replica.id",
+        "aws_s3_bucket.replica"
+       ]
+      }
+     }
+    }
+   ]
+  }
+ }
+}

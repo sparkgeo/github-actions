@@ -1,0 +1,12 @@
+{
+ "version": "36.0.0",
+ "artifacts": {
+  "Prod": {
+   "type": "aws:cloudformation:stack",
+   "environment": "aws://123456789012/ca-central-1",
+   "properties": {
+    "templateFile": "Prod.template.json"
+   }
+  }
+ }
+}

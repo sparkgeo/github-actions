@@ -1,0 +1,9 @@
+version: 1
+defaults:
+  allowed_regions: [ca-central-1, us-west-2]
+  backup_expiry_grace: 35d
+stores:
+  IngestBucket1A2B3C: {retention: 90d, mechanism: lifecycle}
+  ApiLogs2B3C4D: {retention: 30d, mechanism: retention_in_days}
+  AppCluster3C4D5E: {retention: 35d, mechanism: backup_retention, residency: [ca-central-1]}
+  Sessions4D5E6F: {retention: 7d, mechanism: ttl, ttl_attribute: expires_at}

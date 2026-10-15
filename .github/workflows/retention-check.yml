@@ -1,0 +1,128 @@
+name: Retention Check
+
+# Reusable PR gate (issue #120, plan Step 36 Standard): retention.yml declares
+# how long each data store keeps data and where it may live; this compares it
+# with the OpenTofu plan JSON (or the CDK synth template) and lists every
+# store as declared / implemented / status in one updating PR comment.
+# Policies: SPK_RET_1..6 and SPK_RES_1 (docs/retention.md).
+#
+# Caller permissions: contents: read, pull-requests: write (the comment).
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com and PyPI.
+
+on:
+  workflow_call:
+    inputs:
+      retention-path:
+        description: 'retention.yml in the repository'
+        default: 'retention.yml'
+        type: string
+      plan-json:
+        description: 'OpenTofu plan JSON produced earlier in the caller workflow and committed, or generated here by plan-command'
+        default: ''
+        type: string
+      template:
+        description: 'CloudFormation template JSON from cdk synth (cdk.out/<Stack>.template.json); manifest.json next to it gives the region'
+        default: ''
+        type: string
+      plan-command:
+        description: 'Shell command that produces plan-json or template (for example "tofu init && tofu plan -out p && tofu show -json p > plan.json"); runs in directory'
+        default: ''
+        type: string
+      directory:
+        description: 'Working directory for plan-command and for relative paths'
+        default: '.'
+        type: string
+      region:
+        description: 'Region override when the plan or manifest does not say'
+        default: ''
+        type: string
+      fail-on:
+        description: 'none|mismatch|all'
+        default: 'mismatch'
+        type: string
+      comment:
+        description: 'Post or update the PR comment'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned retention-check.yml to, so
+          the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      error-count:
+        description: 'Findings that fail at the chosen level'
+        value: ${{ jobs.retention.outputs.error-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions.
+jobs:
+  retention:
+    name: Retention check
+    runs-on: ubuntu-latest
+    outputs:
+      error-count: ${{ steps.check.outputs.error-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Produce the plan or template
+        if: ${{ inputs.plan-command != '' }}
+        working-directory: ${{ inputs.directory }}
+        env:
+          PLAN_COMMAND: ${{ inputs.plan-command }}
+        run: bash -euo pipefail -c "${PLAN_COMMAND}"
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout retention composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: check
+        continue-on-error: true
+        uses: ./.sparkgeo-github-actions/.github/actions/retention
+        with:
+          retention-path: ${{ inputs.directory }}/${{ inputs.retention-path }}
+          plan-json: ${{ inputs.plan-json != '' && format('{0}/{1}', inputs.directory, inputs.plan-json) || '' }}
+          template: ${{ inputs.template != '' && format('{0}/{1}', inputs.directory, inputs.template) || '' }}
+          region: ${{ inputs.region }}
+          fail-on: ${{ inputs.fail-on }}
+          comment-path: ${{ runner.temp }}/retention-comment.md
+          output-path: ${{ runner.temp }}/retention-report.json
+
+      - name: Post or update the PR comment
+        if: ${{ always() && inputs.comment && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BODY_FILE: ${{ runner.temp }}/retention-comment.md
+        run: |
+          set -euo pipefail
+          [ -s "${BODY_FILE}" ] || exit 0
+          ID="$(gh api "repos/${GH_REPO}/issues/${PR}/comments?per_page=100" --jq '[.[] | select(.body | startswith("<!-- retention-check -->"))] | first | .id // empty')"
+          if [ -n "${ID}" ]; then
+            gh api -X PATCH "repos/${GH_REPO}/issues/comments/${ID}" -F body=@"${BODY_FILE}" > /dev/null
+          else
+            gh pr comment "${PR}" --body-file "${BODY_FILE}"
+          fi
+
+      - name: Outcome
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.check.outcome }}
+          ERRORS: ${{ steps.check.outputs.error-count }}
+        run: |
+          [ "${OUTCOME}" != "failure" ] || { echo "::error title=retention::${ERRORS:-?} failing finding(s); see the summary"; exit 1; }
