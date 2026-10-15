@@ -1,0 +1,12 @@
+{
+  "sources": {"Data.Sensitive.ContactData.EmailAddress": "Email Address", "Data.Sensitive.PersonalIdentification.FirstName": "First Name"},
+  "sinks": {
+    "third_parties": {
+      "Sinks.ThirdParties.API.api.sendgrid.com": {"name": "Third Party API", "destinations": ["https://api.sendgrid.com/v3/mail/send"], "sources": ["Data.Sensitive.ContactData.EmailAddress"], "files": ["app.py:17"]},
+      "Sinks.ThirdParties.API.api.example-crm.com": {"name": "Third Party API", "destinations": ["https://api.example-crm.com/v1/contacts"], "sources": ["Data.Sensitive.ContactData.EmailAddress"], "files": ["app.py:21"]}
+    },
+    "storages": {}, "leakages": {}, "internal_apis": {}, "miscellaneous": {}
+  },
+  "destinations": ["https://api.example-crm.com/v1/contacts", "https://api.sendgrid.com/v3/mail/send"],
+  "endpoints": ["/signup"], "new": {"sources": [], "destinations": [], "sinks": {}, "flows": []}, "baseline": false
+}

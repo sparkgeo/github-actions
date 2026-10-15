@@ -1,0 +1,29 @@
+# Record of processing activities (SecOps plan Step 36, GDPR Art. 30).
+# Copy to the repository root as ropa.yml; field guide in docs/ropa.md.
+# ropa-check.yml validates it and checks it against the asset inventory
+# (#115) and the privado data-flow report (#99).
+---
+version: 1
+controller: Sparkgeo
+activities:
+  - id: ingest-user-locations
+    purpose: Deliver location-based alerts to users who opted in
+    lawful_basis: consent
+    data_subjects: [end-users]
+    data_categories: [location, contact]
+    classification: confidential
+    stores: [aws_rds_cluster.app, aws_s3_bucket.ingest]
+    sinks: [sendgrid]
+    retention: 90d
+    processor_dpa: [docs/dpa/sendgrid.pdf]
+    transfer_mechanism: sccs
+    owner: team-platform
+  - id: account-management
+    purpose: Create and maintain user accounts and authenticate sign-ins
+    lawful_basis: contract
+    data_subjects: [end-users]
+    data_categories: [identity, contact, credentials]
+    classification: confidential
+    stores: [aws_rds_cluster.app]
+    retention: until-account-deletion
+    owner: team-platform
