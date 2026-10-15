@@ -76,6 +76,97 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Runtime sensor rules lint (#16): the composite on a good fixture of each
+  # sensor, then every pass/fail fixture case.
+  sensor-rules-lint:
+    name: Sensor Rules Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/sensor-rules-lint
+        with:
+          rules-dir: tests/runtime-sensor/fixtures/falco-good
+
+      - uses: ./.github/actions/sensor-rules-lint
+        with:
+          sensor: tetragon
+          rules-dir: tests/runtime-sensor/fixtures/tetragon-good
+
+      - name: Fixture cases
+        env:
+          KUBECONFORM: ${{ runner.temp }}/kubeconform
+        run: tests/runtime-sensor/run.sh
+
+  # Runtime sensor on a throwaway kind cluster (#16): install with the custom
+  # fixture rules, act like an attacker in a workload, and require the alert.
+  runtime-sensor:
+    name: Runtime Sensor (kind, ${{ matrix.sensor }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        sensor: [falco, tetragon]
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create kind cluster
+        run: kind create cluster --name ci --wait 180s
+
+      - uses: ./.github/actions/runtime-sensor
+        with:
+          sensor: ${{ matrix.sensor }}
+          rules-dir: tests/runtime-sensor/fixtures/${{ matrix.sensor }}-good
+
+      - name: Trigger the rule and wait for the alert
+        env:
+          SENSOR: ${{ matrix.sensor }}
+        run: |
+          set -euo pipefail
+          kubectl apply -f tests/runtime-sensor/workload.yaml
+          kubectl -n demo rollout status deployment/web --timeout 5m
+          for i in $(seq 24); do
+            if [ "${SENSOR}" = falco ]; then
+              kubectl -n demo exec deploy/web -- sh -c 'echo probe' > /dev/null
+              logs="$(kubectl -n falco logs -l app.kubernetes.io/name=falco -c falco --tail=-1)"
+              want='Shell in demo container'
+            else
+              kubectl -n demo exec deploy/web -- cat /etc/shadow > /dev/null
+              # Only the TracingPolicy's kprobe event counts, not the plain exec event.
+              logs="$(kubectl -n kube-system logs -l app.kubernetes.io/name=tetragon -c export-stdout --tail=-1 \
+                | grep -F '"process_kprobe"' || true)"
+              want='/etc/shadow'
+            fi
+            if grep -F "${want}" <<< "${logs}" | head -2 | cut -c1-400; then echo "alert after ${i} tries"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::no '${want}' alert from ${SENSOR}"
+          tail -20 <<< "${logs}"
+          if [ "${SENSOR}" = tetragon ]; then
+            kubectl get tracingpolicies -o yaml | tail -30
+            kubectl -n kube-system logs -l app.kubernetes.io/name=tetragon -c tetragon --tail=-1 | grep -iE 'level=(warn|error)|shadow-read|kprobe' | tail -30
+          fi
+          exit 1
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

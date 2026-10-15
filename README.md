@@ -17,6 +17,8 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| Falco Rules Lint | [`falco-rules-lint.yml`](.github/workflows/falco-rules-lint.yml) | `workflow_call` | Reusable PR gate for runtime-sensor rules — `falco --validate` on custom Falco rules, or kubeconform + no-enforcement check on Tetragon TracingPolicies |
+| Falco Deploy | [`falco-deploy.yml`](.github/workflows/falco-deploy.yml) | `workflow_call` | Reusable EKS deploy of the runtime sensor (Falco, or Tetragon) with the repo's custom rules; lints first; OIDC auth |
 
 ## Composite Actions
 
@@ -41,6 +43,8 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Sensor Rules Lint | [`sensor-rules-lint`](.github/actions/sensor-rules-lint/action.yml) | Validates Falco rules (`falco --validate` after the default rules, pinned image, no kernel driver) or Tetragon TracingPolicies (kubeconform against schemas from the v1.7.1 CRDs in `policies/tetragon/schemas`; enforcement actions fail) | `sensor` (default: `falco`), `rules-dir` (default: `.falco`), `falco-image`, `allow-enforcement` (default: `false`) |
+| Runtime Sensor | [`runtime-sensor`](.github/actions/runtime-sensor/action.yml) | Installs or upgrades Falco (chart 9.2.0, modern eBPF, custom rules, optional falcosidekick webhook) or Tetragon (chart 1.7.1, TracingPolicies applied) into the current kubectl context; charts pinned by SHA-256 | `sensor`, `rules-dir`, `namespace`, `falco-chart-version`/`-sha256`, `tetragon-chart-version`/`-sha256`, `sidekick-webhook`, `extra-values` |
 
 ### GitHub Actionlint
 
@@ -373,6 +377,43 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Runtime threat detection (Falco, Tetragon)
+
+SecOps plan Step 41 (issue #16): an eBPF sensor on every cluster node reports shells in containers, credential reads, privilege escalation and unexpected connections at runtime, which build-time scanners cannot see. Falco is the default; Tetragon (`sensor: tetragon`) is the alternative, observe-only at Standard tier: a TracingPolicy with `Sigkill`, `Override`, `NotifyEnforcer` or `Signal` fails the lint until `allow-enforcement: true`, which needs a Step 40 emulation test and a kill switch first.
+
+```yaml
+# .github/workflows/falco.yml in the platform repo
+name: Falco
+on:
+  pull_request:
+    paths: ['.falco/**']
+  push:
+    branches: [main]
+    paths: ['.falco/**']
+jobs:
+  lint:
+    if: github.event_name == 'pull_request'
+    uses: sparkgeo/github-actions/.github/workflows/falco-rules-lint.yml@<SHA>
+    permissions:
+      contents: read
+    with:
+      actions-ref: <SHA>
+  deploy:
+    if: github.event_name == 'push'
+    uses: sparkgeo/github-actions/.github/workflows/falco-deploy.yml@<SHA>
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      actions-ref: <SHA>
+      cluster-name: prescient-prod
+      aws-role-arn: arn:aws:iam::<account>:role/falco-deploy
+      aws-region: us-west-2
+      sidekick-webhook: http://wazuh-manager:55000/falco   # optional: alerts to the SIEM (Step 9)
+```
+
+Custom Falco rules may use the macros and lists from Falco's default `falco_rules.yaml` (for example `spawned_process`, `container`, `shell_binaries`); rules from the incubating or sandbox files are not loaded during the lint. CI installs each sensor on a kind cluster with the fixture rules, starts a shell in a workload (Falco) or reads its `/etc/shadow` (Tetragon), and requires the alert.
 
 ## Consuming repo CI setup
 

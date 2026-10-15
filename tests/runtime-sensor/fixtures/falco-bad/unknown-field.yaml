@@ -1,0 +1,6 @@
+# Must fail validation: nosuchfield.x is not a Falco field.
+- rule: Broken rule
+  desc: Uses a field Falco does not have
+  condition: spawned_process and nosuchfield.x = 1
+  output: never
+  priority: WARNING

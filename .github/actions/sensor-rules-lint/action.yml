@@ -1,0 +1,55 @@
+name: "Sensor Rules Lint"
+description: |
+  Validates runtime-sensor rules before they are deployed (SecOps plan
+  Step 41, issue #16). `falco`: loads the custom rules after Falco's default
+  rules with `falco --validate` in the pinned Falco image (no kernel driver).
+  `tetragon`: checks TracingPolicy / TracingPolicyNamespaced files with
+  kubeconform against schemas generated from the Tetragon v1.7.1 CRDs, and
+  fails on enforcement actions (Sigkill, Override, NotifyEnforcer, Signal)
+  unless allow-enforcement is true.
+
+  Required permissions on calling job: contents: read.
+inputs:
+  sensor:
+    description: "falco or tetragon."
+    default: "falco"
+  rules-dir:
+    description: "Directory with the custom rules (falco) or TracingPolicy files (tetragon)."
+    default: ".falco"
+  falco-image:
+    description: "Falco image used for --validate, pinned by digest (default: falcosecurity/falco 0.45.0, the version the falco 9.2.0 chart deploys)."
+    default: "falcosecurity/falco@sha256:788f1129c542171813083d4afc61b16730a47dde8c23d9c39370acef996349b6"
+  allow-enforcement:
+    description: "tetragon: allow enforcement actions (Advanced tier only, after a Step 40 emulation test)."
+    default: "false"
+  kubeconform-version:
+    description: "kubeconform version for the tetragon schema check."
+    default: "0.8.0"
+runs:
+  using: "composite"
+  steps:
+    - name: Install kubeconform
+      if: inputs.sensor == 'tetragon'
+      shell: bash
+      env:
+        KUBECONFORM_VERSION: ${{ inputs.kubeconform-version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}"
+        curl -sSfL -o "${TMP}/kubeconform-linux-amd64.tar.gz" "${BASE}/kubeconform-linux-amd64.tar.gz"
+        curl -sSfL -o "${TMP}/CHECKSUMS" "${BASE}/CHECKSUMS"
+        ( cd "${TMP}" && grep " kubeconform-linux-amd64.tar.gz\$" CHECKSUMS | sha256sum -c - )
+        tar -xzf "${TMP}/kubeconform-linux-amd64.tar.gz" -C "${TMP}" kubeconform
+        install "${TMP}/kubeconform" "${RUNNER_TEMP}/kubeconform"
+
+    - name: Validate rules
+      shell: bash
+      env:
+        SENSOR: ${{ inputs.sensor }}
+        RULES_DIR: ${{ inputs.rules-dir }}
+        FALCO_IMAGE: ${{ inputs.falco-image }}
+        ALLOW_ENFORCEMENT: ${{ inputs.allow-enforcement }}
+        KUBECONFORM: ${{ runner.temp }}/kubeconform
+        SCHEMA_DIR: ${{ github.action_path }}/../../../policies/tetragon/schemas
+      run: bash "${GITHUB_ACTION_PATH}/lint.sh"
