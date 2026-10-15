@@ -397,10 +397,15 @@ jobs:
 
 **Severity.** `high` blocks on hadolint `error` findings, `medium` on `warning` (this is where `DL3007` `:latest` and `DL3013` unpinned `pip install` live), `low` on `info`/`style`, `none` reports only.
 
-**Digest pinning.** Independent of severity: with `require-digest-pin: true` (default) any `FROM` that is not `image:tag@sha256:…` fails the job. Stage aliases (`FROM build`), `scratch`, `--platform=` flags, and `FROM ${ARG}` with an in-file `ARG` default are handled. Renovate keeps the digests current (#86). Prefer `cgr.dev/chainguard/*` (Wolfi) base images.
+**Digest pinning.** Independent of severity: with `require-digest-pin: true` (default) any `FROM` that is not `image:tag@sha256:…` fails the job. Stage aliases (`FROM build`), `scratch`, `--platform=` flags, and `FROM ${ARG}` with an in-file `ARG` default are handled. Renovate keeps the digests current (#86).
+
+**Base images.** The plan (Step 6 Standard) makes Wolfi the default minimal glibc base, built in our own pipeline with `apko` (and `melange` for packages Wolfi lacks), so the image comes from open packages and nothing depends on a vendor registry's free tier. distroless and Alpine remain the Baseline options. Chainguard's `cgr.dev/chainguard/*` images are the commercial build of the same base: fine with a subscription, but note the lock-in the plan records (pricing, and which tags stay free). Every option is pinned by digest the same way.
 
 ```dockerfile
-FROM cgr.dev/chainguard/python:latest@sha256:<digest> AS build
+# Wolfi image built with apko and pushed to our registry (default)
+FROM ghcr.io/<org>/python-wolfi:3.12@sha256:<digest> AS build
+# Baseline alternative
+FROM gcr.io/distroless/python3-debian12@sha256:<digest>
 ```
 
 **Suppressing a rule.** Inline, above the instruction, with a reason in a comment; `ignore-rules` disables a rule for the whole run and should be rare:
