@@ -1,0 +1,86 @@
+name: DAST Baseline
+
+# Reusable passive DAST gate (SecOps plan Step 5; issue #65): the ZAP
+# baseline scan against a running preview or staging deployment. Passive
+# rules only, no attack payloads, so it is safe on shared environments and
+# fast enough for every PR. Fails at or above fail-on; a ZAP rules file in the
+# calling repository ignores, downgrades or forces individual rules. The
+# HTML, JSON and Markdown reports are uploaded as an artefact on every run.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. The hosts it reaches: ghcr.io (the ZAP
+# image) and target-url.
+
+on:
+  workflow_call:
+    inputs:
+      target-url:
+        description: 'URL of the running application to scan, including the protocol'
+        required: true
+        type: string
+      rules-file:
+        description: 'Path to a ZAP rules TSV in the consuming repo (IGNORE/INFO/WARN/FAIL per rule)'
+        default: ''
+        type: string
+      fail-on:
+        description: 'Minimum ZAP risk level to fail: high|medium|low|none'
+        default: 'high'
+        type: string
+      spider-minutes:
+        description: 'Minutes the ZAP spider runs'
+        default: 1
+        type: number
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the
+          zap-baseline composite from. Pin this to the SAME SHA you pinned
+          dast-baseline.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      blocking-count:
+        description: 'Alerts that failed the job'
+        value: ${{ jobs.zap.outputs.blocking-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`.
+jobs:
+  zap:
+    name: ZAP baseline
+    runs-on: ubuntu-latest
+    outputs:
+      blocking-count: ${{ steps.zap.outputs.blocking-count }}
+    steps:
+      - name: Checkout repository under test (for the rules file)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout zap-baseline composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: zap
+        uses: ./.sparkgeo-github-actions/.github/actions/zap-baseline
+        with:
+          target-url: ${{ inputs.target-url }}
+          rules-file: ${{ inputs.rules-file }}
+          fail-on: ${{ inputs.fail-on }}
+          spider-minutes: ${{ inputs.spider-minutes }}
+          report-dir: ${{ runner.temp }}/zap-report
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: zap-baseline-report
+          path: ${{ runner.temp }}/zap-report/
+          if-no-files-found: ignore

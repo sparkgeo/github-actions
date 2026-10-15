@@ -1,0 +1,4 @@
+# Fixture rules file for tests/dast-baseline (ZAP baseline config format).
+10036	IGNORE	(Server Leaks Version Information via "Server" HTTP Response Header Field)
+10202	WARN	(Absence of Anti-CSRF Tokens: the fixture form has no session)
+10021	FAIL	(X-Content-Type-Options Header Missing)

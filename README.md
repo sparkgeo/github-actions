@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| DAST Baseline | [`dast-baseline.yml`](.github/workflows/dast-baseline.yml) | `workflow_call` | Reusable passive DAST gate: ZAP baseline scan of a running preview or staging URL; fails at or above `fail-on`; per-repo ZAP rules file; HTML/JSON/Markdown reports as an artefact (#65) |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| ZAP Baseline | [`zap-baseline`](.github/actions/zap-baseline/action.yml) | Runs the digest-pinned ZAP image's `zap-baseline.py` with `--network host` (localhost targets work); annotates every alert; gates on ZAP risk; the rules file IGNOREs, downgrades (INFO/WARN) or forces (FAIL) single rules | `target-url` (required), `rules-file` (default: `""`), `fail-on` (default: `high`), `spider-minutes` (default: `1`), `report-dir` (default: `zap-report`), `image` (default: ZAP 2.17.0 by digest) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,43 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### DAST Baseline (ZAP)
+
+The ZAP baseline scan spiders a running application and runs passive rules only: security headers, cookie flags, information disclosure, mixed content. It sends no attack payloads, so it is safe on shared preview and staging environments and fast enough for every PR (SecOps plan Step 5). The calling repository deploys first; this workflow only needs the URL.
+
+A preview environment that reports a GitHub deployment can trigger the scan when the deployment succeeds:
+
+```yaml
+# .github/workflows/dast.yml
+on:
+  deployment_status:
+
+jobs:
+  zap:
+    if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'preview'
+    permissions:
+      contents: read
+    uses: sparkgeo/github-actions/.github/workflows/dast-baseline.yml@<SHA>
+    with:
+      target-url: ${{ github.event.deployment_status.environment_url }}
+      rules-file: .zap/rules.tsv   # optional
+      fail-on: high                # medium or low to tighten; none to report only
+      actions-ref: <SHA>           # same SHA as above
+```
+
+A service started in the same job also works: start it on `localhost` before calling the `zap-baseline` composite, because ZAP runs with `--network host`.
+
+**Gate.** ZAP risk levels map onto `fail-on`: `high`, `medium` and `low` block at or above that risk, and `none` only reports. Every alert is a job annotation, and the job summary lists each alert with its plugin ID.
+
+**Rules file.** The rules file uses ZAP's own baseline format, one rule per line: `<plugin id>`, a tab, then `IGNORE`, `INFO`, `WARN` or `FAIL`, then an optional tab and `(name)`. Run `zap-baseline.py -g gen.conf` once to get the full list. `IGNORE` drops a rule; `INFO` and `WARN` report it without blocking; `FAIL` blocks it whatever its risk. Comment each line with the reason, and review the file like a `.trivyignore`.
+
+```text
+10036	IGNORE	(Server version header: set by the platform load balancer, tracked in INFRA-123)
+10021	FAIL	(X-Content-Type-Options must always be set)
+```
+
+`tests/dast-baseline/run.sh` checks the gate against a recorded ZAP 2.17.0 report of `tests/dast-baseline/fixtures/site`, a page served with no security headers. The `dast-baseline` CI job serves that site on the runner and scans it live with the fixture rules file.
 
 ## Consuming repo CI setup
 
