@@ -31,6 +31,11 @@ DISABLE_ERRORS_LINTERS:
   - MARKDOWN_MARKDOWNLINT
   - MARKDOWN_MARKDOWN_TABLE_FORMATTER
 
+# The accessibility fixture site is deliberately non-compliant (missing lang,
+# img without alt): axe must find those violations. Keep the HTML linters off it.
+HTML_DJLINT_FILTER_REGEX_EXCLUDE: 'tests/a11y/fixtures/site/'
+HTML_HTMLHINT_FILTER_REGEX_EXCLUDE: 'tests/a11y/fixtures/site/'
+
 SHOW_ELAPSED_TIME: true
 FLAVOR_SUGGESTIONS: false
 PRINT_ALPACA: false
