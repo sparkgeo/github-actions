@@ -1,0 +1,35 @@
+# poutine configuration for this repository (triage of the first scan with
+# pipeline-posture, issue #234). Each skip names the finding it accepts and why.
+disableVersionCheck: true
+
+skip:
+  # untrusted_checkout_exec treats every workflow_call workflow as possibly
+  # privileged and flags a local action run after a checkout. These reusable
+  # workflows run their composite from a second checkout of
+  # sparkgeo/github-actions at the caller-pinned actions-ref into
+  # .sparkgeo-github-actions; actions/checkout empties that path before
+  # cloning, so content from the caller's pull request cannot replace the
+  # action, and no workflow here checks out a PR head ref. A new reusable
+  # workflow using the same pattern adds its path here after review.
+  - rule: untrusted_checkout_exec
+    path:
+      - .github/workflows/lint-helm.yml
+      - .github/workflows/lint-iac.yml
+      - .github/workflows/lint-precommit.yml
+      - .github/workflows/secrets-precommit.yml
+      - .github/workflows/secrets-scan.yml
+
+  # Third-party actions reviewed, SHA-pinned and listed in
+  # docs/approved-actions.md (org allowlist).
+  - rule: github_action_from_unverified_creator_used
+    purl:
+      - pkg:githubactions/opentofu/setup-opentofu
+      - pkg:githubactions/reviewdog/action-actionlint
+      - pkg:githubactions/terramate-io/terramate-action
+      - pkg:githubactions/zizmorcore/zizmor-action
+
+# Not skipped: unpinnable_action notes on .github/actions/scorecard
+# (ossf/scorecard-action runs a container image by tag) and
+# .github/actions/github-actionlint (reviewdog/action-actionlint builds a
+# container that downloads actionlint at run time). Both stay visible until
+# those composites install pinned, checksum-verified binaries instead.
