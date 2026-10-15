@@ -258,3 +258,53 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/storage-optimizer
+
+  # ZAP baseline (issue #65): gate.py against a recorded ZAP 2.17.0 report,
+  # then a live scan of tests/dast-baseline/fixtures/site served on the
+  # runner. The fixture rules file ignores 10036 and forces 10021 to FAIL, so
+  # the live run must fail on exactly that rule and ZAP must report the
+  # IGNORE. Audit egress: ghcr.io (ZAP image).
+  dast-baseline:
+    name: DAST baseline
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Gate fixtures
+        run: tests/dast-baseline/run.sh
+
+      - name: Serve the fixture site
+        run: |
+          python3 -m http.server 8080 --bind 127.0.0.1 --directory tests/dast-baseline/fixtures/site > /dev/null 2>&1 &
+          for _ in $(seq 30); do curl -sf http://127.0.0.1:8080/ > /dev/null && exit 0; sleep 1; done
+          echo "::error title=dast-baseline::fixture site did not start"; exit 1
+
+      - id: live
+        uses: ./.github/actions/zap-baseline
+        continue-on-error: true
+        with:
+          target-url: http://127.0.0.1:8080/
+          rules-file: tests/dast-baseline/fixtures/rules.tsv
+          report-dir: ${{ runner.temp }}/zap-report
+
+      - name: Assert the live scan
+        env:
+          OUTCOME: ${{ steps.live.outcome }}
+          BLOCKING: ${{ steps.live.outputs.blocking-count }}
+          MEDIUM: ${{ steps.live.outputs.medium-count }}
+          OUT: ${{ runner.temp }}/zap-report
+        run: |
+          set -euo pipefail
+          [ "${OUTCOME}" = "failure" ] || { echo "::error title=dast-baseline::the FAIL rule did not fail the scan (${OUTCOME})"; exit 1; }
+          [ "${BLOCKING}" = "1" ] || { echo "::error title=dast-baseline::expected 1 blocking alert (10021), got ${BLOCKING}"; exit 1; }
+          [ "${MEDIUM}" -ge 2 ] || { echo "::error title=dast-baseline::expected the fixture's missing CSP and anti-clickjacking alerts, got ${MEDIUM} Medium"; exit 1; }
+          grep -q 'IGNORE: 1' "${OUT}/zap-output.txt" || { echo "::error title=dast-baseline::ZAP did not apply the rules file"; exit 1; }

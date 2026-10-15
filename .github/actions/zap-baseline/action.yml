@@ -1,0 +1,94 @@
+name: "zap-baseline"
+description: |
+  Passive DAST with the ZAP baseline scan (SecOps plan Step 5; issue #65).
+  ZAP spiders the target and runs passive rules only: security headers,
+  cookie flags, information disclosure, mixed content. It never sends attack
+  payloads, so it is safe against shared preview and staging environments.
+
+  Runs the pinned ghcr.io/zaproxy/zaproxy:stable image (ZAP 2.17.0) with
+  --network host, so a target started in the same job on localhost is
+  reachable. Writes zap.json, zap.html and zap.md to report-dir. gate.py
+  annotates each alert and fails at or above fail-on. The rules file is
+  ZAP's own baseline config: IGNORE drops a rule, INFO or WARN reports it
+  without blocking, and FAIL blocks it whatever its risk.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  target-url:
+    description: "URL of the running application, including the protocol."
+    required: true
+  rules-file:
+    description: "Path to a ZAP baseline rules file (<plugin id>\\t<IGNORE|INFO|WARN|FAIL>\\t(name)) in the repository."
+    default: ""
+  fail-on:
+    description: "Lowest ZAP risk that fails the job: high, medium, low, or none."
+    default: "high"
+  spider-minutes:
+    description: "Minutes the spider runs (zap-baseline.py -m)."
+    default: "1"
+  report-dir:
+    description: "Directory the reports are written to."
+    default: "zap-report"
+  image:
+    description: "ZAP image, pinned by digest."
+    default: "ghcr.io/zaproxy/zaproxy@sha256:7aaa659b0d43078febd82e29bad112285c370727e86ab8340444220e17d9f0d2"
+outputs:
+  high-count:
+    description: "High-risk alerts (after IGNORE rules)."
+    value: ${{ steps.gate.outputs.high-count }}
+  medium-count:
+    description: "Medium-risk alerts."
+    value: ${{ steps.gate.outputs.medium-count }}
+  low-count:
+    description: "Low-risk alerts."
+    value: ${{ steps.gate.outputs.low-count }}
+  blocking-count:
+    description: "Alerts that fail the job."
+    value: ${{ steps.gate.outputs.blocking-count }}
+  report-dir:
+    description: "Directory holding zap.json, zap.html and zap.md."
+    value: ${{ inputs.report-dir }}
+runs:
+  using: "composite"
+  steps:
+    - name: Run the ZAP baseline scan
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target-url }}
+        RULES: ${{ inputs.rules-file }}
+        MINUTES: ${{ inputs.spider-minutes }}
+        OUT: ${{ inputs.report-dir }}
+        IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+        case "${TARGET}" in http://*|https://*) ;; *) echo "::error title=zap-baseline::target-url must start with http:// or https://"; exit 1 ;; esac
+        mkdir -p "${OUT}"
+        # The image runs as the zap user, not the runner's; it must be able to write the reports.
+        chmod 777 "${OUT}"
+        args=(-t "${TARGET}" -J zap.json -r zap.html -w zap.md -I -m "${MINUTES}")
+        if [ -n "${RULES}" ]; then
+          [ -f "${RULES}" ] || { echo "::error title=zap-baseline::rules-file not found: ${RULES}"; exit 1; }
+          cp "${RULES}" "${OUT}/rules.tsv"
+          args+=(-c rules.tsv)
+        fi
+        status=0
+        docker run --rm --network host -v "$(realpath "${OUT}"):/zap/wrk:rw" "${IMAGE}" zap-baseline.py "${args[@]}" \
+          > "${OUT}/zap-output.txt" 2>&1 || status=$?
+        # 0 pass, 1 a FAIL rule matched, 2 warnings (not with -I); anything else is a ZAP error.
+        if [ "${status}" -gt 2 ] || [ ! -s "${OUT}/zap.json" ]; then
+          cat "${OUT}/zap-output.txt"
+          echo "::error title=zap-baseline::ZAP did not complete (exit ${status}); is ${TARGET} reachable from the runner?"
+          exit 1
+        fi
+        tail -n 3 "${OUT}/zap-output.txt"
+
+    - name: Annotate and gate
+      id: gate
+      shell: bash
+      env:
+        OUT: ${{ inputs.report-dir }}
+        RULES: ${{ inputs.rules-file }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        set -euo pipefail
+        python3 -I "${GITHUB_ACTION_PATH}/gate.py" --report "${OUT}/zap.json" --fail-on "${FAIL_ON}" --rules "${RULES}" >> "${GITHUB_OUTPUT}"
