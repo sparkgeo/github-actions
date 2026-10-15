@@ -1,0 +1,103 @@
+name: DAST API
+
+# Reusable API DAST gate (SecOps plan Step 5 Standard; issue #67): the ZAP
+# API scan imports the OpenAPI, SOAP or GraphQL definition and exercises
+# every documented operation, including authenticated ones when AUTH_HEADER
+# is set. Active rules send attack payloads: call it only against preview,
+# ephemeral or staging environments. Fails at or above fail-on; reports are
+# uploaded as an artefact on every run. For an API started inside the job
+# (no preview environment), use the zap-api composite in your own job; see
+# the README.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. The hosts it reaches: ghcr.io (the ZAP
+# image), target-url and spec-url.
+
+on:
+  workflow_call:
+    inputs:
+      target-url:
+        description: 'Base URL of the running API (the endpoint for GraphQL)'
+        required: true
+        type: string
+      spec-url:
+        description: 'URL or repo path of the OpenAPI/SOAP definition, or of the GraphQL schema'
+        required: true
+        type: string
+      spec-format:
+        description: 'openapi|soap|graphql'
+        default: 'openapi'
+        type: string
+      fail-on:
+        description: 'Minimum ZAP risk level to fail: high|medium|low|none'
+        default: 'high'
+        type: string
+      rules-file:
+        description: 'Path to a ZAP rules TSV in the consuming repo (IGNORE/INFO/WARN/FAIL per rule)'
+        default: ''
+        type: string
+      safe-mode:
+        description: 'Passive rules only (no attack payloads)'
+        default: false
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the zap-api
+          composite from. Pin this to the SAME SHA you pinned dast-api.yml to,
+          so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    secrets:
+      AUTH_HEADER:
+        description: 'Optional "Header-Name: value" injected into every request to the target'
+        required: false
+    outputs:
+      blocking-count:
+        description: 'Alerts that failed the job'
+        value: ${{ jobs.zap.outputs.blocking-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`.
+jobs:
+  zap:
+    name: ZAP API scan
+    runs-on: ubuntu-latest
+    outputs:
+      blocking-count: ${{ steps.zap.outputs.blocking-count }}
+    steps:
+      - name: Checkout repository under test (definition and rules files)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout zap-api composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: zap
+        uses: ./.sparkgeo-github-actions/.github/actions/zap-api
+        with:
+          target-url: ${{ inputs.target-url }}
+          spec-url: ${{ inputs.spec-url }}
+          spec-format: ${{ inputs.spec-format }}
+          fail-on: ${{ inputs.fail-on }}
+          rules-file: ${{ inputs.rules-file }}
+          auth-header: ${{ secrets.AUTH_HEADER }}
+          safe-mode: ${{ inputs.safe-mode }}
+          report-dir: ${{ runner.temp }}/zap-api-report
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: zap-api-report
+          path: ${{ runner.temp }}/zap-api-report/
+          if-no-files-found: ignore

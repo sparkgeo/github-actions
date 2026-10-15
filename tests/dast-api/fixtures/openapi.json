@@ -1,0 +1,28 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "DAST API fixture",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/items": {
+      "get": {
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Items with that name"
+          }
+        }
+      }
+    }
+  }
+}

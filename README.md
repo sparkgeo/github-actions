@@ -18,6 +18,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 | DAST Baseline | [`dast-baseline.yml`](.github/workflows/dast-baseline.yml) | `workflow_call` | Reusable passive DAST gate: ZAP baseline scan of a running preview or staging URL; fails at or above `fail-on`; per-repo ZAP rules file; HTML/JSON/Markdown reports as an artefact (#65) |
+| DAST API | [`dast-api.yml`](.github/workflows/dast-api.yml) | `workflow_call` | Reusable API DAST gate: ZAP API scan driven by an OpenAPI, SOAP or GraphQL definition, with an optional `AUTH_HEADER` secret for authenticated operations; active rules, so non-production only; fails at or above `fail-on`; reports as an artefact (#67) |
 
 ## Composite Actions
 
@@ -43,6 +44,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | ZAP Baseline | [`zap-baseline`](.github/actions/zap-baseline/action.yml) | Runs the digest-pinned ZAP image's `zap-baseline.py` with `--network host` (localhost targets work); annotates every alert; gates on ZAP risk; the rules file IGNOREs, downgrades (INFO/WARN) or forces (FAIL) single rules | `target-url` (required), `rules-file` (default: `""`), `fail-on` (default: `high`), `spider-minutes` (default: `1`), `report-dir` (default: `zap-report`), `image` (default: ZAP 2.17.0 by digest) |
+| ZAP API | [`zap-api`](.github/actions/zap-api/action.yml) | Runs `zap-api-scan.py` from the same pinned ZAP image against a definition (URL or repo path) with the server overridden to `target-url`; auth header passed by environment variable and scoped to the target host; reuses the baseline gate and rules-file semantics | `target-url` (required), `spec-url`, `spec-format` (default: `openapi`), `fail-on` (default: `high`), `rules-file`, `auth-header`, `safe-mode` (default: `false`), `report-dir` (default: `zap-api-report`), `image` |
 
 ### GitHub Actionlint
 
@@ -412,6 +414,57 @@ A service started in the same job also works: start it on `localhost` before cal
 ```
 
 `tests/dast-baseline/run.sh` checks the gate against a recorded ZAP 2.17.0 report of `tests/dast-baseline/fixtures/site`, a page served with no security headers. The `dast-baseline` CI job serves that site on the runner and scans it live with the fixture rules file.
+
+### DAST API (ZAP API scan)
+
+Most Sparkgeo services are APIs (STAC, tile servers, ingest), so a crawler sees almost none of their surface. The ZAP API scan imports the OpenAPI, SOAP or GraphQL definition and exercises every documented operation (SecOps plan Step 5 Standard: authenticated scanning and API security testing). It runs **active** rules that send attack payloads, so point it only at preview, ephemeral or staging environments; `safe-mode: true` limits it to passive rules.
+
+Against a preview environment:
+
+```yaml
+jobs:
+  zap-api:
+    permissions:
+      contents: read
+    uses: sparkgeo/github-actions/.github/workflows/dast-api.yml@<SHA>
+    with:
+      target-url: https://pr-${{ github.event.number }}.preview.example.com
+      spec-url: openapi.yaml            # repo path, or the URL the service publishes
+      fail-on: high
+      actions-ref: <SHA>
+    secrets:
+      AUTH_HEADER: ${{ secrets.PREVIEW_API_AUTH_HEADER }}   # e.g. "Authorization: Bearer <token>"
+```
+
+**No preview environment.** Start the service inside the job and call the `zap-api` composite from that same job. A reusable workflow cannot add services to its own job, so this pattern uses the composite directly. ZAP runs with `--network host`, so `localhost` reaches the service:
+
+```yaml
+jobs:
+  zap-api:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@<SHA>
+        with:
+          persist-credentials: false
+      - name: Start the API and its database
+        run: |
+          docker compose -f compose.ci.yaml up -d --wait
+      - uses: sparkgeo/github-actions/.github/actions/zap-api@<SHA>
+        with:
+          target-url: http://localhost:8000
+          spec-url: http://localhost:8000/openapi.json
+          auth-header: ${{ secrets.CI_API_AUTH_HEADER }}
+```
+
+A `services:` container on the job works the same way when the API ships as an image.
+
+**Authentication.** `AUTH_HEADER` (or the composite's `auth-header`) is a `Header-Name: value` pair. It reaches ZAP through the `ZAP_AUTH_HEADER` environment variables, never the command line. It is masked in logs and sent only to the target's host, never to other hosts the definition mentions. For login flows that need more than a static header, add a ZAP context file through the rules-file mechanism and a follow-up input.
+
+**Gate and rules file.** These work as for the baseline scan: ZAP risk against `fail-on`, and a ZAP rules file to IGNORE, downgrade or FAIL single rules.
+
+The `dast-api` CI job starts `tests/dast-api/fixtures/app.py`. Its one operation answers a quote with a MySQL syntax error, but only when the `X-Fixture-Token` header is present. The job scans it with that header and asserts that ZAP reports SQL Injection (High) and fails the gate. Without the header, the same scan finds no High alert.
 
 ## Consuming repo CI setup
 
