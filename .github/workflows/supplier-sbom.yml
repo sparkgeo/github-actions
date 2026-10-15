@@ -1,0 +1,104 @@
+name: Supplier SBOM Intake
+
+# Reusable intake for software we install or ship from vendors (SecOps plan
+# Step 2 Standard; issue #233): validates the vendor's SBOM (SPDX converted
+# to CycloneDX) or builds one from the delivered binary with cve-bin-tool,
+# keeps it as a workflow artefact, and uploads it, with the vendor's
+# CycloneDX VEX, to Dependency-Track as project <supplier> <version> under
+# "Suppliers" when the DTRACK_URL variable and DTRACK_API_KEY secret are set.
+# Typical caller: workflow_dispatch in a vendor-intake repository where the
+# delivery is committed.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. The hosts it reaches: github.com (syft),
+# pypi.org and files.pythonhosted.org (cyclonedx-python-lib, cve-bin-tool),
+# and DTRACK_URL.
+
+on:
+  workflow_call:
+    inputs:
+      supplier:
+        description: 'Vendor name; becomes the Dependency-Track project name'
+        required: true
+        type: string
+      version:
+        description: 'Delivered version; becomes the Dependency-Track project version'
+        required: true
+        type: string
+      sbom-path:
+        description: 'Delivered SBOM (CycloneDX or SPDX JSON); empty generates one from artefact-path'
+        default: ''
+        type: string
+      artefact-path:
+        description: 'Delivered binary, archive or installer to scan when no SBOM arrived'
+        default: ''
+        type: string
+      vex-path:
+        description: 'Optional VEX from the vendor (CycloneDX VEX is uploaded)'
+        default: ''
+        type: string
+      cve-bin-tool-version:
+        description: 'cve-bin-tool version installed from PyPI'
+        default: '3.4'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the
+          supplier-sbom composite from. Pin this to the SAME SHA you pinned
+          supplier-sbom.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    secrets:
+      DTRACK_API_KEY:
+        description: 'Dependency-Track API key (BOM_UPLOAD, PROJECT_CREATION_UPLOAD, VULNERABILITY_ANALYSIS for VEX)'
+        required: false
+    outputs:
+      component-count:
+        description: 'Components in the SBOM'
+        value: ${{ jobs.intake.outputs.component-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`.
+jobs:
+  intake:
+    name: Supplier SBOM
+    runs-on: ubuntu-latest
+    outputs:
+      component-count: ${{ steps.intake.outputs.component-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout supplier-sbom composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: intake
+        uses: ./.sparkgeo-github-actions/.github/actions/supplier-sbom
+        with:
+          supplier: ${{ inputs.supplier }}
+          version: ${{ inputs.version }}
+          sbom-path: ${{ inputs.sbom-path }}
+          artefact-path: ${{ inputs.artefact-path }}
+          vex-path: ${{ inputs.vex-path }}
+          output-dir: ${{ runner.temp }}/supplier-sbom
+          cve-bin-tool-version: ${{ inputs.cve-bin-tool-version }}
+          dtrack-url: ${{ vars.DTRACK_URL }}
+          dtrack-api-key: ${{ secrets.DTRACK_API_KEY }}
+
+      - name: Upload SBOM artefact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: supplier-sbom-${{ inputs.supplier }}-${{ inputs.version }}
+          path: ${{ runner.temp }}/supplier-sbom/
+          if-no-files-found: error

@@ -1,0 +1,163 @@
+name: "supplier-sbom"
+description: |
+  Supplier SBOM intake (SecOps plan Step 2 Standard; issue #233). Software
+  we install or ship from vendors is matched against new CVEs like our own
+  code, through Dependency-Track.
+
+  - A delivered SPDX JSON SBOM is converted to CycloneDX with a pinned,
+    checksum-verified syft, because Dependency-Track ingests CycloneDX.
+  - With no SBOM, cve-bin-tool (OpenSSF, GPL-3.0, run in CI and never
+    redistributed) builds one from the delivered binary or archive. The
+    SBOM's metadata says we generated it from the binary.
+  - sbom.py validates the CycloneDX schema, counts components and warns
+    about components without a version or a purl/CPE, which match nothing.
+  - With dtrack-url and dtrack-api-key set, upload.sh uploads the SBOM, and
+    a CycloneDX VEX from the vendor when one is delivered, as project
+    <supplier> <version> under the parent project "Suppliers".
+
+  cve-bin-tool is used as a component detector only. Matching against CVEs
+  is Dependency-Track's job, so the tool runs offline against an empty
+  database seeded with one placeholder row, instead of downloading the NVD.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  supplier:
+    description: "Vendor name; becomes the Dependency-Track project name."
+    required: true
+  version:
+    description: "Delivered version; becomes the Dependency-Track project version."
+    required: true
+  sbom-path:
+    description: "Delivered SBOM (CycloneDX or SPDX JSON). Empty generates one from artefact-path."
+    default: ""
+  artefact-path:
+    description: "Delivered binary, archive or installer to scan when no SBOM arrived."
+    default: ""
+  vex-path:
+    description: "Optional VEX delivered by the vendor (CycloneDX VEX is uploaded; other formats are kept only)."
+    default: ""
+  output-dir:
+    description: "Where supplier.cdx.json is written."
+    default: "supplier-sbom"
+  dtrack-url:
+    description: "Dependency-Track base URL. Empty skips the upload."
+    default: ""
+  dtrack-api-key:
+    description: "Dependency-Track API key with BOM_UPLOAD, PROJECT_CREATION_UPLOAD and VULNERABILITY_ANALYSIS (for VEX)."
+    default: ""
+  dtrack-parent:
+    description: "Parent project the supplier projects are created under."
+    default: "Suppliers"
+  cve-bin-tool-version:
+    description: "cve-bin-tool version installed from PyPI."
+    default: "3.4"
+  syft-version:
+    description: "syft version used to convert SPDX (no leading v)."
+    default: "1.54.1"
+outputs:
+  sbom:
+    description: "Path of the validated CycloneDX SBOM."
+    value: ${{ steps.validate.outputs.sbom }}
+  component-count:
+    description: "Components in the SBOM."
+    value: ${{ steps.validate.outputs.component-count }}
+  unidentified-count:
+    description: "Components without a version or a purl/CPE."
+    value: ${{ steps.validate.outputs.unidentified-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Check inputs and prepare
+      id: prep
+      shell: bash
+      env:
+        SBOM_PATH: ${{ inputs.sbom-path }}
+        ARTEFACT: ${{ inputs.artefact-path }}
+        OUT: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        mkdir -p "${OUT}"
+        if [ -n "${SBOM_PATH}" ]; then
+          [ -f "${SBOM_PATH}" ] || { echo "::error title=supplier-sbom::sbom-path not found: ${SBOM_PATH}"; exit 1; }
+          if jq -e '.spdxVersion' "${SBOM_PATH}" > /dev/null 2>&1; then echo "mode=spdx"; else echo "mode=cyclonedx"; fi >> "${GITHUB_OUTPUT}"
+        elif [ -n "${ARTEFACT}" ]; then
+          [ -e "${ARTEFACT}" ] || { echo "::error title=supplier-sbom::artefact-path not found: ${ARTEFACT}"; exit 1; }
+          echo "mode=generate" >> "${GITHUB_OUTPUT}"
+        else
+          echo "::error title=supplier-sbom::set sbom-path (delivered SBOM) or artefact-path (binary to scan)"; exit 1
+        fi
+        python3 -m venv "${RUNNER_TEMP}/supplier-venv"
+        "${RUNNER_TEMP}/supplier-venv/bin/python" -m pip install -q --disable-pip-version-check \
+          "cyclonedx-python-lib[json-validation]==11.12.0"
+
+    - name: Convert SPDX to CycloneDX with syft
+      if: steps.prep.outputs.mode == 'spdx'
+      shell: bash
+      env:
+        SYFT_VERSION: ${{ inputs.syft-version }}
+        SBOM_PATH: ${{ inputs.sbom-path }}
+        SYFT_CHECK_FOR_APP_UPDATE: "false"
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}"
+        TARBALL="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+        curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/syft_${SYFT_VERSION}_checksums.txt"
+        ( cd "${TMP}" && grep " ${TARBALL}\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${TMP}/${TARBALL}" -C "${TMP}" syft
+        "${TMP}/syft" convert "${SBOM_PATH}" -q -o "cyclonedx-json=${RUNNER_TEMP}/supplier-input.cdx.json"
+
+    - name: Generate an SBOM from the binary with cve-bin-tool
+      if: steps.prep.outputs.mode == 'generate'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.cve-bin-tool-version }}
+        ARTEFACT: ${{ inputs.artefact-path }}
+      run: |
+        set -euo pipefail
+        PY="${RUNNER_TEMP}/supplier-venv/bin/python"
+        "${PY}" -m pip install -q --disable-pip-version-check "cve-bin-tool==${VERSION}"
+        mkdir -p "${HOME}/.cache/cve-bin-tool"
+        # Detector only: an empty database with one placeholder row satisfies
+        # --update never; Dependency-Track does the CVE matching.
+        "${PY}" -I -c 'from cve_bin_tool.cvedb import CVEDB
+        db = CVEDB(); db.init_database(); con = db.db_open_and_get_cursor().connection
+        con.execute("insert into cve_severity (cve_number, data_source, severity, description, score) values (?, ?, ?, ?, ?)",
+                    ("PLACEHOLDER", "NONE", "NONE", "component detection only", 0))
+        con.commit()'
+        "${RUNNER_TEMP}/supplier-venv/bin/cve-bin-tool" --offline --update never --disable-version-check \
+          --sbom-output "${RUNNER_TEMP}/supplier-input.cdx.json" --sbom-type cyclonedx --sbom-format json "${ARTEFACT}" \
+          > "${RUNNER_TEMP}/cve-bin-tool.log" 2>&1 || { cat "${RUNNER_TEMP}/cve-bin-tool.log"; exit 1; }
+
+    - name: Validate and record origin
+      id: validate
+      shell: bash
+      env:
+        MODE: ${{ steps.prep.outputs.mode }}
+        SBOM_PATH: ${{ inputs.sbom-path }}
+        SUPPLIER: ${{ inputs.supplier }}
+        VERSION: ${{ inputs.version }}
+        OUT: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        IN="${RUNNER_TEMP}/supplier-input.cdx.json"; ORIGIN=supplier-delivered; TOOL=""
+        if [ "${MODE}" = "cyclonedx" ]; then IN="${SBOM_PATH}"; fi
+        if [ "${MODE}" = "generate" ]; then ORIGIN=generated-from-binary; TOOL=cve-bin-tool; fi
+        "${RUNNER_TEMP}/supplier-venv/bin/python" -I "${GITHUB_ACTION_PATH}/sbom.py" --input "${IN}" \
+          --output "${OUT}/supplier.cdx.json" --supplier "${SUPPLIER}" --version "${VERSION}" \
+          --origin "${ORIGIN}" --tool "${TOOL}" >> "${GITHUB_OUTPUT}"
+        echo "sbom=${OUT}/supplier.cdx.json" >> "${GITHUB_OUTPUT}"
+
+    - name: Upload to Dependency-Track
+      if: inputs.dtrack-url != '' && inputs.dtrack-api-key != ''
+      shell: bash
+      env:
+        DTRACK_URL: ${{ inputs.dtrack-url }}
+        DTRACK_API_KEY: ${{ inputs.dtrack-api-key }}
+        SUPPLIER: ${{ inputs.supplier }}
+        VERSION: ${{ inputs.version }}
+        PARENT: ${{ inputs.dtrack-parent }}
+        SBOM: ${{ steps.validate.outputs.sbom }}
+        VEX: ${{ inputs.vex-path }}
+      run: bash "${GITHUB_ACTION_PATH}/upload.sh"
