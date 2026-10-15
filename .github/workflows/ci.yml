@@ -76,6 +76,9 @@ jobs:
 
       - uses: ./.github/actions/osv-scanner
 
+      - name: Gate fixtures (recorded osv-scanner output)
+        run: tests/osv-scanner/run.sh
+
   # Validate Helm/Kustomize with kubeconform. This repo has no charts/, so this
   # is a smoke test that the composite installs and runs (exits 0, nothing to
   # validate).

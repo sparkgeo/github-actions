@@ -19,6 +19,10 @@ on:
         description: 'Lowest CVSS severity that fails the build: critical, high, medium, low'
         default: 'critical'
         type: string
+      fail-on-malicious:
+        description: 'Fail on any MAL-* (OpenSSF malicious-packages) advisory regardless of fail-on-severity'
+        default: true
+        type: boolean
       sarif-upload:
         description: 'Upload SARIF results to the GitHub Security tab'
         default: true
@@ -60,4 +64,5 @@ jobs:
         with:
           directory: ${{ inputs.directory }}
           fail-on-severity: ${{ inputs.fail-on-severity }}
+          fail-on-malicious: ${{ inputs.fail-on-malicious }}
           sarif-upload: ${{ inputs.sarif-upload }}

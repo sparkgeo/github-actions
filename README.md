@@ -42,7 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
-| OSV-Scanner | [`osv-scanner`](.github/actions/osv-scanner/action.yml) | Scans lockfiles against the OSV database; job-level annotations + SARIF; fails at/above the CVSS threshold. Installs a checksum-verified osv-scanner binary | `version` (default: `2.4.0`), `directory` (default: `.`), `fail-on-severity` (default: `critical`), `sarif-upload` (default: `true`) |
+| OSV-Scanner | [`osv-scanner`](.github/actions/osv-scanner/action.yml) | Scans lockfiles against the OSV database; job-level annotations + SARIF; fails at/above the CVSS threshold. Installs a checksum-verified osv-scanner binary | `version` (default: `2.4.0`), `directory` (default: `.`), `fail-on-severity` (default: `critical`), `fail-on-malicious` (default: `true`), `sarif-upload` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -383,6 +383,8 @@ PR gates that check dependencies for known vulnerabilities. Automated update PRs
 ### Dependency Scan — App (osv-scanner)
 
 Scans every lockfile in the repo (Python, JS/TS, Go, Ruby, Rust, Java, …) against the [OSV database](https://osv.dev). Language-agnostic — no per-ecosystem config. Findings are emitted as job-level annotations and uploaded as SARIF; the job fails when any vulnerability's CVSS score is at or above `fail-on-severity`.
+
+**Malicious packages.** osv.dev carries the [OpenSSF malicious-packages](https://github.com/ossf/malicious-packages) feed as `MAL-*` advisories (plan Step 3 Standard). They have no CVSS score, so a severity threshold alone would never block them; with `fail-on-malicious: true` (default) any `MAL-*` advisory fails the job and is annotated as an error naming the package. Packages nobody has reported yet are the job of the GuardDog gate (#229); maintenance and reputation, of `dependency-reputation.yml` (#111).
 
 ```yaml
 # .github/workflows/dep-scan.yml
