@@ -1,0 +1,166 @@
+name: "Dafny"
+description: |
+  Verifies Dafny sources and checks the compiled Python, Go and JavaScript
+  committed beside them (SecOps plan Step 39, issue #128). Verify mode runs
+  `dafny verify --verification-time-limit <n>` on every .dfy under
+  verify-root (the plan's reference verify-brief.yml verifies the whole tree:
+  a change to one file can break a proof in another) and annotates each
+  failed or timed-out verification condition. Build mode translates the .dfy
+  files under source-dir per target into a temp directory and diffs the result
+  against the committed output directory; a missing or different generated
+  file is drift. Dafny is the pinned release zip (bundled .NET runtime and Z3),
+  checksum-verified; Go translation needs goimports, installed pinned.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  mode:
+    description: "verify, build, or both."
+    default: "both"
+  verify-root:
+    description: "Directory whose .dfy files are all verified."
+    default: "."
+  source-dir:
+    description: "Directory holding the .dfy files to compile."
+    default: "verified/"
+  targets:
+    description: "Comma-separated: py,go,js."
+    default: "py,go,js"
+  output-dirs:
+    description: "Committed output directory per target, e.g. py=src/verified_core,go=internal/verifiedcore,js=src/verified-core. A Go directory needs a go.mod whose module line names the import path and which requires github.com/dafny-lang/DafnyRuntimeGo/v4."
+    default: ""
+  output-name:
+    description: "Base name of the translation (py and go directory suffix, js file name)."
+    default: "verified"
+  dafny-version:
+    description: "Dafny release; versions other than the default need dafny-sha256."
+    default: "4.11.0"
+  dafny-sha256:
+    description: "SHA-256 of dafny-<version>-x64-ubuntu-22.04.zip; empty uses the recorded checksum for the default version."
+    default: ""
+  verification-time-limit:
+    description: "Seconds per verification condition."
+    default: "60"
+  output-dir:
+    description: "Where dafny.txt, dafny.json, drift-*.json, the brief and summary.json go."
+    default: "verify-dafny-artifacts"
+  gate:
+    description: "Exit 1 on a failed verification or drift."
+    default: "true"
+outputs:
+  bin:
+    description: "Directory holding the dafny executable, for later steps."
+    value: ${{ steps.install.outputs.bin }}
+  dafny:
+    description: "dafny verify exit code; empty when verify did not run."
+    value: ${{ steps.brief.outputs.dafny }}
+  drift:
+    description: "Generated files missing from or different in the committed output directories."
+    value: ${{ steps.brief.outputs.drift }}
+  blocking:
+    description: "Blocking findings."
+    value: ${{ steps.brief.outputs.blocking }}
+runs:
+  using: "composite"
+  steps:
+    - id: install
+      shell: bash
+      env:
+        VERSION: ${{ inputs.dafny-version }}
+        SHA: ${{ inputs.dafny-sha256 }}
+        OUT: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        # the release publishes no checksum file; recorded from the download
+        declare -A KNOWN=([4.11.0]=a46a9ff7cdd720f7955854c78e95df13f4cfe6b80691b05f8654fe19e8267179)
+        SHA="${SHA:-${KNOWN[${VERSION}]:-}}"
+        [ -n "${SHA}" ] || { echo "::error title=dafny::no recorded checksum for Dafny ${VERSION}; set dafny-sha256"; exit 1; }
+        D="${RUNNER_TEMP}/dafny-${VERSION}"
+        if [ ! -x "${D}/dafny/dafny" ]; then
+          mkdir -p "${D}"
+          curl -fsSL -o "${D}/dafny.zip" "https://github.com/dafny-lang/dafny/releases/download/v${VERSION}/dafny-${VERSION}-x64-ubuntu-22.04.zip"
+          echo "${SHA}  ${D}/dafny.zip" | sha256sum -c --quiet
+          unzip -q -o "${D}/dafny.zip" -d "${D}"
+        fi
+        ART="$(mkdir -p "${OUT}" && cd "${OUT}" && pwd)"
+        { echo "art=${ART}"; echo "bin=${D}/dafny"; } >> "${GITHUB_OUTPUT}"
+
+    - id: verify
+      if: inputs.mode != 'build'
+      shell: bash
+      env:
+        ROOT: ${{ inputs.verify-root }}
+        LIMIT: ${{ inputs.verification-time-limit }}
+        ART: ${{ steps.install.outputs.art }}
+        DAFNY_BIN: ${{ steps.install.outputs.bin }}
+      run: |
+        set -euo pipefail
+        export PATH="${DAFNY_BIN}:${PATH}"
+        mapfile -d '' FILES < <(find "${ROOT}" -name '*.dfy' -not -path '*/.git/*' -not -path '*/node_modules/*' -print0 | sort -z)
+        if [ "${#FILES[@]}" -eq 0 ]; then echo "  no .dfy files under ${ROOT}"; exit 0; fi
+        rc=0
+        dafny verify --verification-time-limit "${LIMIT}" "${FILES[@]}" > "${ART}/dafny.txt" 2>&1 || rc=$?
+        tail -20 "${ART}/dafny.txt"
+        python3 -I "${GITHUB_ACTION_PATH}/dafny.py" report --log "${ART}/dafny.txt" --rc "${rc}" --output "${ART}/dafny.json"
+
+    - id: build
+      if: inputs.mode != 'verify'
+      shell: bash
+      env:
+        SRC: ${{ inputs.source-dir }}
+        TARGETS: ${{ inputs.targets }}
+        DIRS: ${{ inputs.output-dirs }}
+        NAME: ${{ inputs.output-name }}
+        ART: ${{ steps.install.outputs.art }}
+        DAFNY_BIN: ${{ steps.install.outputs.bin }}
+      run: |
+        set -euo pipefail
+        export PATH="${DAFNY_BIN}:${PATH}"
+        mapfile -d '' FILES < <(find "${SRC}" -name '*.dfy' -print0 | sort -z)
+        [ "${#FILES[@]}" -gt 0 ] || { echo "::error title=dafny::no .dfy files under ${SRC}"; exit 1; }
+        declare -A DIR=()
+        IFS=',' read -ra PAIRS <<< "${DIRS}"
+        for p in "${PAIRS[@]}"; do p="$(echo "${p}" | xargs)"; [ -n "${p}" ] && DIR["${p%%=*}"]="${p#*=}"; done
+        IFS=',' read -ra TS <<< "${TARGETS}"
+        GEN="${RUNNER_TEMP}/dafny-gen"; mkdir -p "${GEN}"
+        for t in "${TS[@]}"; do
+          t="$(echo "${t}" | xargs)"
+          dir="${DIR[${t}]:-}"
+          [ -n "${dir}" ] || { echo "::error title=dafny::no output directory for target ${t} in output-dirs"; exit 1; }
+          ARGS=(--no-verify --output "${GEN}/${t}/${NAME}")
+          # py and js carry the runtime as source; go imports
+          # github.com/dafny-lang/DafnyRuntimeGo/v4, required in the committed
+          # go.mod (the bundled Go runtime imports a bare "dafny" package and
+          # does not build in module mode)
+          [ "${t}" = "go" ] || ARGS+=(--include-runtime)
+          if [ "${t}" = "go" ]; then
+            command -v goimports >/dev/null || GOTOOLCHAIN=auto GOBIN="${RUNNER_TEMP}/dafny-gobin" go install golang.org/x/tools/cmd/goimports@v0.52.0
+            export PATH="${RUNNER_TEMP}/dafny-gobin:${PATH}"
+            mod="$(sed -n 's/^module[[:space:]]\+//p' "${dir}/go.mod" 2>/dev/null | head -1)"
+            [ -n "${mod}" ] || { echo "::error title=dafny::${dir}/go.mod with a module line is required for the go target"; exit 1; }
+            ARGS+=(--go-module-name "${mod}")
+          fi
+          echo "dafny translate ${t} ${ARGS[*]/${GEN}\/${t}\//<out>/} ${SRC}" >> "${ART}/commands.txt"
+          dafny translate "${t}" "${ARGS[@]}" "${FILES[@]}" > "${ART}/translate-${t}.txt" 2>&1 \
+            || { cat "${ART}/translate-${t}.txt"; echo "::error title=dafny::translation to ${t} failed"; exit 1; }
+          case "${t}" in
+            py|go) out="${GEN}/${t}/${NAME}-${t}" ;;
+            *)     out="${GEN}/${t}" ;;
+          esac
+          python3 -I "${GITHUB_ACTION_PATH}/dafny.py" drift --generated "${out}" --committed "${dir}" --target "${t}" --output "${ART}/drift-${t}.json"
+          # the regenerated tree, so a drift fix is a copy from the artefact
+          mkdir -p "${ART}/generated" && cp -r "${out}" "${ART}/generated/${t}"
+        done
+
+    - id: brief
+      shell: bash
+      env:
+        ART: ${{ steps.install.outputs.art }}
+        GATE: ${{ inputs.gate }}
+      run: |
+        set -euo pipefail
+        ARGS=(--art "${ART}")
+        [ "${GATE}" = "true" ] && ARGS+=(--gate)
+        rc=0
+        python3 -I "${GITHUB_ACTION_PATH}/dafny.py" brief "${ARGS[@]}" || rc=$?
+        cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+        exit "${rc}"

@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Verify (Map) | [`verify-map.yml`](.github/workflows/verify-map.yml) | `workflow_call` | Reusable verification path-map check: validates `verify.yml`, resolves changed files to rungs and tools (HIGH_RISK_GLOBS fallback without a map), flags high-risk paths with no rung, requires the PR body's verification table at Standard; writes `verify-map.json` for the `verify-*.yml` workflows (#132) |
+| Verify (Dafny) | [`verify-dafny.yml`](.github/workflows/verify-dafny.yml) | `workflow_call` | Reusable Dafny check: `dafny verify` over the tree (pinned, checksum-verified release), then each target (py, go, js) translated and diffed against the committed compiled output so services import the proven code; failed proof or drift blocks (#128) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -43,6 +44,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | Verification Map | [`verify-map`](.github/actions/verify-map/action.yml) | Validates `verify.yml` with jsonschema, maps the changed files, checks the PR body table, writes `verify-map.json` | `map-path` (default: `verify.yml`), `high-risk-globs`, `changed-list`, `pr-body-path`, `require-table` (default: `false`), `strict-high-risk` (default: `false`), `output-path` |
+| Dafny | [`dafny`](.github/actions/dafny/action.yml) | Installs the pinned Dafny release, verifies every `.dfy` under a root with annotations, translates to py/go/js and checks drift against the committed output | `mode` (default: `both`), `verify-root` (default: `.`), `source-dir` (default: `verified/`), `targets` (default: `py,go,js`), `output-dirs`, `output-name` (default: `verified`), `dafny-version` (default: `4.11.0`), `dafny-sha256`, `verification-time-limit` (default: `60`), `output-dir`, `gate` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -136,7 +138,17 @@ jobs:
     with:
       actions-ref: <SHA>   # same SHA as above
       # require-table: true   # Standard tier
+  verify-dafny:
+    permissions:
+      contents: read
+      pull-requests: write     # the rolling brief comment
+    uses: sparkgeo/github-actions/.github/workflows/verify-dafny.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      output-dirs: py=src/verified_core,go=internal/verifiedcore,js=web/src/verified-core
 ```
+
+A Dafny quadkey core proven once (`Decode(Encode(x, y, zoom)) == (x, y, zoom)`) and compiled to Python, Go and JavaScript, each with a consumer test: [`docs/examples/verify/dafny/`](docs/examples/verify/dafny/).
 
 ### Storage Optimizer
 

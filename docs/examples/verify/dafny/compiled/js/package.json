@@ -1,0 +1,8 @@
+{
+  "name": "verify-example-dafny-js",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Consumer test for the Dafny-compiled quadkey core (issue #128); quadkey.js is generated",
+  "scripts": { "test": "node --test" },
+  "dependencies": { "bignumber.js": "11.1.5" }
+}

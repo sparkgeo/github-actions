@@ -1,0 +1,141 @@
+name: Verify (Dafny)
+
+# Reusable PR check (issue #128, plan Step 39): a shared algorithmic core
+# written once in Dafny, proven (pre- and postconditions, loop invariants,
+# termination) and compiled to Python, Go and JavaScript. `dafny verify` on
+# every .dfy under verify-root (the brief verifies the whole tree: a change to
+# one file can break a proof in another); then each target is translated into
+# a temp directory and diffed against the committed output directory, so the
+# code the services import is the code that was proven. The target
+# languages' own test jobs (test-python.yml #71, test-go.yml #73,
+# test-node.yml #72) run the consumers. Verify failure or drift blocks;
+# brief in one rolling PR comment, artefacts (regenerated trees included)
+# 30 days, gate last.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com (the Dafny release),
+# proxy.golang.org (goimports, Go target only).
+
+on:
+  workflow_call:
+    inputs:
+      source-dir:
+        description: 'Directory holding the .dfy files to compile'
+        default: 'verified/'
+        type: string
+      verify-root:
+        description: 'Directory whose .dfy files are all verified (the whole tree by default)'
+        default: '.'
+        type: string
+      targets:
+        description: 'Comma-separated: py,go,js'
+        default: 'py,go,js'
+        type: string
+      dafny-version:
+        description: 'Dafny release; versions other than the default need dafny-sha256'
+        default: '4.11.0'
+        type: string
+      dafny-sha256:
+        description: 'SHA-256 of the release zip when dafny-version is not the default'
+        default: ''
+        type: string
+      output-dirs:
+        description: 'Where compiled output is committed per target, e.g. py=src/verified_core,go=internal/verifiedcore,js=src/verified-core'
+        required: true
+        type: string
+      output-name:
+        description: 'Base name of the translation (py and go directory suffix, js file name)'
+        default: 'verified'
+        type: string
+      verification-time-limit:
+        description: 'Seconds per verification condition'
+        default: 60
+        type: number
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned verify-dafny.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      dafny:
+        description: 'dafny verify exit code'
+        value: ${{ jobs.dafny.outputs.dafny }}
+      drift:
+        description: 'Generated files missing from or different in the committed output directories'
+        value: ${{ jobs.dafny.outputs.drift }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants contents: read and pull-requests: write (the
+# rolling comment).
+jobs:
+  dafny:
+    name: Verify Dafny
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      dafny: ${{ steps.dafny.outputs.dafny }}
+      drift: ${{ steps.dafny.outputs.drift }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout dafny composite
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: dafny
+        uses: ./.sparkgeo-github-actions/.github/actions/dafny
+        with:
+          mode: both
+          verify-root: ${{ inputs.verify-root }}
+          source-dir: ${{ inputs.source-dir }}
+          targets: ${{ inputs.targets }}
+          output-dirs: ${{ inputs.output-dirs }}
+          output-name: ${{ inputs.output-name }}
+          dafny-version: ${{ inputs.dafny-version }}
+          dafny-sha256: ${{ inputs.dafny-sha256 }}
+          verification-time-limit: ${{ inputs.verification-time-limit }}
+          output-dir: ${{ runner.temp }}/verify-dafny
+          gate: 'false'
+
+      - name: Post the brief
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BRIEF: ${{ runner.temp }}/verify-dafny/verify-brief.md
+        run: |
+          [ -f "${BRIEF}" ] || exit 0
+          gh pr comment "${PR}" --body-file "${BRIEF}" --edit-last --create-if-none \
+            || gh pr comment "${PR}" --body-file "${BRIEF}" || true
+
+      - name: Keep the raw artefacts (regenerated trees included)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: verify-dafny-${{ github.event.pull_request.number || github.run_id }}
+          path: ${{ runner.temp }}/verify-dafny
+          retention-days: 30
+
+      # Last, after the brief is posted, so a red build always arrives with its
+      # explanation attached to the PR.
+      - name: Gate
+        if: always()
+        env:
+          SUMMARY: ${{ runner.temp }}/verify-dafny/summary.json
+        run: |
+          [ -f "${SUMMARY}" ] || { echo "::error title=verify-dafny::no summary.json; the verify step did not finish"; exit 1; }
+          jq -r '.gate.fail[] | "  FAIL: " + .' "${SUMMARY}"
+          jq -e '.gate.fail | length == 0' "${SUMMARY}" > /dev/null
