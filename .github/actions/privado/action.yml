@@ -1,0 +1,83 @@
+name: "PII Data Flow (privado)"
+description: |
+  Code-level personal-data flow map with privado (SecOps plan Step 23
+  Standard, issue #99): where personal data enters (request parameters,
+  forms), where it is stored and logged, and where it leaves (third-party
+  APIs, SDKs). Runs the privado-core image (pinned by digest) against
+  working-directory with uploads disabled and offline mode, then report.py
+  writes the job summary, a PR comment body and report.json, diffing against
+  a baseline report when one is given. Exit 1 only with fail-on-new-sinks and
+  a third-party sink or destination that is not in the baseline. The code
+  never leaves the runner; the full privado.json is left in
+  <working-directory>/.privado/ for the caller to upload.
+
+  Required permissions on the calling job: contents: read. Needs Docker.
+inputs:
+  working-directory:
+    description: "Directory to scan."
+    default: "."
+  baseline:
+    description: "Path to the default branch's privado.json; empty reports without a diff."
+    default: ""
+  fail-on-new-sinks:
+    description: "Fail when the scan adds a third-party sink or destination not in the baseline."
+    default: "false"
+  extra-args:
+    description: "Additional privado-core scan flags (see the image's --help), space-separated."
+    default: ""
+  image:
+    description: "privado-core image, pinned by digest."
+    default: "public.ecr.aws/privado/privado@sha256:349fdd5a01c01acb4b17c9db0df782c8ad2fb4d87b5940247720fc3cac8e7f15"
+  comment-path:
+    description: "Where the PR comment body is written."
+    default: ""
+outputs:
+  source-count:
+    description: "Data elements found."
+    value: ${{ steps.report.outputs.source-count }}
+  sink-count:
+    description: "Sinks found."
+    value: ${{ steps.report.outputs.sink-count }}
+  new-third-party-count:
+    description: "Third-party sinks and destinations not in the baseline."
+    value: ${{ steps.report.outputs.new-third-party-count }}
+  report-dir:
+    description: "Directory holding privado.json."
+    value: ${{ inputs.working-directory }}/.privado
+runs:
+  using: "composite"
+  steps:
+    - id: scan
+      shell: bash
+      env:
+        DIR: ${{ inputs.working-directory }}
+        IMAGE: ${{ inputs.image }}
+        EXTRA: ${{ inputs.extra-args }}
+      run: |
+        set -euo pipefail
+        SRC="$(cd "${DIR}" && pwd)"
+        # shellcheck disable=SC2206  # extra-args is a space-separated flag list by contract
+        EXTRA_ARGS=(${EXTRA})
+        # The image's entrypoint is "core scan"; the internal rules ship at
+        # /app/rules. --skip-upload and --offline-mode: nothing reaches privado.ai.
+        docker run --rm -v "${SRC}:/app/code" "${IMAGE}" /app/code --internal-config /app/rules \
+          --skip-upload --offline-mode "${EXTRA_ARGS[@]}" > "${RUNNER_TEMP}/privado-scan.txt" 2>&1 || { cat "${RUNNER_TEMP}/privado-scan.txt"; exit 1; }
+        sed -n '/SUMMARY/,/SINKS/p' "${RUNNER_TEMP}/privado-scan.txt" | head -40
+        [ -s "${SRC}/.privado/privado.json" ] || { cat "${RUNNER_TEMP}/privado-scan.txt"; echo "::error title=pii-dataflow::privado wrote no report"; exit 1; }
+        # the container runs as root: make the output writable for later steps
+        sudo chown -R "$(id -u):$(id -g)" "${SRC}/.privado" 2>/dev/null || true
+
+    - id: report
+      shell: bash
+      env:
+        DIR: ${{ inputs.working-directory }}
+        BASELINE: ${{ inputs.baseline }}
+        FAIL: ${{ inputs.fail-on-new-sinks }}
+        COMMENT: ${{ inputs.comment-path }}
+      run: |
+        set -euo pipefail
+        ARGS=(--report "${DIR}/.privado/privado.json" --output "${DIR}/.privado/report.json")
+        [ -n "${BASELINE}" ] && ARGS+=(--baseline "${BASELINE}")
+        [ "${FAIL}" = "true" ] && ARGS+=(--fail-on-new-sinks)
+        [ -n "${COMMENT}" ] && ARGS+=(--comment "${COMMENT}")
+        python3 -I "${GITHUB_ACTION_PATH}/report.py" "${ARGS[@]}"

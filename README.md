@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| PII Data Flow | [`pii-dataflow.yml`](.github/workflows/pii-dataflow.yml) | `workflow_call` | Reusable privado data-flow map for application repos: where personal data enters, is stored, logged and leaves; one updating PR comment with the flows the PR adds against the default-branch baseline; `fail-on-new-sinks` gate; report artefact (#99) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| PII Data Flow | [`privado`](.github/actions/privado/action.yml) | Runs the privado-core image (digest-pinned, offline, no upload) on `working-directory`, then `report.py` for the summary, the PR comment body and `report.json`, diffed against a baseline; fails only with `fail-on-new-sinks` and a new third-party sink | `working-directory` (default: `.`), `baseline`, `fail-on-new-sinks` (default: `false`), `extra-args`, `image` (default: `public.ecr.aws/privado/privado@sha256:349fdd5a01c0…`), `comment-path` |
 
 ### GitHub Actionlint
 
@@ -120,6 +122,32 @@ jobs:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}  # leave empty on pull_request
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}           # leave empty on pull_request
 ```
+
+### PII Data Flow (privado)
+
+SecOps plan Step 23 Standard (issue #99): the document and fixture scanners find personal data at rest in a repository; privado reads the application source to find where it enters (request parameters, forms), where it is stored (databases, logs) and where it leaves (third-party APIs and SDKs). That map is what Step 23 Standard and the RoPA in Step 36 need. The workflow runs the privado-core image offline on the runner (the code never leaves it, nothing is uploaded to privado.ai), diffs the result against the `privado-baseline` artefact from the last push to the default branch, posts one updating PR comment listing the new data elements, sinks and third-party destinations, uploads the full report as `privado-report`, and with `fail-on-new-sinks: true` fails the PR on a third-party flow that is not in the baseline. Languages: Java, JavaScript, Go, C#, Python, PHP, Kotlin, Ruby (privado-core).
+
+```yaml
+# .github/workflows/pii-dataflow.yml
+name: PII Data Flow
+on:
+  pull_request:
+  push:
+    branches: [main]   # refreshes the baseline
+jobs:
+  dataflow:
+    permissions:
+      contents: read
+      actions: read          # download the baseline artefact
+      pull-requests: write   # the comment
+    uses: sparkgeo/github-actions/.github/workflows/pii-dataflow.yml@<SHA>
+    with:
+      actions-ref: <SHA>     # same SHA as above
+      # fail-on-new-sinks: true
+      # working-directory: services/api
+```
+
+The image is about 2.8 GB and is pulled from `public.ecr.aws` on every run (not cached by GitHub); budget two to four minutes. The composite's `extra-args` passes further privado-core flags such as `--force-language python` or `--monolith`.
 
 ### Storage Optimizer
 
