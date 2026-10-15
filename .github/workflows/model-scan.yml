@@ -1,0 +1,109 @@
+name: Model Scan
+
+# Reusable PR gate (issue #104, plan Step 26): serialized models execute code
+# on load, so every model in the tree is scanned with modelscan, every model
+# loaded at runtime is pinned by hash in models.json, signatures from Sigstore
+# model-signing are verified, and a CycloneDX ML-BOM (sbom/mlbom.cdx.json)
+# lists models, MCP servers, skills and agents in one document, uploaded as
+# an artefact next to the syft SBOM (#62). See docs/model-scan.md.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. It reaches github.com, PyPI and, for
+# sigstore verification, the public Sigstore instance.
+
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: 'Comma-separated directories or files; default scans common model extensions repo-wide'
+        default: ''
+        type: string
+      fail-on-severity:
+        description: 'Minimum modelscan severity to fail on: critical|high|medium|low'
+        default: 'high'
+        type: string
+      mlbom:
+        description: 'Emit a CycloneDX ML-BOM for discovered models'
+        default: true
+        type: boolean
+      verify-signature:
+        description: 'Verify Sigstore model-signing signatures next to each model (keyless, see signature-identity)'
+        default: false
+        type: boolean
+      require-signature:
+        description: 'Fail on a model without a signature'
+        default: false
+        type: boolean
+      signature-identity:
+        description: 'Expected signer identity; for a signing workflow: https://github.com/<org>/<repo>/.github/workflows/<file>@<ref>'
+        default: ''
+        type: string
+      signature-identity-provider:
+        description: 'Expected OIDC issuer'
+        default: 'https://token.actions.githubusercontent.com'
+        type: string
+      extras:
+        description: 'modelscan extras; add tensorflow for SavedModel directories'
+        default: 'h5py'
+        type: string
+      artifact-name:
+        description: 'Artefact name for the ML-BOM'
+        default: 'mlbom'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned model-scan.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      model-count:
+        description: 'Model files and SavedModel directories found'
+        value: ${{ jobs.scan.outputs.model-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`.
+jobs:
+  scan:
+    name: Model scan
+    runs-on: ubuntu-latest
+    outputs:
+      model-count: ${{ steps.scan.outputs.model-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout modelscan composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: scan
+        uses: ./.sparkgeo-github-actions/.github/actions/modelscan
+        with:
+          paths: ${{ inputs.paths }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          mlbom: ${{ inputs.mlbom }}
+          verify-signature: ${{ inputs.verify-signature && 'sigstore' || 'none' }}
+          require-signature: ${{ inputs.require-signature }}
+          signature-identity: ${{ inputs.signature-identity }}
+          signature-identity-provider: ${{ inputs.signature-identity-provider }}
+          extras: ${{ inputs.extras }}
+
+      - name: Upload ML-BOM artefact
+        if: ${{ always() && inputs.mlbom }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: sbom/mlbom.cdx.json
+          if-no-files-found: ignore

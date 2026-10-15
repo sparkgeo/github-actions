@@ -1,0 +1,19 @@
+{
+  "models": [
+    {
+      "name": "signed-demo",
+      "path": "models/signed.pkl",
+      "source": "https://example.com/models/signed-demo",
+      "version": "1.0.0",
+      "sha256": "ff3629f333587390b690cb2bc41df2fe929eb02e487020489cbb8088a7b60b44",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "runtime-embedder",
+      "url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/model.safetensors",
+      "source": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+      "version": "c9745ed",
+      "sha256": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db"
+    }
+  ]
+}
