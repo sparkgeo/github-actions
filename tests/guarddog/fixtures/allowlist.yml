@@ -1,0 +1,12 @@
+# Fixture for tests/guarddog/run.sh: clears the npm fixture's two rules, so it
+# is reported as allowlisted while the PyPI fixture still blocks.
+exceptions:
+  - package: fixture-postinstall@0.0.1
+    rule: threat-process-download-exec
+    reviewer: "@sparkgeo/security"
+    date: 2026-10-15
+    reason: test fixture, never installed
+  - package: fixture-postinstall@0.0.1
+    rule: threat-runtime-environment-read
+    reviewer: "@sparkgeo/security"
+    date: 2026-10-15

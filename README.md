@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| Malicious Package Check | [`malicious-package-check.yml`](.github/workflows/malicious-package-check.yml) | `workflow_call` | Reusable GuardDog gate: reads each package the lockfiles pin (only those added or changed on a PR) and blocks install hooks, obfuscated payloads, exfiltration and typosquats that no advisory feed lists yet; reviewed allowlist; optional `.vsix` scan; SARIF to the Security tab (#229) |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| GuardDog | [`guarddog`](.github/actions/guarddog/action.yml) | Lists the exact versions pinned by `requirements*.txt`, `poetry.lock`, `uv.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` and `go.mod` (only the changed ones when `base-sha` is set), runs `guarddog <ecosystem> verify` on them and on any `.vsix` files, gates on GuardDog's package label against a reviewed allowlist, writes SARIF with allowlisted findings suppressed. Skips the install when nothing changed | `ecosystems` (default: `pypi,npm,go`), `working-directory` (default: `.`), `base-sha` (default: `""`, verify everything), `fail-on` (default: `high`), `allowlist-path` (default: `.guarddog-allowlist.yml`), `vsix-paths` (default: `""`), `version` (default: `3.2.0`), `sarif-upload` (default: `true`), `sarif-category` (default: `guarddog`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,53 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Malicious Package Check (GuardDog)
+
+`osv-scanner` and the reputation check only know a package someone has already reported (OSV `MAL-*`). GuardDog reads the package itself: install hooks that download and run code, obfuscated payloads, reads of environment variables sent to the network, typosquats of popular names, and maintainer email domains that have expired. It catches the package published an hour ago that no feed lists yet (SecOps plan Step 3 Standard).
+
+```yaml
+# .github/workflows/malicious-packages.yml
+on:
+  pull_request:
+    paths:
+      - '**/requirements*.txt'
+      - '**/poetry.lock'
+      - '**/uv.lock'
+      - '**/package-lock.json'
+      - '**/pnpm-lock.yaml'
+      - '**/yarn.lock'
+      - '**/go.mod'
+      - '.guarddog-allowlist.yml'
+  schedule:
+    - cron: '0 6 * * 1'  # weekly full scan
+
+jobs:
+  guarddog:
+    permissions:
+      contents: read
+      security-events: write  # drop when sarif-upload: false
+    uses: sparkgeo/github-actions/.github/workflows/malicious-package-check.yml@<SHA>
+    with:
+      fail-on: high          # high_risk blocks; medium also blocks suspicious; none reports only
+      actions-ref: <SHA>     # same SHA as above
+```
+
+On a pull request only the `name@version` pairs added or changed against the base are verified; a scheduled or manual run verifies every pinned package. GuardDog downloads each package from its registry and gives it a label: `no_risks_detected`, `low`, `suspicious` or `high_risk`. A package at or above `fail-on` gets an inline `::error` on its lockfile line and fails the job.
+
+A blocking package is cleared only by a person. They add one entry per rule shown in the job summary to `.guarddog-allowlist.yml` in the same PR; protect the file with CODEOWNERS (#84). Every field except `reason` is required, and an entry with a missing field fails the job.
+
+```yaml
+# .guarddog-allowlist.yml
+exceptions:
+  - package: some-lib@2.4.1            # exact name@version; a new version needs a new review
+    rule: threat-process-spawn-silent  # GuardDog rule from the job summary
+    reviewer: "@alice"
+    date: 2026-10-15
+    reason: spawns its own bundled helper; source read, no network
+```
+
+An allowlisted package is still reported, as a suppressed result in the Security tab. `.vsix` files (the IDE extension allowlist, Step 33) are scanned by setting `vsix-paths`; their allowlist key is the file path. `pnpm-lock.yaml` v5 and Bun lockfiles are not read. `tests/guarddog/fixtures` holds a PyPI package whose `setup.py` downloads and runs code on install and an npm package whose `postinstall` does the same; `tests/guarddog/run.sh` checks the gate against GuardDog's scans of them, and the `guarddog` CI job runs the composite on a clean lockfile and a fixture extension.
 
 ## Consuming repo CI setup
 

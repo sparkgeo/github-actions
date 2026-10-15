@@ -1,0 +1,9 @@
+{
+  "name": "fixture-extension",
+  "publisher": "sparkgeo-fixture",
+  "version": "0.0.1",
+  "description": "Test fixture for the malicious-package check (issue #229); zipped into a .vsix at test time, never installed",
+  "engines": { "vscode": "^1.90.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"]
+}

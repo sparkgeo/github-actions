@@ -1,0 +1,164 @@
+name: "guarddog"
+description: |
+  Malicious-package check with GuardDog (DataDog/guarddog, Apache-2.0):
+  reads each package a lockfile pins and flags install hooks that download
+  and run code, obfuscated payloads, environment exfiltration, typosquats and
+  expired maintainer email domains (SecOps plan Step 3 Standard; issue #229).
+  It catches the package published an hour ago that no OSV MAL-* feed lists
+  yet, which osv-scanner (#5) and the reputation check (#111) cannot.
+
+  Lockfiles read: requirements*.txt (== pins), poetry.lock, uv.lock,
+  package-lock.json, pnpm-lock.yaml (v6+), yarn.lock (classic and Berry), and
+  go.mod. With base-sha set only the name@version pairs added or changed
+  against it are verified; with nothing changed and no vsix-paths, GuardDog is
+  not installed. A package blocks when GuardDog's package label is at or
+  above fail-on (high = high_risk, medium = suspicious or high_risk) unless a
+  reviewer has allowlisted every rule behind it for that exact version.
+
+  Installs GuardDog from PyPI into a venv (shell, no third-party action).
+  Writes its own SARIF from GuardDog's JSON so allowlisted findings carry a
+  suppression. Required permissions on the calling job: contents: read, plus
+  security-events: write when sarif-upload is true.
+inputs:
+  ecosystems:
+    description: "Comma-separated: pypi, npm, go."
+    default: "pypi,npm,go"
+  working-directory:
+    description: "Only lockfiles under this directory are read."
+    default: "."
+  base-sha:
+    description: "Verify only packages added or changed against this commit (the PR base). Empty verifies every pinned package."
+    default: ""
+  fail-on:
+    description: "high (GuardDog label high_risk), medium (suspicious or higher), or none to report only."
+    default: "high"
+  allowlist-path:
+    description: "Reviewed exceptions, relative to the repository root."
+    default: ".guarddog-allowlist.yml"
+  vsix-paths:
+    description: "Optional .vsix files to scan (IDE extension allowlist, Step 33), space-, comma- or newline-separated, relative to the repository root."
+    default: ""
+  version:
+    description: "GuardDog version installed from PyPI."
+    default: "3.2.0"
+  sarif-upload:
+    description: "Upload the SARIF to the Security tab."
+    default: "true"
+  sarif-category:
+    description: "Code-scanning category for the SARIF upload."
+    default: "guarddog"
+outputs:
+  blocking-count:
+    description: "Packages at or above fail-on that are not allowlisted."
+    value: ${{ steps.gate.outputs.blocking-count }}
+  flagged-count:
+    description: "Packages with any GuardDog risk, blocking or not."
+    value: ${{ steps.gate.outputs.flagged-count }}
+  scanned-count:
+    description: "Packages and .vsix files GuardDog analysed."
+    value: ${{ steps.gate.outputs.scanned-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: List packages to verify
+      id: list
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BASE: ${{ inputs.base-sha }}
+        ECOSYSTEMS: ${{ inputs.ecosystems }}
+        VSIX: ${{ inputs.vsix-paths }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/guarddog"; mkdir -p "${OUT}/input" "${OUT}/results"
+        if [ -n "${BASE}" ] && ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+          git fetch -q --depth=1 origin "${BASE}" 2>/dev/null || true
+        fi
+        if [ -n "${BASE}" ] && ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+          echo "::notice title=malicious-package-check::base ${BASE} not reachable (shallow checkout); verifying every pinned package"
+          BASE=""
+        fi
+        python3 -I "${GITHUB_ACTION_PATH}/packages.py" --root . --out "${OUT}/input" --base "${BASE}" \
+          --ecosystems "${ECOSYSTEMS}" >> "${GITHUB_OUTPUT}"
+        echo "dir=${OUT}" >> "${GITHUB_OUTPUT}"
+        if [ -n "$(printf '%s' "${VSIX}" | tr -d ' ,\n')" ]; then echo "vsix=true" >> "${GITHUB_OUTPUT}"; fi
+
+    - name: Install GuardDog
+      if: steps.list.outputs.count != '0' || steps.list.outputs.vsix == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        python3 -m venv "${RUNNER_TEMP}/guarddog-venv"
+        "${RUNNER_TEMP}/guarddog-venv/bin/python" -m pip install -q --disable-pip-version-check "guarddog==${VERSION}"
+        "${RUNNER_TEMP}/guarddog-venv/bin/guarddog" --version
+
+    - name: Verify packages
+      if: steps.list.outputs.count != '0'
+      shell: bash
+      env:
+        DIR: ${{ steps.list.outputs.dir }}
+      run: |
+        set -euo pipefail
+        GD="${RUNNER_TEMP}/guarddog-venv/bin/guarddog"
+        IN="${DIR}/input"; RES="${DIR}/results"
+        if [ -f "${IN}/requirements.txt" ]; then "${GD}" pypi verify "${IN}/requirements.txt" --output-format json > "${RES}/pypi.json"; fi
+        i=0
+        while IFS= read -r manifest; do
+          "${GD}" npm verify "${manifest}" --output-format json > "${RES}/npm-${i}.json"; i=$((i + 1))
+        done < <(find "${IN}" -name package.json | sort)
+        if [ -f "${IN}/go.mod" ]; then "${GD}" go verify "${IN}/go.mod" --output-format json > "${RES}/go.json"; fi
+
+    - name: Scan .vsix files
+      if: steps.list.outputs.vsix == 'true'
+      shell: bash
+      env:
+        DIR: ${{ steps.list.outputs.dir }}
+        VSIX: ${{ inputs.vsix-paths }}
+      run: |
+        set -euo pipefail
+        read -r -a FILES <<< "$(printf '%s' "${VSIX}" | tr ',\n' '  ')"
+        "${RUNNER_TEMP}/guarddog-venv/bin/python" -I "${GITHUB_ACTION_PATH}/vsix.py" "${DIR}/results/vsix.json" "${FILES[@]}"
+
+    - name: Gate
+      id: gate
+      shell: bash
+      env:
+        DIR: ${{ steps.list.outputs.dir }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        ALLOWLIST: ${{ inputs.allowlist-path }}
+      run: |
+        set -euo pipefail
+        PY="${RUNNER_TEMP}/guarddog-venv/bin/python"
+        if [ ! -x "${PY}" ]; then
+          echo "::notice title=malicious-package-check::no lockfile change and no .vsix files; nothing to verify"
+          printf 'blocking-count=0\nflagged-count=0\nscanned-count=0\nerror-count=0\n' >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+        status=0
+        "${PY}" -I "${GITHUB_ACTION_PATH}/gate.py" --results "${DIR}/results" --sources "${DIR}/input/sources.json" \
+          --fail-on "${FAIL_ON}" --allowlist "${ALLOWLIST}" --sarif "${DIR}/guarddog.sarif" >> "${GITHUB_OUTPUT}" || status=$?
+        echo "status=${status}" >> "${GITHUB_OUTPUT}"
+
+    - name: Upload SARIF
+      if: inputs.sarif-upload == 'true' && steps.gate.outputs.status != ''
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.list.outputs.dir }}/guarddog.sarif
+        category: ${{ inputs.sarif-category }}
+      continue-on-error: true
+
+    # An unreadable allowlist (no blocking-count written) fails even with fail-on: none.
+    - name: Fail on blocking packages
+      if: steps.gate.outputs.status != '' && steps.gate.outputs.status != '0' && (inputs.fail-on != 'none' || steps.gate.outputs.blocking-count == '')
+      shell: bash
+      env:
+        COUNT: ${{ steps.gate.outputs.blocking-count }}
+      run: |
+        if [ -z "${COUNT}" ]; then
+          echo "::error title=malicious-package-check::the gate could not run; see the error above"
+        else
+          echo "::error title=malicious-package-check::${COUNT} package(s) blocked by GuardDog; see the annotations and the job summary"
+        fi
+        exit 1
