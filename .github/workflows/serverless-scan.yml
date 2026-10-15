@@ -1,0 +1,240 @@
+name: Serverless Scan
+
+# Reusable PR gate for serverless stacks (issue #183, plan Step 17 Standard):
+# scans Lambda deployment packages and layers for known vulnerabilities with
+# trivy, runs the curated checkov checks plus the SPK_SLS_* graph policies
+# from policies/serverless (own role, no wildcard grants, declared log group
+# with retention, dead-letter queue, no secrets or plaintext environment),
+# and flags a role shared by more than one function in JSON templates.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Hosts reached: github.com (checkout, checkov
+# and trivy releases), ghcr.io and pkg-containers.githubusercontent.com (the
+# trivy vulnerability database), and the checkov telemetry it sends unless
+# the composite disables it.
+
+on:
+  workflow_call:
+    inputs:
+      directory:
+        description: 'Directory holding the IaC (Terraform/OpenTofu, or CloudFormation and SAM templates)'
+        default: '.'
+        type: string
+      framework:
+        description: 'checkov framework: terraform, or cloudformation for SAM, CloudFormation and cdk.out templates'
+        default: 'terraform'
+        type: string
+      template-path:
+        description: 'JSON template file or directory for the shared-role check (cdk.out, sam build output); empty skips it'
+        default: ''
+        type: string
+      package-glob:
+        description: 'Comma-separated globs of deployment packages and layers (zip) to scan'
+        default: 'dist/*.zip,.serverless/*.zip,cdk.out/asset.*.zip,.aws-sam/build/**/*.zip'
+        type: string
+      fail-on-severity:
+        description: 'Lowest package vulnerability severity that fails the job: critical, high, medium, low, or none'
+        default: 'critical'
+        type: string
+      policy-fail-on-severity:
+        description: 'Lowest checkov finding severity that fails the job (docs/gate-policy.md)'
+        default: 'high'
+        type: string
+      require-per-function-role:
+        description: 'Fail on a function without a declared role (SPK_SLS_1) or on a role shared by several functions'
+        default: true
+        type: boolean
+      require-log-retention:
+        description: 'Fail on a function without a declared log group (SPK_SLS_3) or a log group without retention (CKV_AWS_66)'
+        default: true
+        type: boolean
+      trivy-version:
+        description: 'trivy release to install (no leading v)'
+        default: '0.75.0'
+        type: string
+      sarif-upload:
+        description: 'Upload checkov and trivy SARIF to the Security tab (needs security-events: write)'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the checkov
+          composite and policies/serverless from. Pin this to the SAME SHA you
+          pinned serverless-scan.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      package-vulnerabilities:
+        description: 'Vulnerabilities found in deployment packages at or above fail-on-severity'
+        value: ${{ jobs.scan.outputs.package-vulnerabilities }}
+      policy-findings:
+        description: 'Failed checkov checks'
+        value: ${{ jobs.scan.outputs.policy-findings }}
+      shared-roles:
+        description: 'Roles referenced by more than one function'
+        value: ${{ jobs.scan.outputs.shared-roles }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` and adds
+# `security-events: write` only when it wants SARIF upload. See README.
+jobs:
+  scan:
+    name: Serverless
+    runs-on: ubuntu-latest
+    outputs:
+      package-vulnerabilities: ${{ steps.packages.outputs.count }}
+      policy-findings: ${{ steps.policies.outputs.failed-count }}
+      shared-roles: ${{ steps.roles.outputs.shared-roles }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action and the policy pack at the caller-pinned ref
+      # into a fixed path, then invoke locally. Keeps the action reference
+      # immutable (no mutable cross-repo @main) while honouring the SHA policy.
+      - name: Checkout checkov composite action and policies
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Collect deployment packages
+        id: collect
+        shell: bash
+        env:
+          GLOBS: ${{ inputs.package-glob }}
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          DEST="${RUNNER_TEMP}/packages"; mkdir -p "${DEST}"
+          n=0
+          IFS=',' read -ra patterns <<< "${GLOBS}"
+          for pat in "${patterns[@]}"; do
+            pat="$(echo "${pat}" | tr -d ' ')"
+            for zip in ${pat}; do
+              [ -f "${zip}" ] || continue
+              name="$(echo "${zip}" | tr '/' '_' | sed 's/\.zip$//')"
+              mkdir -p "${DEST}/${name}"
+              unzip -q -o "${zip}" -d "${DEST}/${name}" || { echo "::warning title=serverless-scan::${zip} is not a zip archive; skipped"; rmdir "${DEST}/${name}"; continue; }
+              n=$((n + 1)); echo "${zip} -> ${DEST}/${name}"
+            done
+          done
+          echo "count=${n}" >> "${GITHUB_OUTPUT}"
+          echo "dir=${DEST}" >> "${GITHUB_OUTPUT}"
+          [ "${n}" -gt 0 ] || echo "::notice title=serverless-scan::no deployment package matched ${GLOBS}; build the stack before this job, or set package-glob"
+
+      - name: Install trivy
+        if: steps.collect.outputs.count != '0'
+        shell: bash
+        env:
+          TRIVY_VERSION: ${{ inputs.trivy-version }}
+        run: |
+          set -euo pipefail
+          TMP="$(mktemp -d)"
+          BASE="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          curl -sSfL -o "${TMP}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" "${BASE}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/trivy_${TRIVY_VERSION}_checksums.txt"
+          ( cd "${TMP}" && grep " trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz\$" checksums.txt | sha256sum -c - )
+          tar -xzf "${TMP}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -C "${TMP}" trivy
+          install "${TMP}/trivy" "${RUNNER_TEMP}/trivy"
+          "${RUNNER_TEMP}/trivy" --version | head -1
+
+      - name: Scan packages and layers
+        id: packages
+        shell: bash
+        env:
+          COUNT: ${{ steps.collect.outputs.count }}
+          DIR: ${{ steps.collect.outputs.dir }}
+          FAIL_ON: ${{ inputs.fail-on-severity }}
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/package-scan"; mkdir -p "${OUT}"
+          if [ "${COUNT}" = "0" ]; then echo "count=0" >> "${GITHUB_OUTPUT}"; echo "sarif=" >> "${GITHUB_OUTPUT}"; exit 0; fi
+          case "${FAIL_ON}" in
+            critical) gate='["CRITICAL"]' ;;
+            high) gate='["CRITICAL","HIGH"]' ;;
+            medium) gate='["CRITICAL","HIGH","MEDIUM"]' ;;
+            low) gate='["CRITICAL","HIGH","MEDIUM","LOW"]' ;;
+            none) gate='[]' ;;
+            *) echo "::error title=serverless-scan::fail-on-severity must be critical, high, medium, low or none"; exit 1 ;;
+          esac
+          "${RUNNER_TEMP}/trivy" fs --scanners vuln --exit-code 0 -f json -o "${OUT}/packages.json" "${DIR}"
+          "${RUNNER_TEMP}/trivy" fs --scanners vuln --exit-code 0 -f sarif -o "${OUT}/packages.sarif" "${DIR}"
+          jq -r --arg dir "${DIR}/" '.Results[]? | .Target as $t | .Vulnerabilities[]? | "\(.Severity)\t\($t | ltrimstr($dir))\t\(.PkgName)@\(.InstalledVersion)\t\(.VulnerabilityID)\tfixed: \(.FixedVersion // "none")"' "${OUT}/packages.json" | sort > "${OUT}/list.tsv"
+          total="$(wc -l < "${OUT}/list.tsv")"
+          gated="$(jq -r --argjson gate "${gate}" '[.Results[]?.Vulnerabilities[]? | select(.Severity as $s | $gate | index($s))] | length' "${OUT}/packages.json")"
+          {
+            echo "## Serverless packages: ${COUNT} scanned, ${total} vulnerabilities, ${gated} at or above ${FAIL_ON}"
+            echo
+            if [ "${total}" -gt 0 ]; then
+              echo "| Severity | Package | Dependency | Advisory | Fix |"; echo "|---|---|---|---|---|"
+              awk -F'\t' '{printf "| %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5}' "${OUT}/list.tsv" | head -200
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+          while IFS=$'\t' read -r sev target pkg id fix; do
+            echo "::warning title=serverless-scan ${sev}::${target}: ${pkg} ${id} (${fix})"
+          done < "${OUT}/list.tsv"
+          echo "count=${gated}" >> "${GITHUB_OUTPUT}"
+          echo "sarif=${OUT}/packages.sarif" >> "${GITHUB_OUTPUT}"
+          if [ "${gated}" -gt 0 ]; then
+            echo "::error title=serverless-scan::${gated} package vulnerabilit$([ "${gated}" = 1 ] && echo y || echo ies) at or above ${FAIL_ON}"
+            echo "gate=fail" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Upload package SARIF
+        if: inputs.sarif-upload && steps.packages.outputs.sarif != ''
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+        with:
+          sarif_file: ${{ steps.packages.outputs.sarif }}
+          category: serverless-packages
+        continue-on-error: true
+
+      - name: Resolve policy checks
+        id: cfg
+        shell: bash
+        env:
+          ROLE: ${{ inputs.require-per-function-role }}
+          LOGS: ${{ inputs.require-log-retention }}
+        run: |
+          set -euo pipefail
+          dir=".sparkgeo-github-actions/policies/serverless"
+          checks="$(grep -oE '^[A-Z_0-9]+' "${dir}/checks.txt" | grep -v '^CKV_AWS_66$' | paste -sd, -)"
+          [ "${ROLE}" = "true" ] && checks="${checks},SPK_SLS_1"
+          [ "${LOGS}" = "true" ] && checks="${checks},SPK_SLS_3,CKV_AWS_66"
+          echo "policies=${dir}" >> "${GITHUB_OUTPUT}"
+          echo "checks=${checks}" >> "${GITHUB_OUTPUT}"
+          echo "checks: ${checks}"
+
+      - name: Policy checks (checkov)
+        id: policies
+        uses: ./.sparkgeo-github-actions/.github/actions/checkov
+        with:
+          directory: ${{ inputs.directory }}
+          frameworks: ${{ inputs.framework }}
+          checks: ${{ steps.cfg.outputs.checks }}
+          external-checks-dir: ${{ steps.cfg.outputs.policies }}
+          fail-on-severity: ${{ inputs.policy-fail-on-severity }}
+          sarif-upload: ${{ inputs.sarif-upload && 'true' || 'false' }}
+
+      - name: Shared roles across functions
+        id: roles
+        if: always() && inputs.template-path != ''
+        shell: bash
+        env:
+          TEMPLATE: ${{ inputs.template-path }}
+          ROLE: ${{ inputs.require-per-function-role }}
+        run: |
+          set -euo pipefail
+          args=(--template "${TEMPLATE}")
+          [ "${ROLE}" = "true" ] && args+=(--fail)
+          python3 -I .sparkgeo-github-actions/.github/actions/checkov/serverless-roles.py "${args[@]}"
+
+      - name: Package gate
+        if: always() && steps.packages.outputs.gate == 'fail'
+        shell: bash
+        run: exit 1

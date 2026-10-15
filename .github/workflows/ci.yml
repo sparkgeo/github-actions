@@ -157,6 +157,73 @@ jobs:
           [ "${FAIL_FAILED}" = "11" ] || { echo "::error title=dr-check::expected 11 findings on the fail fixture, got ${FAIL_FAILED}"; exit 1; }
           python3 -I .github/actions/checkov/dr-report.py --json "${RESULTS}" --report "${RUNNER_TEMP}/dr-report.md" --directory tests/dr-check/fixtures/fail > /dev/null
 
+  # Serverless policy pack (#183): checkov over the Terraform and CloudFormation
+  # fixtures, the shared-role script and the trivy package scan through the
+  # test script, then the composite on the Terraform fail fixture.
+  serverless-scan:
+    name: Serverless Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install checkov through the composite (Terraform pass fixture, zero findings)
+        id: pass
+        uses: ./.github/actions/checkov
+        with:
+          directory: tests/serverless-scan/fixtures/terraform/pass
+          frameworks: terraform
+          checks: CKV_AWS_116,CKV_AWS_115,CKV_AWS_45,CKV_AWS_173,CKV_AWS_66,CKV_AWS_287,CKV_AWS_288,CKV_AWS_289,CKV_AWS_290,CKV_AWS_355,CKV_AWS_356,SPK_SLS_1,SPK_SLS_3
+          external-checks-dir: policies/serverless
+          include-passed: "true"
+          sarif-upload: "false"
+
+      - name: Install trivy
+        env:
+          TRIVY_VERSION: "0.75.0"
+        run: |
+          set -euo pipefail
+          TMP="$(mktemp -d)"
+          BASE="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          curl -sSfL -o "${TMP}/trivy.tgz" "${BASE}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/trivy_${TRIVY_VERSION}_checksums.txt"
+          ( cd "${TMP}" && mv trivy.tgz "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" && grep " trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz\$" checksums.txt | sha256sum -c - )
+          tar -xzf "${TMP}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -C "${TMP}" trivy
+          install "${TMP}/trivy" "${RUNNER_TEMP}/trivy"
+
+      - name: Policy pack, shared-role script and package scan fixtures
+        env:
+          CHECKOV: ${{ runner.temp }}/checkov
+          TRIVY: ${{ runner.temp }}/trivy
+        run: tests/serverless-scan/run.sh
+
+      - name: Composite on the Terraform fail fixture (advisory)
+        id: failing
+        uses: ./.github/actions/checkov
+        with:
+          directory: tests/serverless-scan/fixtures/terraform/fail
+          frameworks: terraform
+          checks: CKV_AWS_116,CKV_AWS_115,CKV_AWS_45,CKV_AWS_173,CKV_AWS_66,CKV_AWS_287,CKV_AWS_288,CKV_AWS_289,CKV_AWS_290,CKV_AWS_355,CKV_AWS_356,SPK_SLS_1,SPK_SLS_3
+          external-checks-dir: policies/serverless
+          fail-on-severity: none
+          sarif-upload: "false"
+
+      - name: Outcomes
+        env:
+          PASS_FAILED: ${{ steps.pass.outputs.failed-count }}
+          FAIL_FAILED: ${{ steps.failing.outputs.failed-count }}
+        run: |
+          [ "${PASS_FAILED}" = "0" ] || { echo "::error title=serverless-scan::pass fixture had ${PASS_FAILED} findings"; exit 1; }
+          [ "${FAIL_FAILED}" = "11" ] || { echo "::error title=serverless-scan::expected 11 findings on the fail fixture, got ${FAIL_FAILED}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

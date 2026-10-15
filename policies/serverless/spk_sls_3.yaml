@@ -1,0 +1,27 @@
+# Serverless policy pack (issue #183, plan Step 17 Standard): the function
+# writes to a log group declared in the same configuration (logging_config /
+# LoggingConfig), so retention is set there (CKV_AWS_66) instead of the
+# unlimited default group Lambda creates on first invocation.
+metadata:
+  id: "SPK_SLS_3"
+  name: "Lambda function logs to a declared CloudWatch log group"
+  category: "LOGGING"
+  guideline: "https://github.com/sparkgeo/github-actions/blob/main/docs/serverless.md"
+definition:
+  and:
+    - cond_type: filter
+      attribute: resource_type
+      operator: within
+      value:
+        - aws_lambda_function
+        - AWS::Lambda::Function
+        - AWS::Serverless::Function
+    - cond_type: connection
+      resource_types:
+        - aws_lambda_function
+        - AWS::Lambda::Function
+        - AWS::Serverless::Function
+      connected_resource_types:
+        - aws_cloudwatch_log_group
+        - AWS::Logs::LogGroup
+      operator: exists
