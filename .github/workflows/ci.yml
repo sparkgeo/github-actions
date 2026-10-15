@@ -90,6 +90,62 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Dogfood the dependency-reputation composite: offline fixtures first, then
+  # the composite on this repo's PR diff (its only lockfiles are test fixtures,
+  # which the default exclude skips), then one live deps.dev lookup from a
+  # throwaway repo that adds requests==2.34.2, to prove the client and cache
+  # against the real API.
+  dependency-reputation:
+    name: Dependency Reputation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            api.deps.dev:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Differ and gate fixtures (offline)
+        run: tests/dependency-reputation/run.sh
+
+      - name: Composite on this PR
+        id: self
+        uses: ./.github/actions/dependency-reputation
+        with:
+          base-sha: ${{ github.event.pull_request.base.sha || '' }}
+          output-dir: ${{ runner.temp }}/dependency-reputation
+
+      - name: Live lookup against deps.dev
+        env:
+          SCRIPT: ${{ github.workspace }}/.github/actions/dependency-reputation/reputation.py
+          CACHE: ${{ runner.temp }}/deps-dev-cache
+        run: |
+          set -euo pipefail
+          repo="${RUNNER_TEMP}/live-repo"
+          mkdir -p "${repo}" && cd "${repo}"
+          git init -q -b main && git config user.email ci@example.com && git config user.name ci
+          printf 'urllib3==2.8.0\n' > requirements.txt
+          git add -A && git commit -q -m base
+          base="$(git rev-parse HEAD)"
+          printf 'urllib3==2.8.0\nrequests==2.34.2\n' > requirements.txt
+          git add -A && git commit -q -m head
+          python3 -I "${SCRIPT}" --base-sha "${base}" --cache-dir "${CACHE}" \
+            --min-scorecard 5 --output findings.json --report report.md
+          [ "$(jq -r .added_count findings.json)" = "1" ] || { echo "::error title=dependency-reputation::expected 1 added package"; exit 1; }
+          [ "$(jq -r '.packages[0].score' findings.json)" != "null" ] || { echo "::error title=dependency-reputation::no Scorecard for requests"; exit 1; }
+          [ -f "${CACHE}/PYPI/requests@2.34.2.json" ] || { echo "::error title=dependency-reputation::cache entry not written"; exit 1; }
+          cat report.md
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
@@ -260,6 +316,8 @@ jobs:
           allowed-endpoints: >
             github.com:443
             api.github.com:443
+            api.deps.dev:443
+            api.securityscorecards.dev:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

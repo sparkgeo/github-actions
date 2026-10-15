@@ -1,0 +1,7 @@
+[[package]]
+name = "urllib3"
+version = "2.8.0"
+
+[[package]]
+name = "lowscore"
+version = "1.0.0"

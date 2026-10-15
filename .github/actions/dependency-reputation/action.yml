@@ -1,0 +1,99 @@
+name: "Dependency Reputation"
+description: |
+  Reputation check for dependencies added in a pull request (issue #111).
+  Diffs every changed lockfile (npm, pnpm, yarn, requirements*.txt, poetry,
+  uv, go.sum, Cargo.lock) against base-sha, and asks deps.dev about each
+  package@version only on the head side: OSV advisories (MAL-* is malicious),
+  the source repository and its OpenSSF Scorecard, and the latest release
+  date. Responses are cached per package@version across runs.
+
+  Gates: malicious blocks (fail-on-malicious), a Scorecard score below
+  min-scorecard blocks (0 disables). Abandonware (plan Step 3): no release
+  within max-age-days (365) or a Scorecard Maintained score of 0 on a direct
+  dependency is a Medium finding for the Step 25 queue (name a replacement or
+  an owned fork); it blocks only with fail-on-unmaintained. On a transitive
+  dependency it is informational. An unknown package and a missing Scorecard
+  only warn.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  base-sha:
+    description: "Commit to diff lockfiles against (the PR base). Empty means nothing to diff."
+    default: ""
+  ecosystems:
+    description: "Comma-separated subset of npm, pypi, go, cargo."
+    default: "npm,pypi,go,cargo"
+  min-scorecard:
+    description: "Fail when an added dependency's OpenSSF Scorecard score is below this (0 disables)."
+    default: "0"
+  max-age-days:
+    description: "A direct dependency whose latest upstream release is older than this is a Medium finding (plan: no release in 12 months)."
+    default: "365"
+  fail-on-unmaintained:
+    description: "Fail on a Medium abandonware finding (stale or Scorecard Maintained 0 on a direct dependency) instead of reporting it."
+    default: "false"
+  fail-on-malicious:
+    description: "Fail when OSV lists a MAL-* advisory for the added version."
+    default: "true"
+  exclude:
+    description: "Comma-separated globs of lockfile paths to ignore."
+    default: "**/tests/**,**/test/**,**/fixtures/**"
+  cache-dir:
+    description: "Where deps.dev responses are cached (one JSON per package@version)."
+    default: ${{ runner.temp }}/deps-dev-cache
+  output-dir:
+    description: "Where findings.json and report.md are written."
+    default: "dependency-reputation"
+outputs:
+  added-count:
+    description: "Packages added or changed in the diff."
+    value: ${{ steps.check.outputs.added-count }}
+  blocking-count:
+    description: "Added packages that failed a gate."
+    value: ${{ steps.check.outputs.blocking-count }}
+  medium-count:
+    description: "Medium abandonware findings (direct dependencies, stale or unmaintained)."
+    value: ${{ steps.check.outputs.medium-count }}
+  report-path:
+    description: "Markdown report (starts with the <!-- dependency-reputation --> marker)."
+    value: ${{ steps.check.outputs.report-path }}
+runs:
+  using: "composite"
+  steps:
+    - name: Fetch base commit
+      if: inputs.base-sha != ''
+      shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base-sha }}
+      run: git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+
+    - name: Restore deps.dev cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ${{ inputs.cache-dir }}
+        key: deps-dev-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: deps-dev-
+
+    - name: Check added dependencies
+      id: check
+      shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base-sha }}
+        ECOSYSTEMS: ${{ inputs.ecosystems }}
+        MIN_SCORECARD: ${{ inputs.min-scorecard }}
+        MAX_AGE_DAYS: ${{ inputs.max-age-days }}
+        FAIL_ON_MALICIOUS: ${{ inputs.fail-on-malicious }}
+        FAIL_ON_UNMAINTAINED: ${{ inputs.fail-on-unmaintained }}
+        EXCLUDE: ${{ inputs.exclude }}
+        CACHE_DIR: ${{ inputs.cache-dir }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        mkdir -p "${OUTPUT_DIR}"
+        python3 -I "${GITHUB_ACTION_PATH}/reputation.py" \
+          --base-sha "${BASE_SHA}" --ecosystems "${ECOSYSTEMS}" \
+          --min-scorecard "${MIN_SCORECARD}" --max-age-days "${MAX_AGE_DAYS}" \
+          --fail-on-malicious "${FAIL_ON_MALICIOUS}" --fail-on-unmaintained "${FAIL_ON_UNMAINTAINED}" \
+          --exclude "${EXCLUDE}" \
+          --cache-dir "${CACHE_DIR}" \
+          --output "${OUTPUT_DIR}/findings.json" --report "${OUTPUT_DIR}/report.md"

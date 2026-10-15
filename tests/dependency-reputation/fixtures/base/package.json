@@ -1,0 +1,5 @@
+{
+  "name": "fixture",
+  "dependencies": { "kept-lib": "^4.17.21", "pad-lib": "^1.3.0", "old-lib": "^2.0.0" },
+  "devDependencies": { "evil-stream": "0.1.1" }
+}

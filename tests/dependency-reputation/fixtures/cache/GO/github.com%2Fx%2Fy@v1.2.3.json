@@ -1,0 +1,56 @@
+{
+  "version": {
+    "versionKey": {
+      "system": "GO",
+      "name": "github.com/x/y",
+      "version": "v1.2.3"
+    },
+    "publishedAt": "2026-01-01T00:00:00Z",
+    "advisoryKeys": [],
+    "relatedProjects": [
+      {
+        "projectKey": {
+          "id": "github.com/x/y"
+        },
+        "relationType": "SOURCE_REPO"
+      }
+    ]
+  },
+  "project": {
+    "projectKey": {
+      "id": "github.com/x/y"
+    },
+    "starsCount": 100,
+    "scorecard": {
+      "date": "2026-08-24T00:00:00Z",
+      "overallScore": 5.5,
+      "checks": [
+        {
+          "name": "Maintained",
+          "score": 10
+        },
+        {
+          "name": "Dangerous-Workflow",
+          "score": 10
+        },
+        {
+          "name": "Binary-Artifacts",
+          "score": 10
+        },
+        {
+          "name": "Signed-Releases",
+          "score": 10
+        },
+        {
+          "name": "Vulnerabilities",
+          "score": 10
+        },
+        {
+          "name": "Code-Review",
+          "score": 7
+        }
+      ]
+    }
+  },
+  "latest_published_at": "2026-01-01T00:00:00Z"
+}

@@ -1,0 +1,56 @@
+{
+  "version": {
+    "versionKey": {
+      "system": "PYPI",
+      "name": "lowscore",
+      "version": "1.0.0"
+    },
+    "publishedAt": "2026-06-01T00:00:00Z",
+    "advisoryKeys": [],
+    "relatedProjects": [
+      {
+        "projectKey": {
+          "id": "github.com/low/score"
+        },
+        "relationType": "SOURCE_REPO"
+      }
+    ]
+  },
+  "project": {
+    "projectKey": {
+      "id": "github.com/low/score"
+    },
+    "starsCount": 100,
+    "scorecard": {
+      "date": "2026-08-24T00:00:00Z",
+      "overallScore": 2.1,
+      "checks": [
+        {
+          "name": "Maintained",
+          "score": 0
+        },
+        {
+          "name": "Dangerous-Workflow",
+          "score": 0
+        },
+        {
+          "name": "Binary-Artifacts",
+          "score": 0
+        },
+        {
+          "name": "Signed-Releases",
+          "score": 0
+        },
+        {
+          "name": "Vulnerabilities",
+          "score": 10
+        },
+        {
+          "name": "Code-Review",
+          "score": 7
+        }
+      ]
+    }
+  },
+  "latest_published_at": "2026-06-01T00:00:00Z"
+}

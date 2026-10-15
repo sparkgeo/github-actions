@@ -1,0 +1,10 @@
+# yarn lockfile v1
+
+
+kept-lib@^4.17.21:
+  version "4.17.21"
+  resolved "https://registry.yarnpkg.com/kept-lib/-/kept-lib-4.17.21.tgz"
+
+"old-lib@^2.0.0", old-lib@2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/old-lib/-/old-lib-2.0.0.tgz"

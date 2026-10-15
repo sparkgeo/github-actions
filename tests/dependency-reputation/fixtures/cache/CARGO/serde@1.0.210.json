@@ -1,0 +1,14 @@
+{
+  "version": {
+    "versionKey": {
+      "system": "CARGO",
+      "name": "serde",
+      "version": "1.0.210"
+    },
+    "publishedAt": "2024-09-01T00:00:00Z",
+    "advisoryKeys": [],
+    "relatedProjects": []
+  },
+  "project": null,
+  "latest_published_at": "2026-07-01T00:00:00Z"
+}

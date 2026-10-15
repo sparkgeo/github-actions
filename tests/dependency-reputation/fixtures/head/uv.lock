@@ -1,0 +1,9 @@
+version = 1
+
+[[package]]
+name = "urllib3"
+version = "2.8.0"
+
+[[package]]
+name = "ghost"
+version = "9.9.9"

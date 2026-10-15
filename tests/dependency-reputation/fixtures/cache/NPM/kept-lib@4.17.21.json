@@ -1,0 +1,56 @@
+{
+  "version": {
+    "versionKey": {
+      "system": "NPM",
+      "name": "kept-lib",
+      "version": "4.17.21"
+    },
+    "publishedAt": "2021-02-20T15:42:16Z",
+    "advisoryKeys": [],
+    "relatedProjects": [
+      {
+        "projectKey": {
+          "id": "github.com/kept/lib"
+        },
+        "relationType": "SOURCE_REPO"
+      }
+    ]
+  },
+  "project": {
+    "projectKey": {
+      "id": "github.com/kept/lib"
+    },
+    "starsCount": 100,
+    "scorecard": {
+      "date": "2026-08-24T00:00:00Z",
+      "overallScore": 6.8,
+      "checks": [
+        {
+          "name": "Maintained",
+          "score": 10
+        },
+        {
+          "name": "Dangerous-Workflow",
+          "score": 10
+        },
+        {
+          "name": "Binary-Artifacts",
+          "score": 10
+        },
+        {
+          "name": "Signed-Releases",
+          "score": 0
+        },
+        {
+          "name": "Vulnerabilities",
+          "score": 10
+        },
+        {
+          "name": "Code-Review",
+          "score": 7
+        }
+      ]
+    }
+  },
+  "latest_published_at": "2026-03-01T00:00:00Z"
+}
