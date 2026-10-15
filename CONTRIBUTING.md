@@ -28,6 +28,9 @@ Every PR that adds or modifies a workflow or composite action must satisfy all o
 [ ] All `run:` steps declare `shell:` explicitly (shell: bash on Linux/macOS, shell: pwsh on Windows)
 
 [ ] actionlint and zizmor pass locally before pushing (see Local setup below)
+
+[ ] Workflow calls a model (reviewer, triage, tester, scanner, pentest agent)? Follow docs/ai-security-agent-rule.md:
+    a row in docs/ai-agents.md, one key per agent, read-only, trusted PRs only, never a required check
 ```
 
 ## Local setup

@@ -32,4 +32,4 @@ This repository runs no AI agent today. The Gemini CLI review, triage and plan-e
 1. Add the row with every column filled; `lifecycle state: proposed` until the kill switch has been drilled once.
 2. Register the credential at the Step 26 gateway or as a repository secret named in the Credential column; one key per agent.
 3. Add the configuration file; the check now passes.
-4. Follow the security-agent rule (`docs/ai-security-agent-rule.md`, issue #186) for reviewers, testers and pentest agents.
+4. Follow the [security-agent rule](ai-security-agent-rule.md) (issue #186) for reviewers, testers and pentest agents: copy its table into the PR with each row ticked.
