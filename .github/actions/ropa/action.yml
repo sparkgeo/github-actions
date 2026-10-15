@@ -1,0 +1,80 @@
+name: "RoPA Check"
+description: |
+  Record of processing activities as code (SecOps plan Step 36 Baseline and
+  Standard, issue #119): validates ropa.yml against
+  policies/privacy/ropa.schema.json and checks it for completeness against
+  the asset inventory (#115: every confidential or restricted store has an
+  activity) and the privado data-flow report (#99: every third-party sink has
+  a processor row); reports orphaned references and placeholder purposes or
+  lawful bases. Job summary, PR comment body and report.json. fail-on: none
+  (advisory, Baseline), missing (Standard default), all (orphans fail too);
+  schema errors always fail.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  ropa-path:
+    description: "ropa.yml in the repository."
+    default: "ropa.yml"
+  schema-path:
+    description: "JSON Schema; empty uses the bundled policies/privacy/ropa.schema.json."
+    default: ""
+  inventory-path:
+    description: "inventory.json from the asset inventory (#115); empty skips the store check."
+    default: ""
+  privado-report-path:
+    description: "report.json or privado.json from the data-flow scan (#99); empty skips the processor check."
+    default: ""
+  fail-on:
+    description: "none|missing|all"
+    default: "missing"
+  comment-path:
+    description: "Where the PR comment body is written; empty skips it."
+    default: ""
+  output-path:
+    description: "JSON report path."
+    default: "ropa-report.json"
+outputs:
+  activity-count:
+    description: "Activities in ropa.yml."
+    value: ${{ steps.check.outputs.activity-count }}
+  missing-count:
+    description: "Stores and sinks without an activity, plus placeholders."
+    value: ${{ steps.check.outputs.missing-count }}
+  orphan-count:
+    description: "Stores and sinks in ropa.yml the inventory or report does not know."
+    value: ${{ steps.check.outputs.orphan-count }}
+  error-count:
+    description: "Errors at the chosen fail-on level."
+    value: ${{ steps.check.outputs.error-count }}
+runs:
+  using: "composite"
+  steps:
+    # A virtualenv because the runner's python3 has no YAML parser and no
+    # jsonschema; PyPI is the only egress.
+    - id: env
+      shell: bash
+      run: |
+        set -euo pipefail
+        ENV="${RUNNER_TEMP}/ropa-env"
+        [ -x "${ENV}/bin/python" ] || { python3 -m venv "${ENV}"; "${ENV}/bin/python" -m pip install --quiet --disable-pip-version-check "pyyaml==6.0.3" "jsonschema==4.26.0"; }
+        echo "python=${ENV}/bin/python" >> "${GITHUB_OUTPUT}"
+
+    - id: check
+      shell: bash
+      env:
+        PY: ${{ steps.env.outputs.python }}
+        ROPA: ${{ inputs.ropa-path }}
+        SCHEMA: ${{ inputs.schema-path }}
+        BUNDLED: ${{ github.action_path }}/../../../policies/privacy/ropa.schema.json
+        INVENTORY: ${{ inputs.inventory-path }}
+        PRIVADO: ${{ inputs.privado-report-path }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        COMMENT: ${{ inputs.comment-path }}
+        OUTPUT: ${{ inputs.output-path }}
+      run: |
+        set -euo pipefail
+        ARGS=(--ropa "${ROPA}" --schema "${SCHEMA:-${BUNDLED}}" --fail-on "${FAIL_ON}" --output "${OUTPUT}")
+        [ -n "${INVENTORY}" ] && ARGS+=(--inventory "${INVENTORY}")
+        [ -n "${PRIVADO}" ] && ARGS+=(--privado "${PRIVADO}")
+        [ -n "${COMMENT}" ] && ARGS+=(--comment "${COMMENT}")
+        "${PY}" -I "${GITHUB_ACTION_PATH}/check.py" "${ARGS[@]}"

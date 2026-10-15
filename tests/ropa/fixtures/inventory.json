@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-10-15T00:00:00Z",
+  "repo": "sparkgeo/fixture-app",
+  "stack_kind": "tofu",
+  "required_tags": ["owner", "project", "environment", "data-class"],
+  "counts": {"resources": 5, "violations": 0},
+  "resources": [
+    {"id": "aws_rds_cluster.app", "type": "aws_rds_cluster", "name": "app", "stack": "stacks/prod", "account": null, "region": "ca-central-1", "tags": {"owner": "team-platform", "project": "fixture", "environment": "prod", "data-class": "confidential", "engine": "postgis"}, "tag_violations": [], "source": {"repo": "sparkgeo/fixture-app", "path": null, "line": null}},
+    {"id": "aws_s3_bucket.ingest", "type": "aws_s3_bucket", "name": "ingest", "stack": "stacks/prod", "account": null, "region": "ca-central-1", "tags": {"owner": "team-platform", "project": "fixture", "environment": "prod", "data-class": "confidential"}, "tag_violations": [], "source": {"repo": "sparkgeo/fixture-app", "path": null, "line": null}},
+    {"id": "aws_dynamodb_table.sessions", "type": "aws_dynamodb_table", "name": "sessions", "stack": "stacks/prod", "account": null, "region": "ca-central-1", "tags": {"owner": "team-platform", "project": "fixture", "environment": "prod", "data-class": "restricted"}, "tag_violations": [], "source": {"repo": "sparkgeo/fixture-app", "path": null, "line": null}},
+    {"id": "aws_cloudwatch_log_group.api", "type": "aws_cloudwatch_log_group", "name": "api", "stack": "stacks/prod", "account": null, "region": "ca-central-1", "tags": {"owner": "team-platform", "project": "fixture", "environment": "prod", "data-class": "internal"}, "tag_violations": [], "source": {"repo": "sparkgeo/fixture-app", "path": null, "line": null}},
+    {"id": "aws_iam_role.app", "type": "aws_iam_role", "name": "app", "stack": "stacks/prod", "account": null, "region": "ca-central-1", "tags": {"owner": "team-platform", "project": "fixture", "environment": "prod", "data-class": "internal"}, "tag_violations": [], "source": {"repo": "sparkgeo/fixture-app", "path": null, "line": null}}
+  ]
+}

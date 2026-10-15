@@ -1,0 +1,137 @@
+name: RoPA Check
+
+# Reusable PR gate (issue #119, plan Step 36): ropa.yml is the record of
+# processing activities; this validates it and checks it for completeness
+# against the asset inventory (the asset-inventory-latest release from #115)
+# and the privado data-flow report (the privado-report artefact from #99),
+# with one updating PR comment listing the gaps. Baseline tier: fail-on none
+# (advisory); Standard: missing (default) or all.
+#
+# Caller permissions: contents: read, actions: read (privado artefact),
+# pull-requests: write (the comment).
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com and PyPI.
+
+on:
+  workflow_call:
+    inputs:
+      ropa-path:
+        description: 'ropa.yml in the repository'
+        default: 'ropa.yml'
+        type: string
+      inventory-path:
+        description: 'inventory.json committed in the repository; empty downloads it from the asset-inventory-latest release when one exists'
+        default: ''
+        type: string
+      privado-report-path:
+        description: 'privado report committed in the repository; empty downloads the newest privado-report artefact from the default branch when one exists'
+        default: ''
+        type: string
+      fail-on:
+        description: 'none|missing|all'
+        default: 'missing'
+        type: string
+      comment:
+        description: 'Post or update the PR comment'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          and the schema from. Pin this to the SAME SHA you pinned
+          ropa-check.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      missing-count:
+        description: 'Stores and sinks without an activity, plus placeholders'
+        value: ${{ jobs.ropa.outputs.missing-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions.
+jobs:
+  ropa:
+    name: RoPA check
+    runs-on: ubuntu-latest
+    outputs:
+      missing-count: ${{ steps.check.outputs.missing-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout ropa composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Fetch the inventory and the privado report
+        id: inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          INVENTORY: ${{ inputs.inventory-path }}
+          PRIVADO: ${{ inputs.privado-report-path }}
+        run: |
+          set -euo pipefail
+          if [ -z "${INVENTORY}" ] && gh release download asset-inventory-latest -R "${GH_REPO}" -p inventory.json -D "${RUNNER_TEMP}/inv" 2>/dev/null; then
+            INVENTORY="${RUNNER_TEMP}/inv/inventory.json"; echo "inventory: asset-inventory-latest release"
+          fi
+          if [ -z "${PRIVADO}" ]; then
+            # shellcheck disable=SC2016  # $b is a jq variable
+            ID="$(gh api "repos/${GH_REPO}/actions/artifacts?name=privado-report&per_page=100" 2>/dev/null \
+              | jq -r --arg b "${DEFAULT_BRANCH}" '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == $b)] | sort_by(.created_at) | last | .id // empty')" || ID=""
+            if [ -n "${ID}" ]; then
+              gh api "repos/${GH_REPO}/actions/artifacts/${ID}/zip" > "${RUNNER_TEMP}/privado.zip"
+              mkdir -p "${RUNNER_TEMP}/privado" && unzip -qo "${RUNNER_TEMP}/privado.zip" -d "${RUNNER_TEMP}/privado"
+              PRIVADO="$(find "${RUNNER_TEMP}/privado" -name report.json -o -name privado.json | head -1)"; echo "privado report: artefact ${ID}"
+            fi
+          fi
+          [ -n "${INVENTORY}" ] || echo "::notice title=ropa::no inventory (commit inventory.json or run asset-inventory.yml); store completeness not checked"
+          [ -n "${PRIVADO}" ] || echo "::notice title=ropa::no privado report (run pii-dataflow.yml on the default branch); processor completeness not checked"
+          { echo "inventory=${INVENTORY}"; echo "privado=${PRIVADO}"; } >> "${GITHUB_OUTPUT}"
+
+      - id: check
+        continue-on-error: true
+        uses: ./.sparkgeo-github-actions/.github/actions/ropa
+        with:
+          ropa-path: ${{ inputs.ropa-path }}
+          inventory-path: ${{ steps.inputs.outputs.inventory }}
+          privado-report-path: ${{ steps.inputs.outputs.privado }}
+          fail-on: ${{ inputs.fail-on }}
+          comment-path: ${{ runner.temp }}/ropa-comment.md
+          output-path: ${{ runner.temp }}/ropa-report.json
+
+      - name: Post or update the PR comment
+        if: ${{ always() && inputs.comment && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BODY_FILE: ${{ runner.temp }}/ropa-comment.md
+        run: |
+          set -euo pipefail
+          [ -s "${BODY_FILE}" ] || exit 0
+          ID="$(gh api "repos/${GH_REPO}/issues/${PR}/comments?per_page=100" --jq '[.[] | select(.body | startswith("<!-- ropa-check -->"))] | first | .id // empty')"
+          if [ -n "${ID}" ]; then
+            gh api -X PATCH "repos/${GH_REPO}/issues/comments/${ID}" -F body=@"${BODY_FILE}" > /dev/null
+          else
+            gh pr comment "${PR}" --body-file "${BODY_FILE}"
+          fi
+
+      - name: Outcome
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.check.outcome }}
+          ERRORS: ${{ steps.check.outputs.error-count }}
+        run: |
+          [ "${OUTCOME}" != "failure" ] || { echo "::error title=ropa::${ERRORS:-?} error(s); see the summary"; exit 1; }

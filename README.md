@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| RoPA Check | [`ropa-check.yml`](.github/workflows/ropa-check.yml) | `workflow_call` | Reusable record-of-processing gate: validates `ropa.yml` against the schema and checks every sensitive store (asset inventory) and every third-party sink (privado report) has a row; one updating PR comment; `fail-on` none/missing/all (#119) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| RoPA Check | [`ropa`](.github/actions/ropa/action.yml) | Validates `ropa.yml` with jsonschema, checks completeness against `inventory.json` and the privado report, reports orphans and placeholders; summary, comment body, `ropa-report.json` | `ropa-path` (default: `ropa.yml`), `schema-path` (default: bundled), `inventory-path`, `privado-report-path`, `fail-on` (default: `missing`), `comment-path`, `output-path` |
 
 ### GitHub Actionlint
 
@@ -119,6 +121,22 @@ jobs:
           comment-summary-in-pr: always                       # always | on-failure | never
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}  # leave empty on pull_request
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}           # leave empty on pull_request
+```
+
+### RoPA Check (record of processing activities)
+
+SecOps plan Step 36 (issue #119): the record of processing activities lives in `ropa.yml` at the repository root, one entry per activity with purpose, lawful basis, data subjects and categories, classification, stores, processors, retention and owner ([`docs/ropa.md`](docs/ropa.md) maps every field to GDPR Art. 30 and the plan's RoPA columns). CI validates it against [`policies/privacy/ropa.schema.json`](policies/privacy/ropa.schema.json) and checks completeness, not judgement: every confidential or restricted store in the asset inventory (#115) must have an activity, every third-party sink in the privado data-flow report (#99) must have a processor row, and purposes must not be placeholders. Start from [`docs/examples/ropa.yml`](docs/examples/ropa.yml); run with `fail-on: none` while the record is being written (Baseline), then `missing` (Standard).
+
+```yaml
+jobs:
+  ropa:
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    uses: sparkgeo/github-actions/.github/workflows/ropa-check.yml@<SHA>
+    with:
+      actions-ref: <SHA>   # same SHA as above
 ```
 
 ### Storage Optimizer
