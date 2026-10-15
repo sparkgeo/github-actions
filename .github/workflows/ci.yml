@@ -116,6 +116,61 @@ jobs:
         run: |
           { [ "${FALLBACK}" = "true" ] && [ "${MAPPED}" = "0" ] && [ "${ERRORS}" = "0" ]; } || { echo "::error title=verify-map::expected fallback mode with nothing mapped and no errors; got fallback=${FALLBACK} mapped=${MAPPED} errors=${ERRORS}"; exit 1; }
 
+  verify-python:
+    name: Verify Python
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The example module at tier standard: contracts, CrossHair, properties,
+      # mutmut. The changed list is fixed so the run is the same on every PR.
+      # tiles/ is a high-risk path and encode/decode are "Not confirmed", so
+      # tier standard must report exactly that one blocking finding; gate off
+      # here, the Outcome step asserts it.
+      - name: Changed list
+        run: echo tiles/quadkey.py > "${RUNNER_TEMP}/changed.txt"
+
+      - id: self
+        uses: ./.github/actions/verify-python
+        with:
+          working-directory: docs/examples/verify/python
+          changed-list: ${{ runner.temp }}/changed.txt
+          tier: standard
+          output-dir: ${{ runner.temp }}/verify-python
+          gate: 'false'
+
+      - name: Fixtures
+        env:
+          VERIFY_BIN: ${{ runner.temp }}/verify-python-env/bin
+        run: tests/verify-python/run.sh
+
+      - name: Outcome
+        env:
+          CEX: ${{ steps.self.outputs.counterexamples }}
+          BARE: ${{ steps.self.outputs.bare-high-risk }}
+          SCORE: ${{ steps.self.outputs.mutation-score }}
+          BLOCKING: ${{ steps.self.outputs.blocking }}
+          SUMMARY: ${{ runner.temp }}/verify-python/summary.json
+        run: |
+          reason="$(jq -r '.gate.fail[0] // ""' "${SUMMARY}")"
+          { [ "${CEX}" = "0" ] && [ "${BARE}" = "0" ] && [ -n "${SCORE}" ] && [ "${BLOCKING}" = "1" ] \
+            && [[ "${reason}" == *"on high-risk paths not confirmed within budget (tier standard)" ]] \
+            && [ "$(jq '.exhausted' "${SUMMARY}")" -ge 3 ]; } \
+            || { echo "::error title=verify-python::expected no counterexample, no bare high-risk function, a mutation score, child() confirmed and only the tier-standard unconfirmed block; got counterexamples=${CEX} bare=${BARE} score=${SCORE} blocking=${BLOCKING} reason=${reason}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

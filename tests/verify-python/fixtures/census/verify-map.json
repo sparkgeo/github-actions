@@ -1,0 +1,8 @@
+{
+  "fallback": false,
+  "high_risk_globs": ["**/auth/**"],
+  "files": {
+    "tests/verify-python/fixtures/census/contracted.py": {"glob": "tests/verify-python/fixtures/census/contracted.py", "risk": "high", "rungs": ["contracts"], "tool": "python", "mapped": true},
+    "tests/verify-python/fixtures/census/auth/session.py": {"glob": null, "risk": "low", "rungs": [], "tool": "python", "mapped": false}
+  }
+}
