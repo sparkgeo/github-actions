@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| DSAR Test | [`dsar-test.yml`](.github/workflows/dsar-test.yml) | `workflow_call` | Reusable scheduled harness for the repository's DSAR export and erasure scripts: PostGIS (or Postgres) service container pinned by digest, synthetic subject and bystander, assertions from `ropa.yml` `subject_keys`, evidence retained 400 days, failure issue (#122) |
 | RoPA Check | [`ropa-check.yml`](.github/workflows/ropa-check.yml) | `workflow_call` | Reusable record-of-processing gate: validates `ropa.yml` against the schema and checks every sensitive store (asset inventory) and every third-party sink (privado report) has a row; one updating PR comment; `fail-on` none/missing/all (#119) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
@@ -42,6 +43,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| DSAR Test | [`dsar-test`](.github/actions/dsar-test/action.yml) | Seeds a subject and a bystander, runs the export and erase scripts, asserts coverage, erasure, no leakage of the bystander and referential integrity; writes the evidence bundle and `dsar-log.md` | `ropa-path` (default: `ropa.yml`), `activities`, `seed-command`, `export-command` (default: `scripts/dsar/export.sh`), `erase-command` (default: `scripts/dsar/erase.sh`), `output-dir`, `psql` |
 | RoPA Check | [`ropa`](.github/actions/ropa/action.yml) | Validates `ropa.yml` with jsonschema, checks completeness against `inventory.json` and the privado report, reports orphans and placeholders; summary, comment body, `ropa-report.json` | `ropa-path` (default: `ropa.yml`), `schema-path` (default: bundled), `inventory-path`, `privado-report-path`, `fail-on` (default: `missing`), `comment-path`, `output-path` |
 
 ### GitHub Actionlint
@@ -137,6 +139,26 @@ jobs:
     uses: sparkgeo/github-actions/.github/workflows/ropa-check.yml@<SHA>
     with:
       actions-ref: <SHA>   # same SHA as above
+```
+
+### DSAR Test (export and erasure scripts)
+
+SecOps plan Step 36 Standard (issue #122): the repository keeps `scripts/dsar/export.sh` and `scripts/dsar/erase.sh` and lists in `ropa.yml` where each subject is referenced (`subject_keys`); the harness runs them monthly in a fresh PostGIS container against a synthetic subject and a bystander, asserts that the export covers every identifier and nothing of the bystander, that erasure clears every table (or anonymises the ones that must stay) and leaves every foreign key intact, and keeps the bundle and the assertion log for 400 days as the annual evidence. The contract, a worked example for a small PostGIS schema, the monthly schedule and the 30-day checklist of what stays manual: [`docs/dsar.md`](docs/dsar.md).
+
+```yaml
+on:
+  schedule:
+    - cron: '0 6 1 * *'
+jobs:
+  dsar:
+    permissions:
+      contents: read
+      issues: write
+    uses: sparkgeo/github-actions/.github/workflows/dsar-test.yml@<SHA>
+    with:
+      actions-ref: <SHA>   # same SHA as above
+      migrate-command: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+      seed-command: scripts/dsar/seed.sh
 ```
 
 ### Storage Optimizer

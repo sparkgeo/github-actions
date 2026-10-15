@@ -121,6 +121,28 @@ jobs:
         run: |
           { [ "${ACTIVITIES}" = "2" ] && [ "${MISSING}" = "2" ] && [ "${ERRORS}" = "0" ]; } || { echo "::error title=ropa::expected 2 activities, 2 missing, 0 errors; got ${ACTIVITIES}/${MISSING}/${ERRORS}"; exit 1; }
 
+  # DSAR test (#122): the harness against a PostGIS container with the
+  # example schema and scripts: the happy path, a broken erase, a leaky
+  # export, a record without subject_keys. Egress audit: the image comes
+  # from Docker Hub.
+  dsar-test:
+    name: DSAR Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Example scripts through the harness
+        run: tests/dsar-test/run.sh
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

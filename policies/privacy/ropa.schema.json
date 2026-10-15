@@ -4,38 +4,206 @@
   "title": "Record of processing activities (ropa.yml)",
   "description": "One record per processing activity, kept at the repository root and checked by ropa-check.yml (SecOps plan Step 36, issue #119; GDPR Art. 30). Field guide: docs/ropa.md.",
   "type": "object",
-  "required": ["activities"],
+  "required": [
+    "activities"
+  ],
   "additionalProperties": false,
   "properties": {
-    "version": {"type": "integer", "const": 1},
-    "controller": {"type": "string", "description": "Legal entity responsible for the processing; defaults to Sparkgeo when absent."},
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "controller": {
+      "type": "string",
+      "description": "Legal entity responsible for the processing; defaults to Sparkgeo when absent."
+    },
     "activities": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "purpose", "lawful_basis", "data_subjects", "data_categories", "classification", "stores", "retention", "owner"],
+        "required": [
+          "id",
+          "purpose",
+          "lawful_basis",
+          "data_subjects",
+          "data_categories",
+          "classification",
+          "stores",
+          "retention",
+          "owner"
+        ],
         "additionalProperties": false,
         "properties": {
-          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$", "description": "Stable slug; referenced by the retention table and the DSAR harness."},
-          "purpose": {"type": "string", "minLength": 10, "description": "Why the data is processed, in one sentence a data subject would understand."},
-          "lawful_basis": {"type": "string", "enum": ["consent", "contract", "legal_obligation", "vital_interests", "public_task", "legitimate_interests"]},
-          "lia": {"type": "string", "description": "Path to the legitimate-interests assessment; required when lawful_basis is legitimate_interests."},
-          "data_subjects": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 2}},
-          "data_categories": {"type": "array", "minItems": 1, "items": {"type": "string", "enum": ["identity", "contact", "location", "financial", "credentials", "device", "usage", "content", "employment", "health", "government_id", "biometric", "other"]}},
-          "special_categories": {"type": "boolean", "default": false, "description": "GDPR Art. 9 data (health, biometrics, ...). Restricted tier and a DPIA are expected."},
-          "classification": {"type": "string", "enum": ["internal", "confidential", "restricted"], "description": "Tier from docs/data-classification.md; personal data is never Public."},
-          "stores": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 3}, "description": "Inventory resource ids (#115), e.g. aws_rds_cluster.app."},
-          "sinks": {"type": "array", "default": [], "items": {"type": "string", "minLength": 2}, "description": "Third-party processors, matched against the privado report's third-party sinks (#99)."},
-          "retention": {"type": "string", "pattern": "^(\\d+[dmy]|until-[a-z-]+)$", "description": "90d, 18m, 7y, or until-<event> such as until-account-deletion; must match retention.yml (#120)."},
-          "processor_dpa": {"type": "array", "items": {"type": "string"}, "description": "Paths or links to the DPA with each processor in sinks."},
-          "transfer_mechanism": {"type": "string", "enum": ["none", "adequacy", "sccs", "bcrs", "consent"], "description": "For a processor outside the data subjects' jurisdiction."},
-          "owner": {"type": "string", "minLength": 2, "description": "Team or person accountable (matches the inventory owner tag)."},
-          "dpia": {"type": "string", "description": "Path to the DPIA when one was needed."},
-          "notes": {"type": "string"}
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+            "description": "Stable slug; referenced by the retention table and the DSAR harness."
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 10,
+            "description": "Why the data is processed, in one sentence a data subject would understand."
+          },
+          "lawful_basis": {
+            "type": "string",
+            "enum": [
+              "consent",
+              "contract",
+              "legal_obligation",
+              "vital_interests",
+              "public_task",
+              "legitimate_interests"
+            ]
+          },
+          "lia": {
+            "type": "string",
+            "description": "Path to the legitimate-interests assessment; required when lawful_basis is legitimate_interests."
+          },
+          "data_subjects": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 2
+            }
+          },
+          "data_categories": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "identity",
+                "contact",
+                "location",
+                "financial",
+                "credentials",
+                "device",
+                "usage",
+                "content",
+                "employment",
+                "health",
+                "government_id",
+                "biometric",
+                "other"
+              ]
+            }
+          },
+          "special_categories": {
+            "type": "boolean",
+            "default": false,
+            "description": "GDPR Art. 9 data (health, biometrics, ...). Restricted tier and a DPIA are expected."
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "internal",
+              "confidential",
+              "restricted"
+            ],
+            "description": "Tier from docs/data-classification.md; personal data is never Public."
+          },
+          "stores": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 3
+            },
+            "description": "Inventory resource ids (#115), e.g. aws_rds_cluster.app."
+          },
+          "sinks": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string",
+              "minLength": 2
+            },
+            "description": "Third-party processors, matched against the privado report's third-party sinks (#99)."
+          },
+          "retention": {
+            "type": "string",
+            "pattern": "^(\\d+[dmy]|until-[a-z-]+)$",
+            "description": "90d, 18m, 7y, or until-<event> such as until-account-deletion; must match retention.yml (#120)."
+          },
+          "processor_dpa": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Paths or links to the DPA with each processor in sinks."
+          },
+          "transfer_mechanism": {
+            "type": "string",
+            "enum": [
+              "none",
+              "adequacy",
+              "sccs",
+              "bcrs",
+              "consent"
+            ],
+            "description": "For a processor outside the data subjects' jurisdiction."
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 2,
+            "description": "Team or person accountable (matches the inventory owner tag)."
+          },
+          "dpia": {
+            "type": "string",
+            "description": "Path to the DPIA when one was needed."
+          },
+          "notes": {
+            "type": "string"
+          },
+          "subject_keys": {
+            "type": "array",
+            "default": [],
+            "description": "Where the data subject is referenced: tables and columns holding a subject identifier. The DSAR harness (#122) asserts the export contains, and erasure removes, every row keyed by them.",
+            "items": {
+              "type": "object",
+              "required": [
+                "table",
+                "column"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "table": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Table name, schema-qualified when not public."
+                },
+                "column": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Column holding the subject id (users.id, location_events.user_id, audit_log.subject_id)."
+                },
+                "erase": {
+                  "type": "string",
+                  "enum": [
+                    "delete",
+                    "anonymise"
+                  ],
+                  "default": "delete",
+                  "description": "Expected outcome of erasure for this table: rows deleted, or kept with the identifier and personal columns nulled or replaced."
+                }
+              }
+            }
+          }
         },
-        "if": {"properties": {"lawful_basis": {"const": "legitimate_interests"}}},
-        "then": {"required": ["lia"]}
+        "if": {
+          "properties": {
+            "lawful_basis": {
+              "const": "legitimate_interests"
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "lia"
+          ]
+        }
       }
     }
   }

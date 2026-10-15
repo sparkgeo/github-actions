@@ -1,0 +1,62 @@
+name: "DSAR Test"
+description: |
+  DSAR export and erasure test harness (SecOps plan Step 36 Standard, issue
+  #122). Against a database the caller has migrated: seeds a synthetic
+  subject and a bystander through the repository's seed command, runs its
+  export script and asserts the bundle holds every subject identifier and
+  nothing of the bystander, runs its erase script and asserts that no row in
+  any ropa.yml subject_keys table references the subject (or, for tables
+  marked erase: anonymise, that the identifier and personal values are
+  gone), that no text column of those tables still holds the subject's
+  values, that the bystander survived, and that every foreign key holds.
+  Writes the export bundle and dsar-log.md as evidence.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  ropa-path:
+    description: "ropa.yml with subject_keys per activity (#119)."
+    default: "ropa.yml"
+  activities:
+    description: "Comma-separated activity ids to test; empty tests every activity with subject_keys."
+    default: ""
+  seed-command:
+    description: "Command that inserts one subject; receives SUBJECT_ID, SUBJECT_EMAIL, SUBJECT_NAME, SUBJECT_PHONE, SUBJECT_TRAIL and DATABASE_URL."
+    required: true
+  export-command:
+    description: "Command run as `<command> <subject-id>` that writes the bundle to DSAR_OUT."
+    default: "scripts/dsar/export.sh"
+  erase-command:
+    description: "Command run as `<command> <subject-id>` that deletes or anonymises the subject."
+    default: "scripts/dsar/erase.sh"
+  output-dir:
+    description: "Where subject.json, the export bundle, dsar-log.md and report.json go."
+    default: "dsar-evidence"
+  psql:
+    description: "psql command with the connection; empty uses `psql $DATABASE_URL`."
+    default: ""
+outputs:
+  assertions:
+    description: "Assertions run."
+    value: ${{ steps.harness.outputs.assertions }}
+  failed:
+    description: "Assertions failed."
+    value: ${{ steps.harness.outputs.failed }}
+runs:
+  using: "composite"
+  steps:
+    - id: harness
+      shell: bash
+      env:
+        ROPA: ${{ inputs.ropa-path }}
+        ACTIVITIES: ${{ inputs.activities }}
+        SEED: ${{ inputs.seed-command }}
+        EXPORT: ${{ inputs.export-command }}
+        ERASE: ${{ inputs.erase-command }}
+        OUT: ${{ inputs.output-dir }}
+        PSQL: ${{ inputs.psql }}
+      run: |
+        set -euo pipefail
+        : "${DATABASE_URL:?set DATABASE_URL on the job}"
+        ARGS=(--ropa "${ROPA}" --activities "${ACTIVITIES}" --seed "${SEED}" --export "${EXPORT}" --erase "${ERASE}" --out "${OUT}")
+        [ -n "${PSQL}" ] && ARGS+=(--psql "${PSQL}")
+        python3 -I "${GITHUB_ACTION_PATH}/harness.py" "${ARGS[@]}"
