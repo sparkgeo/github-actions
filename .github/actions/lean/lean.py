@@ -26,13 +26,15 @@ import os
 import re
 import sys
 
+# Lake prints "error: <file>:<l>:<c>: msg"; Lean itself prints "<file>:<l>:<c>: error: msg"
 MSG = re.compile(r"^(?P<level>error|warning): (?P<file>[^:\n]+\.lean):(?P<line>\d+):(?P<col>\d+): (?P<msg>.*)$")
+MSG2 = re.compile(r"^(?P<file>[^:\n]+\.lean):(?P<line>\d+):(?P<col>\d+): (?P<level>error|warning): (?P<msg>.*)$")
 
 
 def lean(a):
     issues = []
     for l in open(a.log, encoding="utf-8", errors="ignore").read().splitlines():
-        m = MSG.match(l.strip())
+        m = MSG.match(l.strip()) or MSG2.match(l.strip())
         if not m:
             continue
         d = m.groupdict()
@@ -42,6 +44,10 @@ def lean(a):
         if kind != "warning":
             title = "unfinished proof (sorry)" if kind == "sorry" else "Lean error"
             print(f"::error file={f},line={d['line']},col={d['col']},title={title}::{d['msg'][:300]}")
+    if a.rc != 0 and not any(i["kind"] in ("error", "sorry") for i in issues):
+        issues.append({"file": a.root or ".", "line": 1, "col": 1, "kind": "error",
+                       "message": f"lake build exited {a.rc} without a located error (see lake-build.txt)"})
+        print(f"::error title=Lean error::lake build exited {a.rc} without a located error (see the build log)")
     out = {"rc": a.rc, "outcome": "success" if a.rc == 0 else "failure", "issues": issues}
     with open(a.output, "w") as fh:
         json.dump(out, fh, indent=1)

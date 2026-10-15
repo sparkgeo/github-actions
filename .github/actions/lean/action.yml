@@ -87,7 +87,8 @@ runs:
         fi
         rc=0
         lake build --wfail > "${ART}/lake-build.txt" 2>&1 || rc=$?
-        tail -5 "${ART}/lake-build.txt"
+        if [ "${rc}" -eq 0 ]; then tail -2 "${ART}/lake-build.txt"
+        else grep -v '^trace:' "${ART}/lake-build.txt" | tail -80; fi
         PREFIX="$(git rev-parse --show-prefix 2>/dev/null || true)"
         python3 -I "${GITHUB_ACTION_PATH}/lean.py" lean --log "${ART}/lake-build.txt" --rc "${rc}" --root "${PREFIX}" --output "${ART}/lean.json"
         echo "outcome=$([ "${rc}" -eq 0 ] && echo success || echo failure)" >> "${GITHUB_OUTPUT}"

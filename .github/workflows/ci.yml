@@ -149,7 +149,7 @@ jobs:
           output-dir: ${{ runner.temp }}/lean-sorry
           gate: 'false'
 
-      - id: false
+      - id: wrong
         uses: ./.github/actions/lean
         with:
           project-dir: tests/verify-lean/fixtures/false
@@ -166,14 +166,14 @@ jobs:
         env:
           OK: ${{ steps.ok.outputs.lean }}
           SORRY: ${{ steps.sorry.outputs.lean }}
-          FALSE: ${{ steps.false.outputs.lean }}
+          WRONG: ${{ steps.wrong.outputs.lean }}
           EXAMPLE: ${{ steps.example.outputs.lean }}
           T: ${{ runner.temp }}
         run: |
-          { [ "${OK}" = "success" ] && [ "${SORRY}" = "failure" ] && [ "${FALSE}" = "failure" ] && [ "${EXAMPLE}" = "success" ] \
+          { [ "${OK}" = "success" ] && [ "${SORRY}" = "failure" ] && [ "${WRONG}" = "failure" ] && [ "${EXAMPLE}" = "success" ] \
             && [ "$(jq -r '.issues[0].kind' "${T}/lean-sorry/lean.json")" = "sorry" ] \
             && [ "$(jq -r '.issues[0].kind' "${T}/lean-false/lean.json")" = "error" ]; } \
-            || { echo "::error title=verify-lean::expected ok and example proven, sorry and false failing; got ok=${OK} sorry=${SORRY} false=${FALSE} example=${EXAMPLE}"; exit 1; }
+            || { echo "::error title=verify-lean::expected ok and example proven, sorry and false failing; got ok=${OK} sorry=${SORRY} false=${WRONG} example=${EXAMPLE}"; exit 1; }
 
   verify-kani:
     name: Verify Kani
