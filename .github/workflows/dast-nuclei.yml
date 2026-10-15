@@ -1,0 +1,87 @@
+name: DAST Nuclei
+
+# Reusable template-driven DAST gate (SecOps plan Step 5; issue #66): nuclei
+# with pinned templates against a running preview or staging deployment.
+# Finds specific known issues (CVEs, exposed files and panels,
+# misconfigurations) where the ZAP baseline (#65) finds classes of weakness.
+# SARIF to the Security tab; fails at or above fail-on-severity.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. The hosts it reaches: github.com (nuclei and
+# templates releases) and target-url; interactsh hosts only when enabled.
+
+on:
+  workflow_call:
+    inputs:
+      target-url:
+        description: 'URL of the running application to scan'
+        required: true
+        type: string
+      templates:
+        description: 'Comma-separated template directories or files (default: cves,misconfiguration,exposures under http/)'
+        default: 'cves,misconfiguration,exposures'
+        type: string
+      tags:
+        description: 'Optional comma-separated tags that narrow the selected templates'
+        default: ''
+        type: string
+      fail-on-severity:
+        description: 'Minimum severity to fail: info|low|medium|high|critical|none'
+        default: 'high'
+        type: string
+      rate-limit:
+        description: 'Maximum requests per second'
+        default: 50
+        type: number
+      sarif-upload:
+        description: 'Upload SARIF to the GitHub Security tab'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the nuclei
+          composite from. Pin this to the SAME SHA you pinned dast-nuclei.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    secrets:
+      SCAN_HEADERS:
+        description: 'Optional newline-separated "Name: value" headers for an authenticated scan'
+        required: false
+    outputs:
+      blocking-count:
+        description: 'Findings at or above fail-on-severity'
+        value: ${{ jobs.nuclei.outputs.blocking-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always) and adds
+# `security-events: write` only when it wants SARIF upload. See README.
+jobs:
+  nuclei:
+    name: Nuclei
+    runs-on: ubuntu-latest
+    outputs:
+      blocking-count: ${{ steps.nuclei.outputs.blocking-count }}
+    steps:
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout nuclei composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: nuclei
+        uses: ./.sparkgeo-github-actions/.github/actions/nuclei
+        with:
+          target-url: ${{ inputs.target-url }}
+          templates: ${{ inputs.templates }}
+          tags: ${{ inputs.tags }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          rate-limit: ${{ inputs.rate-limit }}
+          headers: ${{ secrets.SCAN_HEADERS }}
+          sarif-upload: ${{ inputs.sarif-upload }}

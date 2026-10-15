@@ -1,0 +1,3 @@
+[submodule "vendor/fixture"]
+	path = vendor/fixture
+	url = https://example.invalid/fixture.git
