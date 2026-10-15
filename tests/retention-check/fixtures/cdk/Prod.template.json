@@ -1,0 +1,152 @@
+{
+ "Resources": {
+  "IngestBucket1A2B3C": {
+   "Type": "AWS::S3::Bucket",
+   "Properties": {
+    "BucketName": "fixture-ingest",
+    "VersioningConfiguration": {
+     "Status": "Enabled"
+    },
+    "LifecycleConfiguration": {
+     "Rules": [
+      {
+       "Id": "expire",
+       "Status": "Enabled",
+       "ExpirationInDays": 90,
+       "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 90
+       }
+      }
+     ]
+    },
+    "Tags": [
+     {
+      "Key": "owner",
+      "Value": "team-platform"
+     },
+     {
+      "Key": "project",
+      "Value": "fixture"
+     },
+     {
+      "Key": "environment",
+      "Value": "prod"
+     },
+     {
+      "Key": "data-class",
+      "Value": "confidential"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Prod/Ingest/Resource"
+   }
+  },
+  "ApiLogs2B3C4D": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "LogGroupName": "/fixture/api",
+    "RetentionInDays": 30,
+    "Tags": [
+     {
+      "Key": "owner",
+      "Value": "team-platform"
+     },
+     {
+      "Key": "project",
+      "Value": "fixture"
+     },
+     {
+      "Key": "environment",
+      "Value": "prod"
+     },
+     {
+      "Key": "data-class",
+      "Value": "internal"
+     }
+    ]
+   }
+  },
+  "AppCluster3C4D5E": {
+   "Type": "AWS::RDS::DBCluster",
+   "Properties": {
+    "Engine": "aurora-postgresql",
+    "BackupRetentionPeriod": 35,
+    "Tags": [
+     {
+      "Key": "owner",
+      "Value": "team-platform"
+     },
+     {
+      "Key": "project",
+      "Value": "fixture"
+     },
+     {
+      "Key": "environment",
+      "Value": "prod"
+     },
+     {
+      "Key": "data-class",
+      "Value": "confidential"
+     }
+    ]
+   }
+  },
+  "Sessions4D5E6F": {
+   "Type": "AWS::DynamoDB::Table",
+   "Properties": {
+    "TableName": "fixture-sessions",
+    "TimeToLiveSpecification": {
+     "AttributeName": "expires_at",
+     "Enabled": true
+    },
+    "Tags": [
+     {
+      "Key": "owner",
+      "Value": "team-platform"
+     },
+     {
+      "Key": "project",
+      "Value": "fixture"
+     },
+     {
+      "Key": "environment",
+      "Value": "prod"
+     },
+     {
+      "Key": "data-class",
+      "Value": "restricted"
+     }
+    ]
+   }
+  },
+  "Daily5E6F7G": {
+   "Type": "AWS::Backup::BackupPlan",
+   "Properties": {
+    "BackupPlan": {
+     "BackupPlanName": "daily",
+     "BackupPlanRule": [
+      {
+       "RuleName": "daily",
+       "TargetBackupVault": "fixture",
+       "Lifecycle": {
+        "DeleteAfterDays": 120
+       },
+       "CopyActions": [
+        {
+         "DestinationBackupVaultArn": "arn:aws:backup:us-west-2:123456789012:backup-vault:dr"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2"
+   }
+  }
+ }
+}

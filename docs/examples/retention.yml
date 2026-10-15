@@ -1,0 +1,25 @@
+# Retention and residency table (SecOps plan Step 36 Standard, issue #120).
+# Copy to the repository root as retention.yml. One entry per data store
+# keyed by its IaC address (OpenTofu: type.name; CDK: the CloudFormation
+# logical id or the aws:cdk:path). retention-check.yml compares it with the
+# plan or synth output; docs/retention.md lists the mechanism per store type.
+---
+version: 1
+defaults:
+  allowed_regions: [ca-central-1, us-west-2]
+  backup_expiry_grace: 35d   # a backup may outlive the record by this much (docs/retention.md § backup expiry)
+stores:
+  aws_s3_bucket.ingest:
+    retention: 90d
+    mechanism: lifecycle
+  aws_cloudwatch_log_group.api:
+    retention: 30d
+    mechanism: retention_in_days
+  aws_rds_cluster.app:
+    retention: 35d
+    mechanism: backup_retention
+    residency: [ca-central-1]
+  aws_dynamodb_table.sessions:
+    retention: 7d
+    mechanism: ttl
+    ttl_attribute: expires_at

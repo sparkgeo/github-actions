@@ -76,6 +76,57 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Retention check (#120): check.py against the hand-built plan JSON
+  # (passing and failing) and the CDK template, then the composite on the
+  # passing plan and on the CDK fixture, both clean.
+  retention:
+    name: Retention Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: tofu
+        uses: ./.github/actions/retention
+        with:
+          retention-path: tests/retention-check/fixtures/retention.yml
+          plan-json: tests/retention-check/fixtures/tofu/plan-pass.json
+          fail-on: all
+          output-path: ${{ runner.temp }}/retention-tofu.json
+
+      - id: cdk
+        uses: ./.github/actions/retention
+        with:
+          retention-path: tests/retention-check/fixtures/cdk/retention.yml
+          template: tests/retention-check/fixtures/cdk/Prod.template.json
+          fail-on: all
+          output-path: ${{ runner.temp }}/retention-cdk.json
+
+      - name: Fixtures
+        env:
+          RETENTION_PYTHON: ${{ runner.temp }}/retention-env/bin/python
+        run: tests/retention-check/run.sh
+
+      - name: Outcome
+        env:
+          TOFU: ${{ steps.tofu.outputs.finding-count }}
+          CDK: ${{ steps.cdk.outputs.finding-count }}
+          STORES: ${{ steps.tofu.outputs.store-count }}
+        run: |
+          { [ "${TOFU}" = "0" ] && [ "${CDK}" = "0" ] && [ "${STORES}" = "5" ]; } || { echo "::error title=retention::expected clean fixtures with 5 stores; got tofu=${TOFU} cdk=${CDK} stores=${STORES}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
