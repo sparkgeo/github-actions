@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | AI Inventory Check | [`ai-inventory-check.yml`](.github/workflows/ai-inventory-check.yml) | `workflow_call` | Reusable gate for the AI agent registry: every file that configures an agent, assistant or MCP server (patterns in [`policies/ai/agent-config-patterns.txt`](policies/ai/agent-config-patterns.txt)) needs a row in `docs/ai-agents.md` with owner, class, risk tier, lifecycle state and kill switch (#102) |
 | MCP Scan | [`mcp-scan.yml`](.github/workflows/mcp-scan.yml) | `workflow_call` | Reusable gate for MCP servers and skills: every declared server must be on [`policies/ai/mcp-allowlist.json`](policies/ai/mcp-allowlist.json) at its pinned command line or URL and version, with tool-description hashes matching `.mcp-scan.lock`; `local-only` keeps descriptions on the runner (#103) |
+| Model Scan | [`model-scan.yml`](.github/workflows/model-scan.yml) | `workflow_call` | Reusable gate for serialized models: modelscan severity gate, Sigstore model-signing verification, hash pins for models loaded at runtime (`models.json`), CycloneDX ML-BOM (`sbom/mlbom.cdx.json`) covering models, MCP servers, skills and agents, uploaded as the `mlbom` artefact (#104) |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
@@ -45,6 +46,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | AI Inventory | [`ai-inventory`](.github/actions/ai-inventory/action.yml) | Matches agent configuration files against the pattern list, parses the inventory table, fails on an uncovered file, a file covered only by a retired row, or a row missing owner, class, risk tier, lifecycle state or kill switch; job summary with a row template | `inventory-path` (default: `docs/ai-agents.md`), `patterns-file` (default: bundled list), `extra-patterns`, `exclude` (default: `.git,node_modules,.sparkgeo-github-actions,.sparkgeo-policies`) |
 | MCP Scan | [`mcp-scan`](.github/actions/mcp-scan/action.yml) | Runs `snyk-agent-scan inspect` over the MCP config files, hashes each server's tool, prompt and resource descriptions and each skill file, fails on an unknown or unpinned server, a changed hash, or (with `local-only: false`) a Snyk risk score at or above `fail-on`; job summary and annotations | `config-paths` (empty: auto-detect), `allowlist` (default: bundled), `lock-file` (default: `.mcp-scan.lock`), `update-lock`, `local-only` (default: `true`), `fail-on` (default: `high`), `skills`, `server-timeout`, `version` (default: `0.6.8`) |
+| Model Scan | [`modelscan`](.github/actions/modelscan/action.yml) | Runs modelscan over the given paths, hashes every model file and SavedModel directory, fails on findings at or above `fail-on-severity`, on a manifest entry without a hash or with a wrong one, on a failed signature, or (with `require-signature`) on an unsigned model; writes the ML-BOM; job summary and annotations | `paths`, `fail-on-severity` (default: `high`), `mlbom` (default: `true`), `mlbom-path` (default: `sbom/mlbom.cdx.json`), `manifest` (default: `models.json`), `verify-signature` (`none`/`sigstore`/`key`), `require-signature`, `signature-identity`, `signature-identity-provider`, `public-key`, `signature-suffix`, `inventory-path`, `lock-file`, `extras` (default: `h5py`), `version` (default: `0.8.8`), `model-signing-version` (default: `1.1.1`) |
 
 ### GitHub Actionlint
 
@@ -405,6 +407,20 @@ jobs:
     permissions:
       contents: read
     uses: sparkgeo/github-actions/.github/workflows/mcp-scan.yml@<SHA>
+    with:
+      actions-ref: <SHA>   # same SHA as above
+```
+
+### Model Scan (models as supply chain)
+
+SecOps plan Step 26 (issue #104): serialized models execute code on load, so every model in the tree is scanned with modelscan, a model loaded at runtime is pinned by hash in `models.json`, Sigstore model-signing signatures are verified, and a CycloneDX ML-BOM (`sbom/mlbom.cdx.json`) lists the models with the MCP servers and skills from `.mcp-scan.lock` and the agents from `docs/ai-agents.md`, uploaded next to the syft SBOM (#62). Policy, manifest format, ML-BOM layout and the signing flow: [`docs/model-scan.md`](docs/model-scan.md).
+
+```yaml
+jobs:
+  model-scan:
+    permissions:
+      contents: read
+    uses: sparkgeo/github-actions/.github/workflows/model-scan.yml@<SHA>
     with:
       actions-ref: <SHA>   # same SHA as above
 ```

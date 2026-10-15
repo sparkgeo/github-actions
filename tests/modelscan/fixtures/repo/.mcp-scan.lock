@@ -1,0 +1,9 @@
+{
+  "servers": {
+    ".mcp.json::fixture-stdio": "sha256:35c62fd256db28498991717720d4dd0e97dca97a1162958943e368ebcaeda5a2"
+  },
+  "skills": {
+    ".claude/skills/deploy/SKILL.md": "sha256:b9099d2deafbdde7563b70567f51dc8a978a8d69d0209d5b35b5c4c9276a12ad"
+  },
+  "version": 1
+}

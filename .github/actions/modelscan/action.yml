@@ -1,0 +1,135 @@
+name: "Model Scan"
+description: |
+  Scans serialized model files with modelscan (pickle, PyTorch, Keras, H5,
+  SavedModel with the tensorflow extra) for code that runs on load, verifies
+  Sigstore model-signing signatures, enforces the hash pin for models loaded
+  at runtime (models.json), and writes a CycloneDX ML-BOM that also lists the
+  MCP servers and skills from .mcp-scan.lock and the agents from
+  docs/ai-agents.md (SecOps plan Step 26, issue #104). Findings and errors go
+  to the job summary and as annotations.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  paths:
+    description: "Comma-separated directories or files to scan; empty scans the repository root."
+    default: ""
+  fail-on-severity:
+    description: "Minimum modelscan severity to fail on: critical|high|medium|low."
+    default: "high"
+  mlbom:
+    description: "Write the CycloneDX ML-BOM."
+    default: "true"
+  mlbom-path:
+    description: "ML-BOM output file, relative to the repository root (same directory as the syft SBOM, issue #62)."
+    default: "sbom/mlbom.cdx.json"
+  manifest:
+    description: "Manifest of models the code loads at runtime or expects in the tree, relative to the repository root."
+    default: "models.json"
+  verify-signature:
+    description: "Verify <model><signature-suffix> signatures: none|sigstore|key."
+    default: "none"
+  require-signature:
+    description: "Fail on a model without a signature."
+    default: "false"
+  signature-identity:
+    description: "Expected signer identity for sigstore verification (for a workflow signer: https://github.com/<org>/<repo>/.github/workflows/<file>@<ref>)."
+    default: ""
+  signature-identity-provider:
+    description: "Expected OIDC issuer for sigstore verification."
+    default: "https://token.actions.githubusercontent.com"
+  public-key:
+    description: "PEM public key for key verification."
+    default: ""
+  signature-suffix:
+    description: "Signature file suffix next to each model."
+    default: ".sig"
+  inventory-path:
+    description: "Agent inventory table (issue #102) listed in the ML-BOM."
+    default: "docs/ai-agents.md"
+  lock-file:
+    description: "MCP lockfile (issue #103) listed in the ML-BOM."
+    default: ".mcp-scan.lock"
+  extras:
+    description: "modelscan extras to install, comma-separated; add tensorflow for SavedModel directories (large)."
+    default: "h5py"
+  version:
+    description: "modelscan version (PyPI)."
+    default: "0.8.8"
+  model-signing-version:
+    description: "model-signing version (PyPI)."
+    default: "1.1.1"
+outputs:
+  model-count:
+    description: "Model files and SavedModel directories found."
+    value: ${{ steps.report.outputs.model-count }}
+  error-count:
+    description: "Errors found."
+    value: ${{ steps.report.outputs.error-count }}
+  mlbom-path:
+    description: "ML-BOM file written, empty when mlbom is false."
+    value: ${{ steps.report.outputs.mlbom-path }}
+runs:
+  using: "composite"
+  steps:
+    # pipx is preinstalled on GitHub-hosted runners (Python 3.12; modelscan
+    # 0.8.8 needs <3.13). Exit codes: 0 clean, 1 issues, 3 no supported files,
+    # 2 scan error (report.py turns the errors array into annotations).
+    - id: scan
+      shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+        EXTRAS: ${{ inputs.extras }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/modelscan"
+        mkdir -p "${OUT}"
+        echo "dir=${OUT}" >> "${GITHUB_OUTPUT}"
+        IFS=',' read -r -a TARGETS <<< "${PATHS:-.}"
+        REPORTS=()
+        for i in "${!TARGETS[@]}"; do
+          set +e
+          pipx run --spec "modelscan[${EXTRAS}]==${VERSION}" modelscan -p "${TARGETS[$i]}" -r json -o "${OUT}/scan-${i}.json" --show-skipped > "${OUT}/scan-${i}.txt" 2>&1
+          rc=$?
+          set -e
+          case "${rc}" in
+            0|1|2) REPORTS+=("${OUT}/scan-${i}.json") ;;
+            3) echo "modelscan: no supported model files under ${TARGETS[$i]}" ;;
+            *) cat "${OUT}/scan-${i}.txt"; exit "${rc}" ;;
+          esac
+        done
+        echo "reports=$(IFS=,; echo "${REPORTS[*]:-}")" >> "${GITHUB_OUTPUT}"
+
+    - id: report
+      shell: bash
+      env:
+        OUT: ${{ steps.scan.outputs.dir }}
+        REPORTS: ${{ steps.scan.outputs.reports }}
+        PATHS: ${{ inputs.paths }}
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+        MLBOM: ${{ inputs.mlbom }}
+        MLBOM_PATH: ${{ inputs.mlbom-path }}
+        MANIFEST: ${{ inputs.manifest }}
+        VERIFY: ${{ inputs.verify-signature }}
+        REQUIRE: ${{ inputs.require-signature }}
+        IDENTITY: ${{ inputs.signature-identity }}
+        ISSUER: ${{ inputs.signature-identity-provider }}
+        PUBLIC_KEY: ${{ inputs.public-key }}
+        SUFFIX: ${{ inputs.signature-suffix }}
+        INVENTORY: ${{ inputs.inventory-path }}
+        LOCK: ${{ inputs.lock-file }}
+        MS_VERSION: ${{ inputs.model-signing-version }}
+      run: |
+        set -euo pipefail
+        ARGS=(--root . --scan "${REPORTS}" --paths "${PATHS}" --fail-on-severity "${FAIL_ON}" --manifest "${MANIFEST}" \
+              --verify "${VERIFY}" --identity "${IDENTITY}" --identity-provider "${ISSUER}" --public-key "${PUBLIC_KEY}" \
+              --signature-suffix "${SUFFIX}" --inventory "${INVENTORY}" --lock "${LOCK}" --output "${OUT}/report.json" \
+              --model-signing-cmd "pipx run --spec model-signing==${MS_VERSION} model_signing")
+        [ "${REQUIRE}" = "true" ] && ARGS+=(--require-signature)
+        if [ "${MLBOM}" = "true" ]; then
+          ARGS+=(--mlbom "${MLBOM_PATH}")
+          echo "mlbom-path=${MLBOM_PATH}" >> "${GITHUB_OUTPUT}"
+        else
+          echo "mlbom-path=" >> "${GITHUB_OUTPUT}"
+        fi
+        python3 -I "${GITHUB_ACTION_PATH}/report.py" "${ARGS[@]}"

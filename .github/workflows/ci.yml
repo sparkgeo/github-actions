@@ -150,6 +150,45 @@ jobs:
           [ "${SERVERS}" = "0" ] || { echo "::error title=mcp-scan::this repository now declares ${SERVERS} MCP server(s); add them to policies/ai/mcp-allowlist.json and .mcp-scan.lock"; exit 1; }
           [ "${ERRORS}" = "0" ] || exit 1
 
+  # Model scan (#104): report.py against the fixture repository (malicious
+  # pickle, key-signed model, manifest pins, ML-BOM contents), then the
+  # composite on this repository, which carries no model: empty ML-BOM.
+  model-scan:
+    name: Model Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fixture repository
+        run: tests/modelscan/run.sh
+
+      - id: self
+        uses: ./.github/actions/modelscan
+        with:
+          paths: .github,docs,policies  # tests/ holds the fixture models
+
+      - name: Outcome
+        env:
+          MODELS: ${{ steps.self.outputs.model-count }}
+          ERRORS: ${{ steps.self.outputs.error-count }}
+        run: |
+          [ "${ERRORS}" = "0" ] || exit 1
+          [ "$(jq -r '.components | length' sbom/mlbom.cdx.json)" = "0" ] || { echo "::error title=model-scan::this repository's ML-BOM should be empty"; exit 1; }
+          echo "models=${MODELS}"
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
