@@ -1,0 +1,121 @@
+name: Accessibility Scan
+
+# Reusable WCAG 2.1 AA gate (issue #70, plan Step 7 Standard): axe-core against
+# a preview URL, or against a static build served in the job, rules scoped by
+# WCAG tags. JSON and HTML reports are uploaded as an artefact and violations
+# summarised in the job summary. fail-on-violations: false is report-only
+# mode for Baseline-tier adoption. See README.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com, registry.npmjs.org and
+# the target URL.
+
+on:
+  workflow_call:
+    inputs:
+      target-url:
+        description: 'URL to scan, or empty to serve build-dir locally'
+        default: ''
+        type: string
+      build-dir:
+        description: 'Static build directory to serve when target-url is empty'
+        default: 'dist'
+        type: string
+      build-command:
+        description: 'Shell command that produces build-dir (for example "npm ci && npm run build"); empty expects it committed or fetched'
+        default: ''
+        type: string
+      node-version:
+        description: 'Node.js version for build-command'
+        default: '22'
+        type: string
+      urls-file:
+        description: 'Optional file listing paths to scan (one per line)'
+        default: ''
+        type: string
+      tags:
+        description: 'axe rule tags'
+        default: 'wcag2a,wcag2aa,wcag21aa'
+        type: string
+      fail-on-violations:
+        description: 'Fail on any violation; false is report-only'
+        default: true
+        type: boolean
+      load-delay:
+        description: 'Milliseconds to wait after page load before auditing'
+        default: '0'
+        type: string
+      artifact-name:
+        description: 'Artefact name for the reports'
+        default: 'a11y-report'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned a11y-scan.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      violation-count:
+        description: 'Violations across all pages'
+        value: ${{ jobs.scan.outputs.violation-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`.
+jobs:
+  scan:
+    name: Accessibility scan
+    runs-on: ubuntu-latest
+    outputs:
+      violation-count: ${{ steps.scan.outputs.violation-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        if: ${{ inputs.build-command != '' }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Build
+        if: ${{ inputs.build-command != '' }}
+        env:
+          BUILD_COMMAND: ${{ inputs.build-command }}
+        run: bash -euo pipefail -c "${BUILD_COMMAND}"
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout axe composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: scan
+        uses: ./.sparkgeo-github-actions/.github/actions/axe
+        with:
+          target-url: ${{ inputs.target-url }}
+          build-dir: ${{ inputs.build-dir }}
+          urls-file: ${{ inputs.urls-file }}
+          tags: ${{ inputs.tags }}
+          fail-on-violations: ${{ inputs.fail-on-violations }}
+          load-delay: ${{ inputs.load-delay }}
+          output-dir: ${{ runner.temp }}/a11y
+
+      - name: Upload reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: |
+            ${{ runner.temp }}/a11y/results.json
+            ${{ runner.temp }}/a11y/report.html
+          if-no-files-found: ignore

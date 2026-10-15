@@ -76,6 +76,50 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Accessibility scan (#70): report.py against recorded axe results, then a
+  # live axe-core run (runner Chrome) over the fixture site in report-only
+  # mode: index.html carries known violations, clean.html none.
+  a11y:
+    name: Accessibility Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            registry.npmjs.org:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Recorded results
+        run: tests/a11y/run.sh
+
+      - id: live
+        uses: ./.github/actions/axe
+        with:
+          build-dir: tests/a11y/fixtures/site
+          urls-file: tests/a11y/fixtures/urls.txt
+          fail-on-violations: "false"
+          output-dir: ${{ runner.temp }}/a11y
+
+      - name: Outcome
+        env:
+          PAGES: ${{ steps.live.outputs.page-count }}
+          VIOLATIONS: ${{ steps.live.outputs.violation-count }}
+          SUMMARY: ${{ runner.temp }}/a11y/summary.json
+        run: |
+          [ "${PAGES}" = "2" ] || { echo "::error title=a11y::expected 2 pages scanned, got ${PAGES}"; exit 1; }
+          [ "${VIOLATIONS}" -ge 3 ] || { echo "::error title=a11y::index.html should carry at least 3 violations, got ${VIOLATIONS}"; exit 1; }
+          CLEAN="$(jq -r '.pages[] | select(.url | endswith("/clean.html")) | .violations' "${SUMMARY}")"
+          [ "${CLEAN}" = "0" ] || { echo "::error title=a11y::clean.html should have 0 violations, got ${CLEAN}"; exit 1; }
+          [ -s "${RUNNER_TEMP}/a11y/report.html" ] || { echo "::error title=a11y::no HTML report"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

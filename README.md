@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| Accessibility Scan | [`a11y-scan.yml`](.github/workflows/a11y-scan.yml) | `workflow_call` | Reusable WCAG 2.1 AA gate — axe-core against a preview URL or a static build served in the job, rules scoped by `tags`, JSON and HTML reports as an artefact, violations in the job summary; `fail-on-violations: false` is report-only (#70) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Accessibility Scan | [`axe`](.github/actions/axe/action.yml) | Runs `@axe-core/cli` (runner Chrome and ChromeDriver, no driver download) against `target-url` or a locally served `build-dir` for each path in `urls-file`; writes `results.json` and `report.html`, annotates every violation, fails on any violation unless report-only | `target-url`, `build-dir` (default: `dist`), `urls-file`, `tags` (default: `wcag2a,wcag2aa,wcag21aa`), `fail-on-violations` (default: `true`), `output-dir` (default: `a11y`), `load-delay`, `timeout` (default: `90`), `version` (default: `4.13.0`) |
 
 ### GitHub Actionlint
 
@@ -120,6 +122,27 @@ jobs:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}  # leave empty on pull_request
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}           # leave empty on pull_request
 ```
+
+### Accessibility Scan (WCAG 2.1 AA, axe-core)
+
+SecOps plan Step 7 Standard (issue #70): client contracts ask for WCAG 2.1 AA (AODA, ADA), and axe-core encodes those rules under the tags `wcag2a`, `wcag2aa` and `wcag21aa`, so the gate is scoped to exactly that set. It scans a deployed preview URL, or serves the static build in the job and scans every path in `urls-file` (one per line, `/` when absent). The JSON results and an HTML report are uploaded as `a11y-report`; the job summary lists violations per page and per rule with the fix page; every violation is a PR annotation.
+
+```yaml
+jobs:
+  a11y:
+    permissions:
+      contents: read
+    uses: sparkgeo/github-actions/.github/workflows/a11y-scan.yml@<SHA>
+    with:
+      actions-ref: <SHA>                      # same SHA as above
+      build-command: npm ci && npm run build  # produces build-dir in the job
+      build-dir: dist
+      urls-file: .a11y-urls.txt               # /, /login, /dashboard, ...
+      # target-url: https://preview.example.com   # scan a deployment instead
+      # load-delay: '2000'                    # client-rendered app: wait before auditing
+```
+
+**Report-only mode (Baseline tier)**: set `fail-on-violations: false`. The scan still runs on every PR, writes the reports and the summary, and annotates violations as warnings, but never fails the job; the summary notes the mode. Adopt it first, fix the backlog from the HTML report, then switch to `true` (the default) for the Standard-tier gate. Widen or narrow the rule set with `tags` (for example add `best-practice`, or drop `wcag21aa` for a legacy target).
 
 ### Storage Optimizer
 

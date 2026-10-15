@@ -1,0 +1,25 @@
+[
+  {
+    "url": "http://127.0.0.1:4173/index.html",
+    "timestamp": "2026-10-15T00:00:00.000Z",
+    "violations": [
+      {"id": "html-has-lang", "impact": "serious", "tags": ["wcag2a", "wcag311"], "description": "Ensure every HTML document has a lang attribute", "help": "<html> element must have a lang attribute", "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/html-has-lang",
+       "nodes": [{"html": "<html>", "target": ["html"], "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"}]},
+      {"id": "image-alt", "impact": "critical", "tags": ["wcag2a", "wcag111"], "description": "Ensure <img> elements have alternative text", "help": "Images must have alternative text", "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/image-alt",
+       "nodes": [{"html": "<img src=\"logo.png\">", "target": ["img"], "failureSummary": "Fix any of the following:\n  Element does not have an alt attribute"}]},
+      {"id": "color-contrast", "impact": "serious", "tags": ["wcag2aa", "wcag143"], "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds", "help": "Elements must meet minimum color contrast ratio thresholds", "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast",
+       "nodes": [{"html": "<p class=\"faint\">Low-contrast</p>", "target": [".faint"], "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 2.85"}]}
+    ],
+    "passes": [{"id": "document-title"}],
+    "incomplete": [{"id": "link-in-text-block"}],
+    "inapplicable": []
+  },
+  {
+    "url": "http://127.0.0.1:4173/clean.html",
+    "timestamp": "2026-10-15T00:00:00.000Z",
+    "violations": [],
+    "passes": [{"id": "document-title"}, {"id": "html-has-lang"}],
+    "incomplete": [],
+    "inapplicable": []
+  }
+]
