@@ -46,6 +46,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | OSV-Scanner | [`osv-scanner`](.github/actions/osv-scanner/action.yml) | Scans lockfiles against the OSV database; job-level annotations + SARIF; fails at/above the CVSS threshold. Installs a checksum-verified osv-scanner binary | `version` (default: `2.4.0`), `directory` (default: `.`), `fail-on-severity` (default: `critical`), `fail-on-malicious` (default: `true`), `sarif-upload` (default: `true`), `gate` (default: `true`; `false` leaves gating to the caller via the `json` output) |
 | Severity Gate | [`severity-gate`](.github/actions/severity-gate/action.yml) | Shared pass/fail gate for scanners without a native threshold: reads a findings file, annotates per package, outputs `max-score`/`max-severity`, fails at/above `fail-on-severity`; for `osv-json`, any OpenSSF malicious-package (`MAL-*`) advisory fails unless `fail-on-malicious` is `false`. Vocabulary in [docs/gate-policy.md](docs/gate-policy.md) | `findings-file` (required), `format` (default: `osv-json`), `fail-on-severity` (default: `critical`), `fail-on-malicious` (default: `true`) |
 | EPSS/KEV Override | [`epss-kev-override`](.github/actions/epss-kev-override/action.yml) | Applies the plan's likelihood override to osv-scanner JSON before `severity-gate`: EPSS ≥ threshold, CISA KEV or NIST LEV ≥ 0.5 raises to critical; optional one-row downgrade (EPSS < 0.01, not on KEV, LEV < 0.1) and runtime-relevance drop (#179 export). Reads a `threat-feeds` snapshot, no network; records scores, snapshot tag and SSVC points per finding | `findings-file` (required), `feeds-dir` (required), `snapshot-tag`, `epss-threshold` (default: `0.10`), `kev` (default: `true`), `lev-threshold` (default: `0.5`), `epss-history`, `downgrade` (default: `false`), `runtime-relevance-file` |
+| DefectDojo Import | [`defectdojo-import`](.github/actions/defectdojo-import/action.yml) | Re-imports a findings file into DefectDojo (`reimport-scan`, product/engagement/test created on first use, deduplicated afterwards, missing findings closed, root-cause tags); skipped with a summary line when URL or token is empty. See [DefectDojo hand-off](docs/gate-policy.md#defectdojo-hand-off) | `file` (required), `scan-type` (required), `product` (default: repository name), `engagement` (default: `ci`), `environment` (default: `production`), `tags`, `minimum-severity` (default: `Info`), `close-old-findings` (default: `true`), `push-to-jira` (default: `false`), `url`, `token` |
 | Threat Feeds | [`threat-feeds`](.github/actions/threat-feeds/action.yml) | Downloads the daily threat-intelligence snapshot from this repo's releases, verifies `SHA256SUMS`, caches per release; exposes `feeds-dir` with one JSON per feed. GitHub is the only egress | `feeds` (default: `kev,epss,threatfox,feodo,urlhaus`), `ref` (default: `latest`), `repository` (default: `sparkgeo/github-actions`), `token` (default: `github.token`) |
 
 ### GitHub Actionlint
@@ -414,6 +415,18 @@ jobs:
       actions-ref: <SHA>
       epss-override: true
       downgrade: true   # optional
+```
+
+**DefectDojo (Standard tier, #185).** `defectdojo: true` (with the `DEFECTDOJO_URL` and `DEFECTDOJO_TOKEN` secrets) re-imports the findings the gate read into DefectDojo, the cross-repository queue where SLA deadlines run; `secrets-scan.yml` takes the same input. Setup, tags and SLA: [docs/gate-policy.md](docs/gate-policy.md#defectdojo-hand-off).
+
+```yaml
+    with:
+      actions-ref: <SHA>
+      defectdojo: true
+      defectdojo-environment: production
+    secrets:
+      DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+      DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
 ```
 
 ### Threat Feeds (mirror and composite)

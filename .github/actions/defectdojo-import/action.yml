@@ -1,0 +1,87 @@
+name: "DefectDojo Import"
+description: |
+  Hands a findings file to DefectDojo, the cross-repository findings queue
+  (SecOps plan Step 25 Standard, issue #185): `POST /api/v2/reimport-scan/`
+  with auto_create_context, so the first import creates the product,
+  engagement and test and later imports deduplicate against them. Findings
+  missing from a new file are closed (close-old-findings); risk-accepted
+  findings stay accepted. Root-cause tags (base-image:<digest>,
+  iac-module:<path>, dependency:<name>) go on the test and its findings.
+
+  DEFECTDOJO_URL and DEFECTDOJO_TOKEN unset: skipped with a summary line,
+  so Baseline repositories are unaffected. Pass the adjusted file when the
+  epss-kev-override (#80) or runtime-relevance (#179) composites ran. Egress:
+  the DefectDojo host only (#83). See docs/gate-policy.md "DefectDojo".
+inputs:
+  file:
+    description: "Findings file to import."
+    required: true
+  scan-type:
+    description: "DefectDojo parser name: SARIF, Trivy Scan, Anchore Grype, OSV Scan, Checkov Scan, ZAP Scan, Nuclei Scan, Gitleaks Scan, Semgrep JSON Report, ..."
+    required: true
+  product:
+    description: "DefectDojo product."
+    default: ${{ github.event.repository.name }}
+  product-type:
+    description: "Product type used when the product is created."
+    default: "Sparkgeo"
+  engagement:
+    description: "Engagement name."
+    default: "ci"
+  environment:
+    description: "production, staging, development or test (DefectDojo environment; also tagged env:<value>)."
+    default: "production"
+  tags:
+    description: "Comma-separated root-cause tags, e.g. base-image:sha256:…,dependency:lodash."
+    default: ""
+  minimum-severity:
+    description: "Lowest severity imported: Info, Low, Medium, High or Critical."
+    default: "Info"
+  close-old-findings:
+    description: "Close findings of this test that are absent from the file (the Fix outcome)."
+    default: "true"
+  push-to-jira:
+    description: "Push new findings to the product's Jira project."
+    default: "false"
+  url:
+    description: "DefectDojo base URL (pass secrets.DEFECTDOJO_URL). Empty: skip."
+    default: ""
+  token:
+    description: "DefectDojo API v2 token (pass secrets.DEFECTDOJO_TOKEN). Empty: skip."
+    default: ""
+outputs:
+  imported:
+    description: "true when the file was imported, false when DefectDojo is not configured."
+    value: ${{ steps.import.outputs.imported }}
+  test-id:
+    description: "DefectDojo test id."
+    value: ${{ steps.import.outputs.test-id }}
+  created:
+    description: "Findings new in this import."
+    value: ${{ steps.import.outputs.created }}
+  closed:
+    description: "Findings closed by this import."
+    value: ${{ steps.import.outputs.closed }}
+  untouched:
+    description: "Findings already known and unchanged."
+    value: ${{ steps.import.outputs.untouched }}
+runs:
+  using: "composite"
+  steps:
+    - name: Re-import into DefectDojo
+      id: import
+      shell: bash
+      env:
+        DD_URL: ${{ inputs.url }}
+        DD_TOKEN: ${{ inputs.token }}
+        FILE: ${{ inputs.file }}
+        SCAN_TYPE: ${{ inputs.scan-type }}
+        PRODUCT: ${{ inputs.product }}
+        PRODUCT_TYPE: ${{ inputs.product-type }}
+        ENGAGEMENT: ${{ inputs.engagement }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        TAGS: ${{ inputs.tags }}
+        MIN_SEVERITY: ${{ inputs.minimum-severity }}
+        CLOSE_OLD: ${{ inputs.close-old-findings }}
+        PUSH_JIRA: ${{ inputs.push-to-jira }}
+      run: bash "${GITHUB_ACTION_PATH}/import.sh"

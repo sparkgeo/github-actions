@@ -33,6 +33,9 @@ Every PR that adds or modifies a workflow or composite action must satisfy all o
     critical | high | medium | low | none — see docs/gate-policy.md. Tools without a
     native threshold use the shared severity-gate composite; tools with levels map
     them inside the composite. Never add a second severity input under another name.
+[ ] A scan workflow that produces findings offers `defectdojo` (default false) and
+    the optional DEFECTDOJO_URL / DEFECTDOJO_TOKEN secrets, and re-imports the file
+    the gate read with the defectdojo-import composite (docs/gate-policy.md).
 [ ] Every job in ci.yml runs step-security/harden-runner with egress-policy: block.
     A step that needs a new outbound host adds it to that job's allowed-endpoints
     AND to docs/egress-allowlist.md in the same PR. Prefer disabling a tool's
