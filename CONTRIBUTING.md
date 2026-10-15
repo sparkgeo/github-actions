@@ -33,7 +33,15 @@ Every PR that adds or modifies a workflow or composite action must satisfy all o
     critical | high | medium | low | none — see docs/gate-policy.md. Tools without a
     native threshold use the shared severity-gate composite; tools with levels map
     them inside the composite. Never add a second severity input under another name.
+[ ] Every job in ci.yml runs step-security/harden-runner with egress-policy: block.
+    A step that needs a new outbound host adds it to that job's allowed-endpoints
+    AND to docs/egress-allowlist.md in the same PR. Prefer disabling a tool's
+    telemetry over allowlisting its telemetry host.
 ```
+
+## Self-hosted runners
+
+None today. Policy for any future runner is in [docs/egress-allowlist.md](docs/egress-allowlist.md#self-hosted-runners): ephemeral, no fork workflows, no production credentials, agent installed, isolated account.
 
 ## Local setup
 

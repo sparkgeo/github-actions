@@ -1,0 +1,102 @@
+name: "Threat Feeds"
+description: |
+  Downloads the normalised threat-intelligence snapshot published by this
+  repo's daily mirror (threat-feeds-mirror.yml, issue #109): CISA KEV, FIRST
+  EPSS, abuse.ch ThreatFox, Feodo Tracker and URLhaus, each as one JSON file
+  with a common envelope and the IOC expiry policy already applied. Verifies
+  SHA256SUMS and caches the set per release, so a consuming workflow talks
+  only to GitHub (github.com, api.github.com, release-assets.githubusercontent.com)
+  and never to the upstream feed hosts.
+
+  Entry schema: {value, type (cve|ip|cidr|domain|url), confidence 0-100,
+  first_seen?, last_seen?, expires_at?, meta?}. See README "Threat Feeds".
+
+  Required permissions on calling job: contents: read
+inputs:
+  feeds:
+    description: "Comma-separated subset of kev, epss, threatfox, feodo, urlhaus."
+    default: "kev,epss,threatfox,feodo,urlhaus"
+  ref:
+    description: "`latest`, a date (YYYY-MM-DD) for that day's snapshot, or a full release tag."
+    default: "latest"
+  repository:
+    description: "Repository that publishes the mirror releases."
+    default: "sparkgeo/github-actions"
+  token:
+    description: "Token for the GitHub API (the default GITHUB_TOKEN works; the mirror repo is public)."
+    default: ${{ github.token }}
+outputs:
+  feeds-dir:
+    description: "Directory containing <feed>.json files and SHA256SUMS."
+    value: ${{ steps.resolve.outputs.dir }}
+  tag:
+    description: "Release tag the snapshot came from."
+    value: ${{ steps.resolve.outputs.tag }}
+  published-at:
+    description: "Release publish time (ISO 8601)."
+    value: ${{ steps.resolve.outputs.published-at }}
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve release
+      id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repository }}
+        REF: ${{ inputs.ref }}
+      run: |
+        set -euo pipefail
+        case "${REF}" in
+          latest) TAG="threat-feeds-latest" ;;
+          [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) TAG="threat-feeds-${REF}" ;;
+          *) TAG="${REF}" ;;
+        esac
+        # id changes whenever the rolling release is recreated, so it keys the cache.
+        read -r id published < <(gh release view "${TAG}" -R "${REPO}" --json id,publishedAt --jq '"\(.id) \(.publishedAt)"')
+        {
+          echo "tag=${TAG}"
+          echo "release-id=${id}"
+          echo "published-at=${published}"
+          echo "dir=${RUNNER_TEMP}/threat-feeds"
+        } >> "${GITHUB_OUTPUT}"
+        echo "::notice title=threat-feeds::using ${TAG} (${id}) published ${published}"
+
+    - name: Cache snapshot
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ${{ steps.resolve.outputs.dir }}
+        key: threat-feeds-${{ steps.resolve.outputs.release-id }}-${{ inputs.feeds }}
+
+    - name: Download assets
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repository }}
+        TAG: ${{ steps.resolve.outputs.tag }}
+        DIR: ${{ steps.resolve.outputs.dir }}
+        FEEDS: ${{ inputs.feeds }}
+      run: |
+        set -euo pipefail
+        mkdir -p "${DIR}"
+        patterns=(-p SHA256SUMS)
+        IFS=',' read -ra list <<< "${FEEDS}"
+        for f in "${list[@]}"; do patterns+=(-p "$(echo "${f}" | tr -d ' ').json"); done
+        gh release download "${TAG}" -R "${REPO}" -D "${DIR}" --clobber "${patterns[@]}"
+
+    - name: Verify checksums
+      shell: bash
+      env:
+        DIR: ${{ steps.resolve.outputs.dir }}
+        FEEDS: ${{ inputs.feeds }}
+      run: |
+        set -euo pipefail
+        cd "${DIR}"
+        IFS=',' read -ra list <<< "${FEEDS}"
+        for f in "${list[@]}"; do
+          f="$(echo "${f}" | tr -d ' ')"
+          [ -f "${f}.json" ] || { echo "::error title=threat-feeds::${f}.json is not in the snapshot"; exit 1; }
+        done
+        sha256sum -c --ignore-missing SHA256SUMS
