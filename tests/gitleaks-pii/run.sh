@@ -23,7 +23,8 @@ scan() {  # <name> <config> <path>; sets rc
 }
 ids() { jq -r '[.[].RuleID] | sort | unique | join(",")' "${TMP}/$1.json"; }
 
-# True positives are generated here so no real-looking value is ever committed.
+# True positives are generated here so no real-looking value is ever committed
+# (the repository's own gitleaks job runs these rules over its history).
 python3 - "${TMP}/positives.txt" <<'PY'
 import random, sys
 random.seed(98)
@@ -47,11 +48,11 @@ lines = [
     f"card_visa = {visa[:4]} {visa[4:8]} {visa[8:12]} {visa[12:]}",
     f"card_mc = {mc}",
     f"card_amex = {amex[:4]}-{amex[4:10]}-{amex[10:]}",
-    "ssn = 536-72-1849",
+    f"ssn = {random.randint(100, 899)}-{random.randint(10, 99)}-{random.randint(1000, 9999)}",
     f"sin = {sin[:3]} {sin[3:6]} {sin[6:]}",
-    "iban = DE75512108001245126199",
-    "phone = +1 604 731 2222",
-    "phone_uk = +44 20 3456 7890",
+    "iban = DE" + "".join(str(random.randint(0, 9)) for _ in range(20)),
+    f"phone = +1 604 {random.randint(200, 999)} {random.randint(1000, 9999)}",
+    f"phone_uk = +44 20 {random.randint(3000, 3999)} {random.randint(1000, 9999)}",
     "aws = " + "AKIA" + "Q2J7T4XB" + "ZRLM3NPZ",  # assembled so the hook never sees a key; not the AWS docs example (allowlisted by default)
 ]
 open(sys.argv[1], "w").write("\n".join(lines) + "\n")
