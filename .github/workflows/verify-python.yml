@@ -1,0 +1,191 @@
+name: Verify (Python)
+
+# Reusable PR check (issue #125, plan Step 39): the Python rungs of the
+# verification ladder. mypy --strict on the changed files (blocking), a
+# contract census of every changed public function (icontract, deal, PEP 316,
+# trailing assert; uncontracted functions on high-risk paths advisory until
+# strict-high-risk), CrossHair symbolic execution over every contract (a
+# counterexample blocks, "Not confirmed" is advisory at baseline and blocks on
+# high-risk paths at standard), pytest -m property (blocking), crosshair
+# diffbehavior against base on the `refactor` label (advisory) and mutmut at
+# tier standard (advisory until mutation-threshold). Verdict wording, budgets
+# and gate rules follow the plan's reference verify-brief.yml; one rolling PR
+# comment, SARIF for inline annotations, raw artefacts 30 days, gate last.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com and PyPI.
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Python project root (pyproject.toml or requirements*.txt)'
+        default: '.'
+        type: string
+      python-version:
+        description: 'Python for the tool venv; empty keeps the runner default (3.12)'
+        default: ''
+        type: string
+      map-path:
+        description: 'verify.yml in the repository'
+        default: 'verify.yml'
+        type: string
+      crosshair-per-path-timeout:
+        description: 'Seconds CrossHair may spend on one execution path'
+        default: 3
+        type: number
+      crosshair-per-condition-timeout:
+        description: 'Seconds CrossHair may spend per contract in total; raise this before per-path'
+        default: 45
+        type: number
+      strict-high-risk:
+        description: 'Fail on a changed public function on a high-risk path with no contract'
+        default: false
+        type: boolean
+      high-risk-globs:
+        description: 'Fallback when verify.yml is absent; default is the HIGH_RISK_GLOBS list from verify-brief.yml'
+        default: ''
+        type: string
+      tier:
+        description: 'baseline|standard'
+        default: 'baseline'
+        type: string
+      mutation-threshold:
+        description: 'Minimum mutation score in percent at tier standard; 0 is advisory'
+        default: 0
+        type: number
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned verify-python.yml to, so
+          the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      counterexamples:
+        description: 'CrossHair counterexamples'
+        value: ${{ jobs.python.outputs.counterexamples }}
+      unverified:
+        description: 'Contracts not confirmed within budget'
+        value: ${{ jobs.python.outputs.unverified }}
+      bare-high-risk:
+        description: 'Changed public functions on high-risk paths with no contract'
+        value: ${{ jobs.python.outputs.bare-high-risk }}
+      mutation-score:
+        description: 'Mutation score in percent; empty when mutmut did not run'
+        value: ${{ jobs.python.outputs.mutation-score }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants contents: read, pull-requests: write (the
+# rolling comment) and security-events: write (SARIF annotations).
+jobs:
+  python:
+    name: Verify Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      counterexamples: ${{ steps.verify.outputs.counterexamples }}
+      unverified: ${{ steps.verify.outputs.unverified }}
+      bare-high-risk: ${{ steps.verify.outputs.bare-high-risk }}
+      mutation-score: ${{ steps.verify.outputs.mutation-score }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the base must be reachable for the changed-files diff and diffbehavior
+
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout verify composites
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Set up Python
+        if: inputs.python-version != ''
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      # Risk per changed file from verify.yml (advisory here; verify-map.yml
+      # owns the map's own gate).
+      - id: map
+        uses: ./.sparkgeo-github-actions/.github/actions/verify-map
+        with:
+          map-path: ${{ inputs.map-path }}
+          high-risk-globs: ${{ inputs.high-risk-globs }}
+          output-path: ${{ runner.temp }}/verify-map.json
+
+      # mutmut is incremental: mutants/ remembers completed work, which is what
+      # makes it viable per PR rather than nightly (review-brief.yml job mutation).
+      - name: Restore mutant cache
+        if: inputs.tier == 'standard'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ inputs.working-directory }}/mutants
+          key: mutmut-${{ github.event.pull_request.base.ref || github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            mutmut-${{ github.event.pull_request.base.ref || github.ref_name }}-
+            mutmut-
+
+      - id: verify
+        uses: ./.sparkgeo-github-actions/.github/actions/verify-python
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          map-json: ${{ runner.temp }}/verify-map.json
+          high-risk-globs: ${{ inputs.high-risk-globs }}
+          crosshair-per-path-timeout: ${{ inputs.crosshair-per-path-timeout }}
+          crosshair-per-condition-timeout: ${{ inputs.crosshair-per-condition-timeout }}
+          strict-high-risk: ${{ inputs.strict-high-risk }}
+          tier: ${{ inputs.tier }}
+          mutation-threshold: ${{ inputs.mutation-threshold }}
+          diffbehavior: ${{ contains(github.event.pull_request.labels.*.name, 'refactor') }}
+          output-dir: ${{ runner.temp }}/verify-python
+          gate: 'false'
+
+      - name: Upload SARIF for inline annotations
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+        with:
+          sarif_file: ${{ runner.temp }}/verify-python/crosshair.sarif
+          category: verify-python
+
+      - name: Post the brief
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BRIEF: ${{ runner.temp }}/verify-python/verify-brief.md
+        run: |
+          [ -f "${BRIEF}" ] || exit 0
+          gh pr comment "${PR}" --body-file "${BRIEF}" --edit-last --create-if-none \
+            || gh pr comment "${PR}" --body-file "${BRIEF}" || true
+
+      - name: Keep the raw artefacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: verify-python-${{ github.event.pull_request.number || github.run_id }}
+          path: |
+            ${{ runner.temp }}/verify-python
+            ${{ runner.temp }}/verify-map.json
+          retention-days: 30
+
+      # Last, after the brief is posted, so a red build always arrives with its
+      # explanation attached to the PR.
+      - name: Gate
+        if: always()
+        env:
+          SUMMARY: ${{ runner.temp }}/verify-python/summary.json
+        run: |
+          [ -f "${SUMMARY}" ] || { echo "::error title=verify-python::no summary.json; the verify step did not finish"; exit 1; }
+          jq -r '.gate.warn[] | "  warn: " + .' "${SUMMARY}"
+          jq -r '.gate.fail[] | "  FAIL: " + .' "${SUMMARY}"
+          jq -e '.gate.fail | length == 0' "${SUMMARY}" > /dev/null

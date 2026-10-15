@@ -1,0 +1,280 @@
+name: "Verify (Python)"
+description: |
+  Python rungs of the verification ladder (SecOps plan Step 39, issue #125):
+  mypy --strict on mapped paths, a contract census of every changed public
+  function (icontract, deal, PEP 316, trailing assert; opaque C-extension
+  boundaries reported), CrossHair symbolic execution over every contract
+  (counterexample blocks, "Not confirmed" advisory), pytest -m property
+  (Hypothesis), crosshair diffbehavior against base on the refactor label and
+  mutmut at tier standard. Verdict wording and budgets follow the plan's
+  reference verify-brief.yml. Writes the brief, summary.json and
+  crosshair.sarif under the output directory; the gate runs last so a red
+  build always arrives with its explanation.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  working-directory:
+    description: "Python project root (pyproject.toml, requirements*.txt)."
+    default: "."
+  changed-list:
+    description: "File listing changed paths relative to working-directory; empty derives it from the pull request (base..head) or lists the whole tree."
+    default: ""
+  map-json:
+    description: "verify-map.json written by the verify-map composite; empty uses the HIGH_RISK_GLOBS fallback for risk."
+    default: ""
+  high-risk-globs:
+    description: "Space-separated fallback globs; empty uses the HIGH_RISK_GLOBS list from verify-brief.yml."
+    default: ""
+  crosshair-per-path-timeout:
+    description: "Seconds CrossHair may spend on one execution path."
+    default: "3"
+  crosshair-per-condition-timeout:
+    description: "Seconds CrossHair may spend per contract in total."
+    default: "45"
+  strict-high-risk:
+    description: "Fail on a changed public function on a high-risk path with no contract."
+    default: "false"
+  tier:
+    description: "baseline or standard; standard runs mutmut and blocks on an unconfirmed high-risk contract."
+    default: "baseline"
+  mutation-threshold:
+    description: "Minimum mutation score in percent at tier standard; 0 is advisory."
+    default: "0"
+  diffbehavior:
+    description: "Run crosshair diffbehavior against base-ref (the workflow sets this from the refactor label)."
+    default: "false"
+  base-ref:
+    description: "Git ref holding the base copy for diffbehavior; empty uses the pull request base."
+    default: ""
+  output-dir:
+    description: "Where the brief, summary.json, crosshair.sarif and raw outputs go."
+    default: "verify-python-artifacts"
+  gate:
+    description: "Exit 1 on a blocking finding."
+    default: "true"
+outputs:
+  counterexamples:
+    description: "CrossHair counterexamples."
+    value: ${{ steps.summary.outputs.counterexamples }}
+  unverified:
+    description: "Contracts not confirmed within budget."
+    value: ${{ steps.summary.outputs.unverified }}
+  bare-high-risk:
+    description: "Changed public functions on high-risk paths with no contract."
+    value: ${{ steps.summary.outputs.bare-high-risk }}
+  mutation-score:
+    description: "Mutation score in percent; empty when mutmut did not run."
+    value: ${{ steps.summary.outputs.mutation-score }}
+  blocking:
+    description: "Blocking findings (summary.json .gate.fail); the workflow fails on these after posting the brief."
+    value: ${{ steps.summary.outputs.blocking }}
+runs:
+  using: "composite"
+  steps:
+    - id: env
+      shell: bash
+      env:
+        WD: ${{ inputs.working-directory }}
+        TIER: ${{ inputs.tier }}
+      run: |
+        set -euo pipefail
+        ENV="${RUNNER_TEMP}/verify-python-env"
+        # exact pins: a tool that changes its output format silently turns this
+        # workflow into a liar (the brief lower-bounds for its first run only)
+        if [ ! -x "${ENV}/bin/python" ]; then
+          python3 -m venv "${ENV}"
+          "${ENV}/bin/python" -m pip install --quiet --disable-pip-version-check \
+            "crosshair-tool==0.0.111" "icontract==2.7.3" "deal==4.24.6" "hypothesis==6.169.3" "pytest==9.1.1" "mypy==2.4.0"
+          [ "${TIER}" = "standard" ] && "${ENV}/bin/python" -m pip install --quiet --disable-pip-version-check "mutmut==3.8.0"
+        fi
+        cd "${WD}"
+        if   [ -f pyproject.toml ];       then "${ENV}/bin/pip" install -q -e ".[dev]" || "${ENV}/bin/pip" install -q -e . || true
+        elif [ -f requirements-dev.txt ]; then "${ENV}/bin/pip" install -q -r requirements-dev.txt || true
+        elif [ -f requirements.txt ];     then "${ENV}/bin/pip" install -q -r requirements.txt || true
+        fi
+        echo "python=${ENV}/bin/python" >> "${GITHUB_OUTPUT}"
+        echo "bin=${ENV}/bin" >> "${GITHUB_OUTPUT}"
+
+    - id: scope
+      shell: bash
+      env:
+        WD: ${{ inputs.working-directory }}
+        CHANGED: ${{ inputs.changed-list }}
+        ART: ${{ inputs.output-dir }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+      run: |
+        set -euo pipefail
+        cd "${WD}"
+        mkdir -p "${ART}/status"
+        if [ -n "${CHANGED}" ]; then
+          cp "${CHANGED}" "${ART}/changed.txt"
+        elif [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
+          git fetch -q --depth=1 origin "${PR_BASE_SHA}" "${PR_HEAD_SHA}" 2>/dev/null || true
+          if ! git diff --name-only --diff-filter=ACMR --relative "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "${ART}/changed.txt" 2>/dev/null; then
+            echo "::notice title=verify-python::PR base or head not reachable (shallow checkout); scanning the whole tree"
+            git ls-files > "${ART}/changed.txt"
+          fi
+        else
+          git ls-files > "${ART}/changed.txt"
+        fi
+        grep -E '\.py$' "${ART}/changed.txt" | grep -vE '(^|/)tests?/|(^|/)test_' | grep -vE "^${ART}/" > "${ART}/changed-py.txt" || true
+        echo "  $(wc -l < "${ART}/changed-py.txt") changed non-test python file(s)"
+        echo "py-count=$(wc -l < "${ART}/changed-py.txt")" >> "${GITHUB_OUTPUT}"
+
+    - id: census
+      shell: bash
+      env:
+        PY: ${{ steps.env.outputs.python }}
+        WD: ${{ inputs.working-directory }}
+        ART: ${{ inputs.output-dir }}
+        MAP: ${{ inputs.map-json }}
+        GLOBS: ${{ inputs.high-risk-globs }}
+      run: |
+        set -euo pipefail
+        cd "${WD}"
+        "${PY}" -I "${GITHUB_ACTION_PATH}/census.py" --changed "${ART}/changed-py.txt" --map "${MAP}" --high-risk-globs "${GLOBS}" --output "${ART}/census.json"
+
+    - id: mypy
+      shell: bash
+      env:
+        PY: ${{ steps.env.outputs.python }}
+        WD: ${{ inputs.working-directory }}
+        ART: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        cd "${WD}"
+        rc=-1
+        if [ -s "${ART}/changed-py.txt" ]; then
+          rc=0
+          xargs -r -d '\n' -a "${ART}/changed-py.txt" "${PY}" -m mypy --strict > "${ART}/mypy.txt" 2>&1 || rc=$?
+          tail -5 "${ART}/mypy.txt"
+        fi
+        echo "rc=${rc}" >> "${GITHUB_OUTPUT}"
+
+    - id: crosshair
+      shell: bash
+      env:
+        BIN: ${{ steps.env.outputs.bin }}
+        PY: ${{ steps.env.outputs.python }}
+        WD: ${{ inputs.working-directory }}
+        ART: ${{ inputs.output-dir }}
+        PER_PATH: ${{ inputs.crosshair-per-path-timeout }}
+        PER_CONDITION: ${{ inputs.crosshair-per-condition-timeout }}
+      run: |
+        set -euo pipefail
+        cd "${WD}"
+        rc=0
+        if [ -s "${ART}/changed-py.txt" ]; then
+          PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}" xargs -r -d '\n' -a "${ART}/changed-py.txt" \
+            "${BIN}/crosshair" check \
+              --analysis_kind=asserts,PEP316,icontract,deal \
+              --per_path_timeout "${PER_PATH}" \
+              --per_condition_timeout "${PER_CONDITION}" \
+              --report_all \
+            > "${ART}/crosshair.txt" 2> "${ART}/crosshair.err" || rc=$?
+          # crosshair prints absolute paths for absolute inputs and relative ones otherwise
+          sed -i "s|^${PWD}/||" "${ART}/crosshair.txt"
+        else
+          : > "${ART}/crosshair.txt"; echo "  no changed python files"
+        fi
+        echo "${rc}" > "${ART}/status/crosshair"
+        "${PY}" -I "${GITHUB_ACTION_PATH}/crosshair.py" --text "${ART}/crosshair.txt" --sarif "${ART}/crosshair.sarif" --json "${ART}/crosshair.json"
+
+    - id: properties
+      shell: bash
+      env:
+        PY: ${{ steps.env.outputs.python }}
+        WD: ${{ inputs.working-directory }}
+        ART: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        cd "${WD}"
+        rc=-1
+        if [ -s "${ART}/changed-py.txt" ]; then
+          rc=0
+          "${PY}" -m pytest -q -m property -p no:cacheprovider > "${ART}/pytest-property.txt" 2>&1 || rc=$?
+          tail -3 "${ART}/pytest-property.txt"
+        fi
+        echo "rc=${rc}" >> "${GITHUB_OUTPUT}"
+
+    - id: diffbehavior
+      if: inputs.diffbehavior == 'true'
+      shell: bash
+      env:
+        BIN: ${{ steps.env.outputs.bin }}
+        PY: ${{ steps.env.outputs.python }}
+        WD: ${{ inputs.working-directory }}
+        ART: ${{ inputs.output-dir }}
+        BASE: ${{ inputs.base-ref || format('origin/{0}', github.event.pull_request.base.ref) }}
+        PER_CONDITION: ${{ inputs.crosshair-per-condition-timeout }}
+      run: |
+        set -euo pipefail
+        cd "${WD}"
+        git fetch -q --depth=1 origin "${BASE#origin/}" 2>/dev/null || true
+        PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}" "${PY}" -I "${GITHUB_ACTION_PATH}/diffbehavior.py" \
+          --changed "${ART}/changed-py.txt" --base "${BASE}" --crosshair "${BIN}/crosshair" \
+          --per-condition-timeout "${PER_CONDITION}" --basecopy "${RUNNER_TEMP}/basecopy" --output "${ART}/diffbehavior.json"
+
+    # mutmut 3 is incremental (mutants/ remembers completed work) and selects
+    # mutants by dotted wildcard, so changed modules become "pkg.mod.func*".
+    - id: mutation
+      if: inputs.tier == 'standard' && steps.scope.outputs.py-count != '0'
+      shell: bash
+      env:
+        BIN: ${{ steps.env.outputs.bin }}
+        PY: ${{ steps.env.outputs.python }}
+        WD: ${{ inputs.working-directory }}
+        ART: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        cd "${WD}"
+        if ! grep -qs '\[tool.mutmut\]' pyproject.toml && ! grep -qs '^\[mutmut\]' setup.cfg; then
+          echo "::warning title=verify-python::no [tool.mutmut] section in pyproject.toml; mutmut skipped"
+          exit 0
+        fi
+        "${PY}" - "${ART}" > "${ART}/mutmut-targets.txt" <<'PY'
+        import ast, sys
+        art = sys.argv[1]
+        out = set()
+        for f in (l.strip() for l in open(f"{art}/changed-py.txt") if l.strip()):
+            mod = f[:-3].replace("/", ".")
+            if mod.endswith(".__init__"): mod = mod[:-9]
+            try: tree = ast.parse(open(f, encoding="utf-8", errors="ignore").read())
+            except (SyntaxError, ValueError): continue
+            for n in ast.walk(tree):
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and not n.name.startswith("_"):
+                    out.add(f"{mod}.x_{n.name}*")
+        print("\n".join(sorted(out)))
+        PY
+        while IFS= read -r t; do
+          [ -n "${t}" ] || continue
+          timeout 90 "${BIN}/mutmut" run "${t}" >> "${ART}/mutmut-run.txt" 2>&1 || true
+        done < "${ART}/mutmut-targets.txt"
+        "${BIN}/mutmut" results >> "${ART}/mutmut-results.txt" 2>/dev/null || true
+        "${BIN}/mutmut" export-cicd-stats >/dev/null 2>&1 && cp mutants/mutmut-cicd-stats.json "${ART}/mutmut-cicd-stats.json" || true
+        tail -20 "${ART}/mutmut-results.txt" || true
+
+    - id: summary
+      shell: bash
+      env:
+        PY: ${{ steps.env.outputs.python }}
+        WD: ${{ inputs.working-directory }}
+        ART: ${{ inputs.output-dir }}
+        TIER: ${{ inputs.tier }}
+        STRICT: ${{ inputs.strict-high-risk }}
+        PER_CONDITION: ${{ inputs.crosshair-per-condition-timeout }}
+        THRESHOLD: ${{ inputs.mutation-threshold }}
+        MYPY_RC: ${{ steps.mypy.outputs.rc || '-1' }}
+        PYTEST_RC: ${{ steps.properties.outputs.rc || '-1' }}
+        GATE: ${{ inputs.gate }}
+      run: |
+        set -euo pipefail
+        cd "${WD}"
+        ARGS=(--art "${ART}" --tier "${TIER}" --per-condition "${PER_CONDITION}" --mutation-threshold "${THRESHOLD}" --mypy-rc "${MYPY_RC}" --pytest-rc "${PYTEST_RC}")
+        [ "${STRICT}" = "true" ] && ARGS+=(--strict)
+        [ "${GATE}" = "true" ] && ARGS+=(--gate)
+        rc=0
+        "${PY}" -I "${GITHUB_ACTION_PATH}/summary.py" "${ARGS[@]}" || rc=$?
+        cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+        exit "${rc}"
