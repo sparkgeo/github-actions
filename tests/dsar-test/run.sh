@@ -55,6 +55,7 @@ grep -q '^- FAIL: ingest-user-locations: audit_log.subject_id still references t
 grep -q '^- FAIL: audit_log: 1 row(s) still hold the subject.s email' "${TMP}/bad/dsar-log.md" || fail "column search failure"
 
 echo "== export that dumps every user: the bystander assertions fail"
+# shellcheck disable=SC2016  # the $vars belong to the generated script, not this one
 printf '#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p "$DSAR_OUT"\npsql "$DATABASE_URL" -At -c "select json_agg(u) from users u" > "$DSAR_OUT/users.json"\n' > "${TMP}/export-leaky.sh"; chmod +x "${TMP}/export-leaky.sh"
 run leaky "${EX}/erase.sh" "${TMP}/export-leaky.sh"
 [ "${rc}" -eq 1 ] || fail "leaky export must fail"
