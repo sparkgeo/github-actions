@@ -39,6 +39,7 @@ echo "== docs/dr-checklist.md: one row per policy id, no extra ids"
 CHECKLIST="${ROOT}/docs/dr-checklist.md"
 [ -f "${CHECKLIST}" ] || fail "${CHECKLIST} missing"
 policy_ids="$({ grep -oE '^[A-Z_0-9]+' "${POLICIES}/checks.txt"; grep -hoE 'SPK_DR_[0-9]+' "${POLICIES}"/spk_dr_*.yaml; } | sort -u)"
+# shellcheck disable=SC2016  # the backticks are literal markdown, not a command substitution
 doc_ids="$(grep -oE '^\| `[A-Z_0-9]+` \|' "${CHECKLIST}" | grep -oE '[A-Z_0-9]+' | sort -u)"
 [ "${policy_ids}" = "${doc_ids}" ] || fail "checklist ids differ from policies/dr (< policies, > checklist):
 $(diff <(echo "${policy_ids}") <(echo "${doc_ids}") || true)"
