@@ -95,5 +95,5 @@ runs:
           --only "${PROVIDER}_resource_missing_tags" --minimum-failure-severity=notice \
           && rc=0 || rc=$?
         echo "::remove-matcher owner=tflint::"
-        [ "${rc}" -eq 0 ] || echo "::error title=tflint::resources are missing required tags (owner, project, environment, data-class); see docs/tagging-standard.md"
+        [ "${rc}" -eq 0 ] || echo "::error title=tflint::resources are missing required tags (owner, project, environment, data-class, exposure); see docs/tagging-standard.md"
         exit "${rc}"

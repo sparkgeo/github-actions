@@ -20,6 +20,10 @@
      {
       "Key": "data-class",
       "Value": "confidential"
+     },
+     {
+      "Key": "exposure",
+      "Value": "internal"
      }
     ]
    },

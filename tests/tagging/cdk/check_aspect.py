@@ -16,7 +16,7 @@ app = cdk.App()
 
 tagged = cdk.Stack(app, "Tagged")
 s3.Bucket(tagged, "Assets")
-for k, v in {"owner": "team-platform", "project": "fixture", "environment": "dev", "data-class": "internal"}.items():
+for k, v in {"owner": "team-platform", "project": "fixture", "environment": "dev", "data-class": "internal", "exposure": "internal"}.items():
     cdk.Tags.of(tagged).add(k, v)
 RequiredTagsAspect.apply(tagged)
 
@@ -31,9 +31,10 @@ errors = [f"{e.id}: {e.entry.data}" for e in Annotations.from_stack(untagged).fi
 want = [
     '/Untagged/Assets/Resource: missing required tag "project"',
     '/Untagged/Assets/Resource: missing required tag "data-class"',
+    '/Untagged/Assets/Resource: missing required tag "exposure"',
     '/Untagged/Assets/Resource: tag "environment" is "production", expected one of dev, staging, prod, shared',
 ]
 if sorted(errors) != sorted(want):
     print("unexpected annotations:\n" + "\n".join(errors))
     sys.exit(1)
-print("cdk aspect: tagged stack clean, untagged stack has 3 errors")
+print("cdk aspect: tagged stack clean, untagged stack has 4 errors")

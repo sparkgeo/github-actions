@@ -2,7 +2,7 @@
 """Asset inventory from OpenTofu plan JSON or CDK synth templates (issue #115).
 
 Usage: inventory.py --stack tofu|cdk --input DIR --repo OWNER/NAME --output inventory.json
-                    [--required-tags owner,project,environment,data-class] [--account ID]
+                    [--required-tags owner,project,environment,data-class,exposure] [--account ID]
                     [--dot FILE] [--svg FILE] [--mermaid FILE] [--mermaid-max-nodes 60]
                     [--diff-base inventory.json] [--report report.md] [--now ISO8601]
 
@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 TITLE = "asset-inventory"
-DEFAULT_REQUIRED = "owner,project,environment,data-class"
+DEFAULT_REQUIRED = "owner,project,environment,data-class,exposure"
 TOFU_TAG_ATTRS = ("tags_all", "tags", "effective_labels", "labels")
 CFN_TAGGABLE = {
     "AWS::S3::Bucket", "AWS::IAM::Role", "AWS::IAM::User", "AWS::SNS::Topic", "AWS::SQS::Queue",

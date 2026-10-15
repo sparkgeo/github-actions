@@ -280,6 +280,9 @@ jobs:
       - name: Roll-up fixtures
         run: tests/asset-register/run.sh
 
+      - name: EASM reconcile fixtures
+        run: tests/easm/run.sh
+
       - id: register
         uses: ./.github/actions/asset-register
         with:

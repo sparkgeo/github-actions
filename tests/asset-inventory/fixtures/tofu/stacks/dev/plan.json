@@ -18,13 +18,15 @@
        "owner": "team-data",
        "project": "prescient",
        "environment": "dev",
-       "data-class": "internal"
+       "data-class": "internal",
+       "exposure": "internal"
       },
       "effective_labels": {
        "owner": "team-data",
        "project": "prescient",
        "environment": "dev",
-       "data-class": "internal"
+       "data-class": "internal",
+       "exposure": "internal"
       }
      }
     }

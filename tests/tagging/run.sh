@@ -38,14 +38,14 @@ tfl aws aws-pass
 [ "${rc}" -eq 0 ] || fail "tflint aws-pass rc ${rc}: $(cat "${TMP}/tflint.log")"
 tfl aws aws-fail
 [ "${rc}" -eq 2 ] || fail "tflint aws-fail rc ${rc}: $(cat "${TMP}/tflint.log")"
-grep -qE 'main.tf:[0-9]+:[0-9]+: Notice - The resource is missing the following tags: "data-class", "environment", "project". \(aws_resource_missing_tags\)' "${TMP}/tflint.log" || fail "tflint aws-fail message: $(cat "${TMP}/tflint.log")"
+grep -qE 'main.tf:[0-9]+:[0-9]+: Notice - The resource is missing the following tags: "data-class", "environment", "exposure", "project". \(aws_resource_missing_tags\)' "${TMP}/tflint.log" || fail "tflint aws-fail message: $(cat "${TMP}/tflint.log")"
 
 echo "== tflint: azurerm ruleset"
 tfl azurerm azurerm-pass
 [ "${rc}" -eq 0 ] || fail "tflint azurerm-pass rc ${rc}: $(cat "${TMP}/tflint.log")"
 tfl azurerm azurerm-fail
 [ "${rc}" -eq 2 ] || fail "tflint azurerm-fail rc ${rc}: $(cat "${TMP}/tflint.log")"
-grep -q 'missing the following tags: "data-class", "environment", "project"' "${TMP}/tflint.log" || fail "tflint azurerm-fail message: $(cat "${TMP}/tflint.log")"
+grep -q 'missing the following tags: "data-class", "environment", "exposure", "project"' "${TMP}/tflint.log" || fail "tflint azurerm-fail message: $(cat "${TMP}/tflint.log")"
 
 echo "== checkov: SPK_TAG_1 (aws default_tags) and SPK_TAG_2 (google default_labels)"
 ckv() {  # <fixture> <check>; prints "RESULT resource"
@@ -68,11 +68,13 @@ cft "${FIX}/manifests/untagged/resources.yaml" -d "${TAGS}/standard.yml" > "${TM
 cat > "${TMP}/want" <<'WANT'
 Deployment/web: missing required label "data-class"
 Deployment/web: missing required label "environment"
+Deployment/web: missing required label "exposure"
 Deployment/web: missing required label "owner"
 Deployment/web: missing required label "project"
 Namespace/fixture: label environment="production" is not one of dev, staging, prod, shared
 Namespace/fixture: label owner="bob" does not match ^(team-[a-z0-9-]+|[a-z.]+_at_sparkgeo\.com)$
 Namespace/fixture: label project="Fixture_App" does not match ^[a-z0-9-]{3,40}$
+Namespace/fixture: missing required label "exposure"
 WANT
 diff -u "${TMP}/want" "${TMP}/msgs" || fail "untagged manifest: unexpected deny set"
 cft "${FIX}/manifests/tagged/resources.yaml" -d "${TAGS}/standard.yml" > "${TMP}/msgs"

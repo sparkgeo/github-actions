@@ -16,6 +16,7 @@ provider "aws" {
       project     = "fixture"
       environment = "dev"
       data-class  = "internal"
+      exposure    = "internal"
     }
   }
 }

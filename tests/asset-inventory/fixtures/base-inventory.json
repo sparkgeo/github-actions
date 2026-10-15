@@ -6,7 +6,8 @@
   "owner",
   "project",
   "environment",
-  "data-class"
+  "data-class",
+  "exposure"
  ],
  "counts": {
   "resources": 3,
@@ -25,7 +26,8 @@
     "owner": "team-old",
     "project": "prescient",
     "environment": "prod",
-    "data-class": "confidential"
+    "data-class": "confidential",
+    "exposure": "internal"
    },
    "tag_violations": [],
    "source": {
@@ -45,7 +47,8 @@
     "owner": "team-platform",
     "project": "prescient",
     "environment": "prod",
-    "data-class": "confidential"
+    "data-class": "confidential",
+    "exposure": "internal"
    },
    "tag_violations": [],
    "source": {
@@ -66,7 +69,8 @@
     "owner",
     "project",
     "environment",
-    "data-class"
+    "data-class",
+    "exposure"
    ],
    "source": {
     "repo": "sparkgeo/prescient-infra",

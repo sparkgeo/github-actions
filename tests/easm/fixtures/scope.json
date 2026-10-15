@@ -1,0 +1,6 @@
+{"domains": [{"domain": "example.com", "owner": "team-platform", "authorisation": "owned"},
+             {"domain": "client.example", "owner": "team-geo", "authorisation": "TICKET-42 client written authorisation 2026-09-01"}],
+ "cidrs": [],
+ "known_hosts": [{"host": "www.example.com", "owner": "team-platform"},
+                 {"host": "old.example.com", "owner": "team-platform"}],
+ "exclude": ["donotscan.example.com"]}

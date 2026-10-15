@@ -1,8 +1,8 @@
-# Sparkgeo tagging standard (policies/tags/standard.yml): AWS provider declares default_tags with owner, project, environment and data-class
+# Sparkgeo tagging standard (policies/tags/standard.yml): AWS provider declares default_tags with owner, project, environment, data-class and exposure
 # Load with: checkov --external-checks-dir policies/tags/checkov
 metadata:
   id: "SPK_TAG_1"
-  name: "AWS provider declares default_tags with owner, project, environment and data-class"
+  name: "AWS provider declares default_tags with owner, project, environment, data-class and exposure"
   category: "GENERAL_SECURITY"
   guideline: "https://github.com/sparkgeo/github-actions/blob/main/docs/tagging-standard.md"
 definition:
@@ -26,4 +26,9 @@ definition:
       resource_types:
         - "provider.aws"
       attribute: "default_tags.tags.data-class"
+      operator: exists
+    - cond_type: attribute
+      resource_types:
+        - "provider.aws"
+      attribute: "default_tags.tags.exposure"
       operator: exists

@@ -21,6 +21,7 @@ REQUIRED = {
     "project": {"pattern": r"^[a-z0-9-]{3,40}$"},
     "environment": {"enum": ["dev", "staging", "prod", "shared"]},
     "data-class": {"enum": ["public", "internal", "confidential", "restricted"]},
+    "exposure": {"enum": ["public", "internal"]},
 }
 
 

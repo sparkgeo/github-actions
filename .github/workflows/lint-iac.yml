@@ -21,7 +21,7 @@ on:
         default: 'error'
         type: string
       require-tags:
-        description: 'Also enforce the Sparkgeo tagging standard (owner, project, environment, data-class) with the bundled tflint config'
+        description: 'Also enforce the Sparkgeo tagging standard (owner, project, environment, data-class, exposure) with the bundled tflint config'
         default: true
         type: boolean
       tags-provider:

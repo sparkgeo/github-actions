@@ -1,0 +1,4 @@
+{"domains": [{"domain": "example.com", "owner": "team-platform"},
+             {"domain": "not a host", "owner": "x", "authorisation": "owned"}],
+ "cidrs": [{"cidr": "203.0.113.0/24"}],
+ "known_hosts": [{"host": "www.example.com"}, {"host": "www.other.test", "owner": "team-x"}]}
