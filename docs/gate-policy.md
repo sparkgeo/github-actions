@@ -57,7 +57,13 @@ gate (osv-scanner today; grype and trivy when added) hand their findings file to
 the shared `severity-gate` composite, which emits one annotation per affected
 package, exposes `max-score` and `max-severity` outputs, and applies the table
 above. Its script is `.github/actions/severity-gate/gate.sh`; its tests are
-`tests/severity-gate/run.sh`, run in CI.
+`tests/severity-gate/run.sh` and `tests/osv-scanner/run.sh` (recorded
+osv-scanner 2.4.0 output), run in CI.
+
+One exception to the severity table: an OpenSSF malicious-package advisory
+(`MAL-*` in osv-json) has no CVSS score, so no threshold would ever block it.
+With `fail-on-malicious: true` (the default) the gate fails on any such
+advisory whatever `fail-on-severity` says; an empty `max_severity` reads as 0.
 
 | Workflow / composite | Native gate | How the vocabulary is applied |
 |---|---|---|

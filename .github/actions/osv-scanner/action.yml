@@ -7,7 +7,8 @@ description: |
   Installs a pinned, checksum-verified osv-scanner binary directly. Produces
   SARIF (optionally uploaded to the Security tab) and emits each finding as a
   job-level annotation. The step fails when any vulnerability's CVSS score is at
-  or above the fail-on-severity threshold.
+  or above the fail-on-severity threshold, and on any OpenSSF malicious-package
+  advisory (MAL-*), which carries no CVSS score (fail-on-malicious).
 
   Required permissions on calling job: contents: read (plus security-events:
   write when sarif-upload is true).
@@ -21,6 +22,9 @@ inputs:
   fail-on-severity:
     description: "Lowest severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md)."
     default: "critical"
+  fail-on-malicious:
+    description: "Fail on any MAL-* (OpenSSF malicious-packages) advisory regardless of fail-on-severity."
+    default: "true"
   sarif-upload:
     description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
     default: "true"
@@ -90,6 +94,7 @@ runs:
         FINDINGS_FILE: ${{ steps.scan.outputs.json }}
         FORMAT: osv-json
         FAIL_ON: ${{ inputs.fail-on-severity }}
+        FAIL_ON_MALICIOUS: ${{ inputs.fail-on-malicious }}
       # Shared gate (docs/gate-policy.md). Referenced by path rather than
       # `uses:` so it resolves wherever this repo is checked out.
       run: bash "${{ github.action_path }}/../severity-gate/gate.sh"

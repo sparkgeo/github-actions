@@ -96,6 +96,9 @@ jobs:
         shell: bash
         run: bash tests/severity-gate/run.sh
 
+      - name: osv-scanner fixtures (recorded osv-scanner 2.4.0 output)
+        run: tests/osv-scanner/run.sh
+
   # Validate Helm/Kustomize with kubeconform. This repo has no charts/, so this
   # is a smoke test that the composite installs and runs (exits 0, nothing to
   # validate).
@@ -128,6 +131,7 @@ jobs:
     uses: ./.github/workflows/lint-app.yml
     with:
       default-branch: main
+      flavor: documentation  # covers ACTION, BASH, JSON, MARKDOWN, YAML; ~1/3 of the full image
 
   # Run this repo's own .pre-commit-config.yaml hooks via the composite.
   pre-commit:
@@ -257,9 +261,6 @@ jobs:
         with:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
-          # MegaLinter is AGPL-3.0. It runs inside CI and is not redistributed,
-          # so the copyleft terms do not apply; exempt it from the licence gate.
-          allow-dependencies-licenses: pkg:githubactions/oxsecurity/megalinter
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
