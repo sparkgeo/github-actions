@@ -118,8 +118,10 @@ runs:
         TIER: ${{ inputs.tier }}
       run: |
         set -euo pipefail
-        # pinned (the brief installs @latest); bumps go through Renovate
-        export GOBIN="${RUNNER_TEMP}/verify-go-bin"
+        # pinned (the brief installs @latest); bumps go through Renovate.
+        # GOTOOLCHAIN=auto: the tools may need a newer Go than the project's
+        # go.mod line, which setup-go installs with GOTOOLCHAIN=local
+        export GOBIN="${RUNNER_TEMP}/verify-go-bin" GOTOOLCHAIN=auto
         go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
         go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260918162853-acb8859b9031
         go install github.com/kisielk/errcheck@v1.30.0

@@ -306,6 +306,9 @@ jobs:
         with:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
+          # rapid (MPL-2.0) is a test-only dependency of docs/examples/verify/go,
+          # never shipped; exempt by purl per docs/license-policy.md
+          allow-dependencies-licenses: pkg:golang/pgregory.net/rapid
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
