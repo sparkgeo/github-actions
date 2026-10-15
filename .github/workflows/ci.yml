@@ -258,3 +258,62 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/storage-optimizer
+
+  # Supplier SBOM intake (issue #233): sbom.py and upload.sh against a stub
+  # Dependency-Track, then the composite on the SPDX fixture (converted with
+  # syft) and on an archive holding a zlib 1.2.11 signature, which
+  # cve-bin-tool must list. Audit egress: github.com, PyPI.
+  supplier-sbom:
+    name: Supplier SBOM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: spdx
+        uses: ./.github/actions/supplier-sbom
+        with:
+          supplier: acme-geo-sdk
+          version: 4.2.0
+          sbom-path: tests/supplier-sbom/fixtures/vendor.spdx.json
+          output-dir: ${{ runner.temp }}/spdx
+
+      - name: Script checks
+        run: tests/supplier-sbom/run.sh "${RUNNER_TEMP}/supplier-venv/bin"
+
+      # A stand-in for a vendor archive: a file carrying zlib 1.2.11's version
+      # strings, which cve-bin-tool's zlib checker recognises.
+      - name: Build the fixture archive
+        run: |
+          mkdir -p "${RUNNER_TEMP}/acme-sdk/lib"
+          printf '\177ELF\002\001\001\000 deflate 1.2.11 Copyright 1995-2017 Jean-loup Gailly and Mark Adler \000 inflate 1.2.11 Copyright 1995-2017 Mark Adler \000' \
+            > "${RUNNER_TEMP}/acme-sdk/lib/libz.so.1"
+          tar -czf "${RUNNER_TEMP}/acme-sdk.tar.gz" -C "${RUNNER_TEMP}" acme-sdk
+
+      - id: binary
+        uses: ./.github/actions/supplier-sbom
+        with:
+          supplier: acme-geo-sdk
+          version: 4.2.0
+          artefact-path: ${{ runner.temp }}/acme-sdk.tar.gz
+          output-dir: ${{ runner.temp }}/binary
+
+      - name: Assert both SBOMs
+        env:
+          SPDX_COUNT: ${{ steps.spdx.outputs.component-count }}
+          BINARY_SBOM: ${{ steps.binary.outputs.sbom }}
+        run: |
+          set -euo pipefail
+          [ "${SPDX_COUNT}" = "3" ] || { echo "::error title=supplier-sbom::expected 3 components from the SPDX fixture, got ${SPDX_COUNT}"; exit 1; }
+          jq -e '.components | any(.name == "zlib" and .version == "1.2.11")' "${BINARY_SBOM}" > /dev/null \
+            || { echo "::error title=supplier-sbom::cve-bin-tool did not list zlib 1.2.11"; exit 1; }
+          jq -e '.metadata.properties | any(.name == "sparkgeo:sbom-origin" and .value == "generated-from-binary")' "${BINARY_SBOM}" > /dev/null \
+            || { echo "::error title=supplier-sbom::generated SBOM is not marked as ours"; exit 1; }

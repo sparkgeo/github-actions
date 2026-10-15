@@ -1,0 +1,16 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "vulnerabilities": [
+    {
+      "id": "CVE-2023-37920",
+      "analysis": {
+        "state": "not_affected",
+        "justification": "protected_by_mitigating_control",
+        "detail": "Fixture: the vendor states the SDK ships its own CA bundle."
+      },
+      "affects": [{"ref": "pkg:pypi/certifi@2022.12.7"}]
+    }
+  ]
+}
