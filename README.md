@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| Pipeline and Platform Posture | [`pipeline-posture.yml`](.github/workflows/pipeline-posture.yml) | `workflow_call` | Reusable weekly poutine scan of pipeline definitions (this repository or the whole org), optional Legitify scan of platform settings (off by default, unmaintained); SARIF to the Security tab; report-only by default (#234) |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Pipeline Posture | [`pipeline-posture`](.github/actions/pipeline-posture/action.yml) | Installs checksum-verified poutine (and Legitify when enabled) from release binaries; `poutine analyze_local` or `analyze_org`; per-rule job summary naming the zizmor audit that covers the same flaw; SARIF under the categories `poutine` and `legitify` | `scope` (default: `repo`), `fail-on` (default: `none`), `run-legitify` (default: `false`), `token` (default: `""`), `poutine-version` (default: `v1.1.6`), `legitify-version` (default: `v1.0.11`), `sarif-upload` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,37 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Pipeline and Platform Posture (poutine, Legitify)
+
+`zizmor` and `actionlint` lint the workflow files in a pull request. poutine reads pipeline definitions as a whole: it follows untrusted input into a shell, flags privileged jobs that check out and run PR code, self-hosted runners reachable from forks, and actions that cannot be pinned. It covers GitHub Actions, GitLab CI, Azure Pipelines and Tekton. Legitify reads the platform settings around the files (SecOps plan Step 35 Standard).
+
+```yaml
+# .github/workflows/posture.yml in the org's .github repository
+on:
+  schedule:
+    - cron: '0 5 * * 1'  # weekly
+  workflow_dispatch:
+
+jobs:
+  posture:
+    permissions:
+      contents: read
+      security-events: write
+    uses: sparkgeo/github-actions/.github/workflows/pipeline-posture.yml@<SHA>
+    with:
+      scope: org            # or repo
+      fail-on: none         # findings go to the Step 25 queue; error|warning|note to gate
+      actions-ref: <SHA>    # same SHA as above
+    secrets:
+      POSTURE_TOKEN: ${{ secrets.POSTURE_TOKEN }}
+```
+
+`POSTURE_TOKEN` is needed only for `scope: org` and for Legitify. Use a read-only token with `read:org` and `repo` scope; a GitHub App installation token with read access to metadata, contents, administration and members is preferred. The job summary counts poutine findings by rule and names the zizmor audit that already blocks the same flaw at PR time (for example `injection` and `template-injection`), so the weekly finding is not ticketed twice.
+
+Legitify is behind `run-legitify: false`. Its last release is v1.0.11 (July 2024) and it has had no commit since September 2024, which fails the plan's own abandonware rule (Step 3). OpenSSF Allstar (#34) and the org ruleset checks (#84) are the maintained route for the settings it covers. Revisit if Legitify resumes or a maintained fork appears.
+
+`tests/poutine/fixtures/repo` holds a workflow with a PR-title injection and a `pull_request_target` job that checks out the PR head. `tests/poutine/run.sh` asserts poutine reports both and checks the summary and `fail-on` logic. The `pipeline-posture` CI job also runs the composite on this repository.
 
 ## Consuming repo CI setup
 

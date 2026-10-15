@@ -1,0 +1,22 @@
+# Fixture for tests/poutine (issue #234); never runs: it lives outside this
+# repository's .github/workflows. Two deliberate flaws poutine must report:
+# an expression injection of the PR title into a shell, and a
+# pull_request_target job that checks out and builds the PR head. The zizmor
+# ignores keep this repository's own zizmor gate green; poutine ignores them.
+name: Vulnerable fixture
+
+on:  # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:  # zizmor: ignore[artipacked]
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: echo "Building ${{ github.event.pull_request.title }}"  # zizmor: ignore[template-injection]
+      - run: npm install && npm test

@@ -1,0 +1,90 @@
+name: Pipeline and Platform Posture
+
+# Reusable weekly posture scan (SecOps plan Step 35 Standard; issue #234):
+# poutine over the pipeline definitions of this repository (scope: repo) or
+# every repository in the organisation (scope: org), and optionally Legitify
+# over the platform settings. SARIF to code scanning under poutine and
+# legitify; report-only by default because findings go to the Step 25 queue.
+# Meant for `on: schedule` weekly in the org's .github repository.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. The hosts it reaches: github.com and
+# objects.githubusercontent.com (release binaries), api.github.com (org scope
+# and Legitify).
+
+on:
+  workflow_call:
+    inputs:
+      scope:
+        description: 'repo (this repository) or org (every repository in the org; needs POSTURE_TOKEN)'
+        default: 'repo'
+        type: string
+      run-legitify:
+        description: 'Also run Legitify (needs POSTURE_TOKEN); unmaintained since 2024, see README'
+        default: false
+        type: boolean
+      fail-on:
+        description: 'Fail on poutine findings at or above: error|warning|note|none'
+        default: 'none'
+        type: string
+      poutine-version:
+        description: 'poutine release'
+        default: 'v1.1.6'
+        type: string
+      sarif-upload:
+        description: 'Upload SARIF to the GitHub Security tab'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the
+          pipeline-posture composite from. Pin this to the SAME SHA you pinned
+          pipeline-posture.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    secrets:
+      POSTURE_TOKEN:
+        description: 'Read-only token with read:org and repo scope (GitHub App installation token preferred); poutine org scope and Legitify'
+        required: false
+    outputs:
+      error-count:
+        description: 'poutine findings at level error'
+        value: ${{ jobs.posture.outputs.error-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always) and adds
+# `security-events: write` only when it wants SARIF upload. See README.
+
+jobs:
+  posture:
+    name: Pipeline posture
+    runs-on: ubuntu-latest
+    outputs:
+      error-count: ${{ steps.scan.outputs.error-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout pipeline-posture composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: scan
+        uses: ./.sparkgeo-github-actions/.github/actions/pipeline-posture
+        with:
+          scope: ${{ inputs.scope }}
+          fail-on: ${{ inputs.fail-on }}
+          run-legitify: ${{ inputs.run-legitify }}
+          token: ${{ secrets.POSTURE_TOKEN }}
+          poutine-version: ${{ inputs.poutine-version }}
+          sarif-upload: ${{ inputs.sarif-upload }}

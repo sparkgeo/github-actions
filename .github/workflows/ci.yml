@@ -258,3 +258,30 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/storage-optimizer
+
+  # Pipeline posture (issue #234): dogfood the composite on this repository
+  # (scope repo, report-only, no upload), then the installed poutine on the
+  # fixture repository, which must report the injection and the
+  # pull_request_target head checkout. Audit egress: github.com release assets.
+  pipeline-posture:
+    name: Pipeline posture
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: posture
+        uses: ./.github/actions/pipeline-posture
+        with:
+          sarif-upload: "false"
+
+      - name: Fixture repository
+        run: tests/poutine/run.sh "${RUNNER_TEMP}/poutine"
