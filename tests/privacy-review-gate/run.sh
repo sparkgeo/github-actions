@@ -48,7 +48,9 @@ run miss pr-missing.json reviews-nonmember.json changed-models.txt --members mem
 rm -f "${FIX}/pr-missing.json" "${FIX}/reviews-nonmember.json"
 [ "${rc}" -eq 1 ] || fail "missing must fail"
 [ "$(j miss '.missing | length')" = "3" ] || fail "three missing: $(jq -c .missing "${TMP}/miss.json")"
+# shellcheck disable=SC2016  # the backticks are literal markdown, not command substitutions
 grep -q '^::error title=privacy-review::privacy review incomplete: label `privacy-review`; an approving review on the current head from a member of `sparkgeo/privacy`; a PIA link in the PR body matching `docs/pia/`' "${TMP}/miss.log" || fail "error line: $(grep '::error' "${TMP}/miss.log")"
+# shellcheck disable=SC2016  # the backticks are literal markdown, not command substitutions
 grep -q 'Fill in `docs/pia-template.md`' "${TMP}/miss.summary" || fail "template pointer"
 
 echo "== stale approval (earlier commit) and revoked approval (changes requested later) do not count"
@@ -74,6 +76,7 @@ run same pr-plain.json reviews-approved.json changed-plain.txt --members members
 
 echo "== custom paths and pattern"
 run custom pr-complete.json reviews-approved.json changed-plain.txt --members members.json --privacy-paths 'docs/**' --pia-link-pattern 'https://tracker.example/pia/'
+# shellcheck disable=SC2016  # the backticks are literal markdown, not command substitutions
 { [ "${rc}" -eq 1 ] && grep -q 'a PIA link in the PR body matching `https://tracker.example/pia/`' "${TMP}/custom.log"; } || fail "custom pattern"
 
 echo "all privacy-review-gate checks passed"
