@@ -1,0 +1,29 @@
+{
+  "scan_path_responses": [
+    {
+      "client": ".mcp.json",
+      "path": ".mcp.json",
+      "server_risks": [
+        {
+          "name": "fixture-stdio",
+          "entities": [{"name": "echo", "type": "tool"}],
+          "risk_indexes": {
+            "prompt_injection_tool_desc": {"score": 450, "evidence": "tool description asks the model to read ~/.ssh"},
+            "private_data": {"score": 120, "evidence": "reads files"}
+          },
+          "error": null
+        }
+      ],
+      "skill_risks": [
+        {
+          "name": "deploy",
+          "risk_indexes": {
+            "secret_detection": {"score": 700, "evidence": "AKIA... in SKILL.md"}
+          },
+          "error": null
+        }
+      ],
+      "error": null
+    }
+  ]
+}

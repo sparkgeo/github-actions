@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "fixture-stdio": {"command": "python3", "args": ["-I", "../server.py", "stdio"]},
+    "fixture-remote": {"url": "http://127.0.0.1:8765/mcp", "type": "http"}
+  }
+}

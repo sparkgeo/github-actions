@@ -1,0 +1,5 @@
+{
+  "description": "Reviewed MCP servers and skills (SecOps plan Step 26, issue #103). A repository's MCP configuration may declare only servers listed here, at the pinned command line or URL and version, with the tool-description hash recorded in its .mcp-scan.lock. Skills and plugin manifests are matched by path. Add an entry in the PR that reviewed the server; update the hash in the same PR as the lock when descriptions change. See docs/mcp-scan.md.",
+  "servers": [],
+  "skills": []
+}
