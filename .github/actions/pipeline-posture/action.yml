@@ -1,0 +1,158 @@
+name: "pipeline-posture"
+description: |
+  Pipeline and platform posture scan (SecOps plan Step 35 Standard; issue
+  #234). poutine (boostsecurityio/poutine, Apache-2.0) reads pipeline
+  definitions (GitHub Actions, GitLab CI, Azure Pipelines, Tekton) and flags
+  untrusted input reaching a shell, privileged jobs that run PR code,
+  self-hosted runners exposed to forks and unpinnable actions. Legitify
+  (Legit-Labs/legitify, Apache-2.0), when enabled, reads the platform
+  settings around the files: branch protection, default token permissions,
+  stale admins, forking, Actions allow lists.
+
+  Both install from their release binaries, checked against the release's
+  published SHA-256 list (shell, no third-party action). SARIF goes to code
+  scanning under the categories poutine and legitify; the job summary counts
+  poutine findings by rule and names the zizmor audit that already catches
+  the same flaw at PR time.
+
+  Legitify has had no release since v1.0.11 (July 2024) and no commit since
+  September 2024, which fails the plan's own abandonware rule; it is off by
+  default. OpenSSF Allstar (#34) and the org ruleset checks (#84) are the
+  maintained route for the settings it covers.
+
+  Required permissions on the calling job: contents: read, plus
+  security-events: write when sarif-upload is true.
+inputs:
+  scope:
+    description: "repo (the checked-out repository) or org (every repository in the owner organisation; needs token)."
+    default: "repo"
+  fail-on:
+    description: "Fail on poutine findings at or above: error, warning, note, or none (report only)."
+    default: "none"
+  run-legitify:
+    description: "Also run Legitify (needs token)."
+    default: "false"
+  token:
+    description: "Read-only token with read:org and repo scope (a GitHub App installation token is preferred). Used by poutine for scope org and by Legitify."
+    default: ""
+  poutine-version:
+    description: "poutine release (with the leading v)."
+    default: "v1.1.6"
+  legitify-version:
+    description: "Legitify release (with the leading v)."
+    default: "v1.0.11"
+  sarif-upload:
+    description: "Upload SARIF to the Security tab."
+    default: "true"
+outputs:
+  error-count:
+    description: "poutine findings at level error."
+    value: ${{ steps.summary.outputs.error-count }}
+  warning-count:
+    description: "poutine findings at level warning."
+    value: ${{ steps.summary.outputs.warning-count }}
+  note-count:
+    description: "poutine findings at level note."
+    value: ${{ steps.summary.outputs.note-count }}
+  sarif:
+    description: "Path of the poutine SARIF file."
+    value: ${{ steps.poutine.outputs.sarif }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install poutine
+      shell: bash
+      env:
+        VERSION: ${{ inputs.poutine-version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/boostsecurityio/poutine/releases/download/${VERSION}"
+        TARBALL="poutine_Linux_x86_64.tar.gz"
+        curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/poutine_${VERSION#v}_checksums.txt"
+        ( cd "${TMP}" && grep " ${TARBALL}\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${TMP}/${TARBALL}" -C "${TMP}" poutine
+        # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
+        install "${TMP}/poutine" "${RUNNER_TEMP}/poutine"
+
+    - name: Run poutine
+      id: poutine
+      shell: bash
+      env:
+        SCOPE: ${{ inputs.scope }}
+        ORG: ${{ github.repository_owner }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/poutine.sarif"
+        case "${SCOPE}" in
+          repo) "${RUNNER_TEMP}/poutine" analyze_local . --format sarif --quiet --disable-version-check > "${OUT}" ;;
+          org)
+            [ -n "${GH_TOKEN}" ] || { echo "::error title=pipeline-posture::scope org needs the token input"; exit 1; }
+            "${RUNNER_TEMP}/poutine" analyze_org "${ORG}" --format sarif --quiet --disable-version-check > "${OUT}" ;;
+          *) echo "::error title=pipeline-posture::scope must be repo or org"; exit 1 ;;
+        esac
+        echo "sarif=${OUT}" >> "${GITHUB_OUTPUT}"
+
+    - name: Summarise poutine findings
+      id: summary
+      shell: bash
+      env:
+        SARIF: ${{ steps.poutine.outputs.sarif }}
+      run: bash "${GITHUB_ACTION_PATH}/summary.sh" "${SARIF}" none >> "${GITHUB_OUTPUT}"
+
+    - name: Upload poutine SARIF
+      if: inputs.sarif-upload == 'true'
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.poutine.outputs.sarif }}
+        category: poutine
+      continue-on-error: true
+
+    - name: Run Legitify
+      id: legitify
+      if: inputs.run-legitify == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.legitify-version }}
+        SCOPE: ${{ inputs.scope }}
+        ORG: ${{ github.repository_owner }}
+        REPO: ${{ github.repository }}
+        SCM_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        [ -n "${SCM_TOKEN}" ] || { echo "::error title=pipeline-posture::run-legitify needs the token input"; exit 1; }
+        echo "::warning title=pipeline-posture::Legitify ${VERSION} is unmaintained (no release since July 2024); prefer Allstar (#34) and the org ruleset checks (#84)"
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/Legit-Labs/legitify/releases/download/${VERSION}"
+        TARBALL="legitify_${VERSION#v}_linux_amd64.tar.gz"
+        curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
+        curl -sSfL -o "${TMP}/SHA256SUMS" "${BASE}/legitify_${VERSION#v}_SHA256SUMS"
+        ( cd "${TMP}" && grep " ${TARBALL}\$" SHA256SUMS | sha256sum -c - )
+        tar -xzf "${TMP}/${TARBALL}" -C "${TMP}" legitify
+        OUT="${RUNNER_TEMP}/legitify.sarif"
+        if [ "${SCOPE}" = "org" ]; then TARGET=(--org "${ORG}"); else TARGET=(--repo "${REPO}"); fi
+        "${TMP}/legitify" analyze "${TARGET[@]}" --failed-only --output-format sarif --output-file "${OUT}" \
+          --error-file "${RUNNER_TEMP}/legitify-error.log" --permissions-file "${RUNNER_TEMP}/legitify-permissions.json"
+        echo "sarif=${OUT}" >> "${GITHUB_OUTPUT}"
+        { echo "### Legitify (${SCOPE})"; echo; jq -r '"\([.runs[].results[]] | length) failed policies"' "${OUT}"; } >> "${GITHUB_STEP_SUMMARY}"
+
+    - name: Upload Legitify SARIF
+      if: inputs.run-legitify == 'true' && inputs.sarif-upload == 'true'
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.legitify.outputs.sarif }}
+        category: legitify
+      continue-on-error: true
+
+    - name: Apply fail-on
+      if: inputs.fail-on != 'none'
+      shell: bash
+      env:
+        SARIF: ${{ steps.poutine.outputs.sarif }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        set -euo pipefail
+        GITHUB_STEP_SUMMARY=/dev/null bash "${GITHUB_ACTION_PATH}/summary.sh" "${SARIF}" "${FAIL_ON}" > /dev/null \
+          || { echo "::error title=pipeline-posture::poutine findings at or above ${FAIL_ON}; see the job summary and the Security tab"; exit 1; }
