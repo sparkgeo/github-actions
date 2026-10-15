@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| Sigma Lint | [`sigma-lint.yml`](.github/workflows/sigma-lint.yml) | `workflow_call` | Reusable gate for detection as code: `sigma check` on the rules, one test case per rule (technique, source, expect), conversion to the SIEM backend (splunk, elasticsearch, opensearch, kusto, secops, ...), converted queries uploaded as `sigma-<backend>` on the default branch (#177) |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Sigma Lint | [`sigma-lint`](.github/actions/sigma-lint/action.yml) | Installs sigma-cli and the backend plugin into a virtualenv, runs `sigma check`, checks the per-rule test cases, converts every rule on its own and lists conversion failures, rules without a test case, rules per logsource product and stale rules in the job summary | `rules-dir` (default: `detections/rules`), `tests-dir` (default: `detections/tests`), `backend` (default: `none`), `backend-package`, `pipeline`, `require-test-case` (default: `true`), `output-dir`, `stale-days` (default: `365`), `sigma-cli-version` (default: `3.1.0`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,22 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Sigma Lint (detection as code)
+
+SecOps plan Step 9 Standard and Step 40 (issue #177): detection rules are kept as Sigma in git, validated in CI, converted to the SIEM on merge, each with a test case that must fire under emulation. The gate runs `sigma check`, requires `detections/tests/<rule id>.yml` with `technique`, `source` (`atomic:`, `stratus:` or `manual`) and `expect`, converts every rule to the backend's query language, and on the default branch uploads the converted queries as the artefact `sigma-<backend>` for the SIEM push job. Test-case schema, backends and the hand-off: [`docs/sigma.md`](docs/sigma.md).
+
+```yaml
+jobs:
+  sigma-lint:
+    permissions:
+      contents: read
+    uses: sparkgeo/github-actions/.github/workflows/sigma-lint.yml@<SHA>
+    with:
+      actions-ref: <SHA>   # same SHA as above
+      backend: splunk
+      backend-package: pysigma-backend-splunk==2.1.0
+```
 
 ## Consuming repo CI setup
 

@@ -1,0 +1,2 @@
+# v8r (MegaLinter) must not pick a schema for the Sigma lint fixtures: one rule is deliberately invalid.
+tests/sigma-lint/fixtures/

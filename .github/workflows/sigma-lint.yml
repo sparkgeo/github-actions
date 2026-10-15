@@ -1,0 +1,103 @@
+name: Sigma Lint
+
+# Reusable PR gate (issue #177, plan Steps 9 and 40): detection rules live as
+# Sigma in git, are checked for syntax, need a test case each (the emulation
+# that must fire them, docs/sigma.md), and are converted to the SIEM's query
+# language. On a PR the conversion is a dry run; on the default branch the
+# converted queries are uploaded as the artefact sigma-<backend> for the
+# consuming repository's SIEM push job.
+#
+# Shell steps and this repository's composite only (org allowlist rule).
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com (checkout) and PyPI.
+
+on:
+  workflow_call:
+    inputs:
+      rules-dir:
+        description: 'Directory of Sigma rule YAML files'
+        default: 'detections/rules'
+        type: string
+      tests-dir:
+        description: 'Directory of per-rule test cases'
+        default: 'detections/tests'
+        type: string
+      backend:
+        description: 'pySigma backend: splunk, elasticsearch, opensearch, kusto (Sentinel), secops (Chronicle), loki, ... or none'
+        default: 'none'
+        type: string
+      backend-package:
+        description: 'PyPI package==version of the backend plugin, to pin it; empty installs pysigma-backend-<backend> unpinned'
+        default: ''
+        type: string
+      pipeline:
+        description: 'Optional pySigma processing pipeline identifier or file'
+        default: ''
+        type: string
+      require-test-case:
+        description: 'Fail on a rule without a valid test case'
+        default: true
+        type: boolean
+      sigma-cli-version:
+        description: 'sigma-cli version'
+        default: '3.1.0'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned sigma-lint.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      rule-count:
+        description: 'Rules parsed'
+        value: ${{ jobs.lint.outputs.rule-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`.
+jobs:
+  lint:
+    name: Sigma lint
+    runs-on: ubuntu-latest
+    outputs:
+      rule-count: ${{ steps.lint.outputs.rule-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout sigma-lint composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: lint
+        uses: ./.sparkgeo-github-actions/.github/actions/sigma-lint
+        with:
+          rules-dir: ${{ inputs.rules-dir }}
+          tests-dir: ${{ inputs.tests-dir }}
+          backend: ${{ inputs.backend }}
+          backend-package: ${{ inputs.backend-package }}
+          pipeline: ${{ inputs.pipeline }}
+          require-test-case: ${{ inputs.require-test-case }}
+          sigma-cli-version: ${{ inputs.sigma-cli-version }}
+          output-dir: ${{ runner.temp }}/sigma-converted
+
+      # The hand-off to the SIEM: the consuming repository's push job downloads
+      # this artefact. Per-SIEM push is outside this repository.
+      - name: Upload converted queries
+        if: ${{ inputs.backend != 'none' && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sigma-${{ inputs.backend }}
+          path: ${{ runner.temp }}/sigma-converted/
+          if-no-files-found: error
