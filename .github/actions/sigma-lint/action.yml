@@ -35,6 +35,9 @@ inputs:
   stale-days:
     description: "Rules not modified for this many days are listed as stale."
     default: "365"
+  exclude-validators:
+    description: "sigma check validators to skip, comma-separated. The defaults download MITRE ATT&CK and D3FEND data from GitHub at run time; the test-case check validates technique ids offline."
+    default: "attacktag,d3_fendtag"
   sigma-cli-version:
     description: "sigma-cli version (PyPI)."
     default: "3.1.0"
@@ -85,13 +88,17 @@ runs:
         REQUIRE: ${{ inputs.require-test-case }}
         OUT_DIR: ${{ inputs.output-dir }}
         STALE: ${{ inputs.stale-days }}
+        EXCLUDE: ${{ inputs.exclude-validators }}
       run: |
         set -euo pipefail
         JUNIT="${RUNNER_TEMP}/sigma-check.xml"
+        EXCLUDES=()
+        IFS=',' read -r -a NAMES <<< "${EXCLUDE}"
+        for v in "${NAMES[@]}"; do [ -n "${v}" ] && EXCLUDES+=(-x "${v}"); done
         if [ -d "${RULES}" ]; then
           # exit 1 on rule errors is reported by check.py from the JUnit file;
           # any other failure (no JUnit written) stops the job here
-          "${ENV}/bin/sigma" check --junitxml "${JUNIT}" "${RULES}" > "${RUNNER_TEMP}/sigma-check.txt" 2>&1 || true
+          "${ENV}/bin/sigma" check "${EXCLUDES[@]}" --junitxml "${JUNIT}" "${RULES}" > "${RUNNER_TEMP}/sigma-check.txt" 2>&1 || true
           cat "${RUNNER_TEMP}/sigma-check.txt"
           [ -s "${JUNIT}" ] || { echo "::error title=sigma-lint::sigma check produced no JUnit report"; exit 1; }
         fi

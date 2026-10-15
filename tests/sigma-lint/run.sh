@@ -39,7 +39,8 @@ copy() { rm -rf "${TMP:?}/$1"; cp -r "${FIX}" "${TMP}/$1"; }
 
 echo "== sigma check on the fixtures: the broken rule is a rule error"
 set +e
-(cd "${FIX}" && "${SIGMA}" check --junitxml "${TMP}/check.xml" rules > "${TMP}/check.log" 2>&1)
+# -x attacktag -x d3_fendtag: those validators download MITRE data; the composite skips them too
+(cd "${FIX}" && "${SIGMA}" check -x attacktag -x d3_fendtag --junitxml "${TMP}/check.xml" rules > "${TMP}/check.log" 2>&1)
 check_rc=$?
 set -e
 [ "${check_rc}" -eq 1 ] || fail "sigma check should exit 1, got ${check_rc}: $(cat "${TMP}/check.log")"

@@ -32,7 +32,7 @@ Checks: `technique` matches `T####` or `T####.###`; `source` is `atomic:<36-char
 | Step | Command | Result |
 |---|---|---|
 | Install | `python3 -m venv` + `pip install sigma-cli==3.1.0 pysigma-backend-<backend>` (pin it with `backend-package`) | PyPI is the only egress |
-| Check | `sigma check --junitxml` over `rules-dir` | rule errors (parse, identifier, condition) are PR annotations and fail the job; validator issues (naming, best practice) are warnings |
+| Check | `sigma check --junitxml` over `rules-dir` | rule errors (parse, identifier, condition) are PR annotations and fail the job; validator issues (naming, best practice) are warnings. The `attacktag` and `d3_fendtag` validators are skipped (`exclude-validators`): they download MITRE ATT&CK and D3FEND data from GitHub at run time, and the test-case check validates technique ids offline |
 | Test cases | [`check.py`](../.github/actions/sigma-lint/check.py) | schema above; missing or malformed fails with `require-test-case` |
 | Convert | `sigma convert -t <backend> [-p <pipeline>] --skip-unsupported` per rule into one file each | a failed conversion is an error; on a PR this is a dry run, on the default branch the directory is uploaded as the artefact `sigma-<backend>` |
 | Summary | job summary | rule count, rules per `logsource` product, rules without a test case, conversion failures, rules whose `modified` (or `date`) is older than 365 days (`stale-days`) |
