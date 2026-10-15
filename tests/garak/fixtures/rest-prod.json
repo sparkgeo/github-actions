@@ -1,0 +1,1 @@
+{"rest": {"RestGenerator": {"uri": "https://chat.prod.example.com/v1/chat", "req_template": "$INPUT"}}}
