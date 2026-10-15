@@ -1,0 +1,55 @@
+name: Falco Rules Lint
+
+# Reusable PR gate for runtime-sensor rules (SecOps plan Step 41, issue #16).
+# Falco: custom rules are loaded after Falco's default rules with
+# `falco --validate` (no kernel driver). Tetragon: TracingPolicy files are
+# schema-checked with kubeconform and enforcement actions fail unless
+# allow-enforcement is set. Run it on PRs that touch rules-dir.
+
+on:
+  workflow_call:
+    inputs:
+      rules-dir:
+        description: 'Directory containing custom falco rules files (or Tetragon TracingPolicy files)'
+        default: '.falco'
+        type: string
+      sensor:
+        description: 'falco (default) or tetragon'
+        default: 'falco'
+        type: string
+      allow-enforcement:
+        description: 'tetragon: allow Sigkill/Override/NotifyEnforcer/Signal actions (Advanced tier only)'
+        default: false
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned this workflow to.
+        default: 'main'
+        type: string
+
+# Caller grants: contents: read.
+
+jobs:
+  lint:
+    name: Sensor rules lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/sensor-rules-lint
+        with:
+          sensor: ${{ inputs.sensor }}
+          rules-dir: ${{ inputs.rules-dir }}
+          allow-enforcement: ${{ inputs.allow-enforcement }}

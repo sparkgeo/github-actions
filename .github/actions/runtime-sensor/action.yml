@@ -1,0 +1,57 @@
+name: "Runtime Sensor"
+description: |
+  Installs or upgrades the runtime threat-detection sensor into the current
+  kubectl context (SecOps plan Step 41, issue #16): Falco (default; modern
+  eBPF driver, custom rules from rules-dir mounted next to the default rules,
+  optional falcosidekick webhook to the SIEM) or Tetragon (TracingPolicy
+  files from rules-dir applied after install). Charts are pinned by version
+  and SHA-256. Needs helm, kubectl and a kubeconfig; falco-deploy.yml
+  supplies one for EKS. Lint the rules first with sensor-rules-lint.
+inputs:
+  sensor:
+    description: "falco or tetragon."
+    default: "falco"
+  rules-dir:
+    description: "Custom rules (falco) or TracingPolicy files (tetragon)."
+    default: ".falco"
+  namespace:
+    description: "Namespace. Empty: falco for Falco, kube-system for Tetragon."
+    default: ""
+  falco-chart-version:
+    default: "9.2.0"
+    description: "falcosecurity/charts falco chart version."
+  falco-chart-sha256:
+    default: "5e0699e68e5e4abd5eab1d501b3e0300a15888f3a5c2b0977bf3ca3229a8d04a"
+    description: "SHA-256 of that chart's .tgz."
+  tetragon-chart-version:
+    default: "1.7.1"
+    description: "cilium tetragon chart version."
+  tetragon-chart-sha256:
+    default: "79ec0f7d35b6fcad99ca317348deac136c00b674430c28be17aa818d2015c632"
+    description: "SHA-256 of that chart's .tgz."
+  sidekick-webhook:
+    description: "falco: falcosidekick webhook address to forward alerts to (e.g. the Wazuh manager). Empty: sidekick off."
+    default: ""
+  extra-values:
+    description: "Optional extra Helm values file."
+    default: ""
+  timeout:
+    description: "helm --timeout."
+    default: "10m"
+runs:
+  using: "composite"
+  steps:
+    - name: Install or upgrade the sensor
+      shell: bash
+      env:
+        SENSOR: ${{ inputs.sensor }}
+        RULES_DIR: ${{ inputs.rules-dir }}
+        NAMESPACE: ${{ inputs.namespace }}
+        FALCO_VERSION: ${{ inputs.falco-chart-version }}
+        FALCO_SHA256: ${{ inputs.falco-chart-sha256 }}
+        TETRAGON_VERSION: ${{ inputs.tetragon-chart-version }}
+        TETRAGON_SHA256: ${{ inputs.tetragon-chart-sha256 }}
+        SIDEKICK_WEBHOOK: ${{ inputs.sidekick-webhook }}
+        EXTRA_VALUES: ${{ inputs.extra-values }}
+        TIMEOUT: ${{ inputs.timeout }}
+      run: bash "${GITHUB_ACTION_PATH}/deploy.sh"

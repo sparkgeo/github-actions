@@ -1,0 +1,97 @@
+name: Falco Deploy
+
+# Reusable deploy of the runtime sensor to an EKS cluster (SecOps plan
+# Step 41, issue #16): Falco by default, Tetragon with sensor: tetragon. The
+# rules are linted first, then the chart is installed or upgraded with the
+# custom rules. Authenticates with OIDC (#27); the role needs
+# eks:DescribeCluster and a cluster access entry that may install DaemonSets
+# and cluster-scoped resources.
+#
+# Egress from the runner: github.com and release-assets.githubusercontent.com
+# (falco chart), helm.cilium.io (tetragon chart), Docker Hub (the Falco image
+# for the lint), sts and eks endpoints, and the cluster endpoint.
+
+on:
+  workflow_call:
+    inputs:
+      cluster-name:
+        description: 'EKS cluster name'
+        required: true
+        type: string
+      aws-role-arn:
+        description: 'IAM role to assume via OIDC'
+        required: true
+        type: string
+      aws-region:
+        description: 'Region of the cluster'
+        required: true
+        type: string
+      sensor:
+        description: 'falco (default) or tetragon'
+        default: 'falco'
+        type: string
+      falco-chart-version:
+        description: 'falco Helm chart version to deploy (change falco-chart-sha256 with it)'
+        default: '9.2.0'
+        type: string
+      falco-chart-sha256:
+        default: '5e0699e68e5e4abd5eab1d501b3e0300a15888f3a5c2b0977bf3ca3229a8d04a'
+        type: string
+      rules-dir:
+        description: 'Directory containing custom falco rules (or TracingPolicy files) to include'
+        default: '.falco'
+        type: string
+      sidekick-webhook:
+        description: 'falco: falcosidekick webhook to forward alerts to (e.g. the Wazuh manager); empty disables sidekick'
+        default: ''
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned this workflow to.
+        default: 'main'
+        type: string
+
+# Caller grants: id-token: write (OIDC), contents: read.
+
+jobs:
+  deploy:
+    name: Deploy runtime sensor
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository with the rules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/sensor-rules-lint
+        with:
+          sensor: ${{ inputs.sensor }}
+          rules-dir: ${{ inputs.rules-dir }}
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/aws-oidc-auth
+        with:
+          role-arn: ${{ inputs.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Kubeconfig for the cluster
+        env:
+          CLUSTER: ${{ inputs.cluster-name }}
+          REGION: ${{ inputs.aws-region }}
+        run: aws eks update-kubeconfig --name "${CLUSTER}" --region "${REGION}"
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/runtime-sensor
+        with:
+          sensor: ${{ inputs.sensor }}
+          rules-dir: ${{ inputs.rules-dir }}
+          falco-chart-version: ${{ inputs.falco-chart-version }}
+          falco-chart-sha256: ${{ inputs.falco-chart-sha256 }}
+          sidekick-webhook: ${{ inputs.sidekick-webhook }}

@@ -1,0 +1,8 @@
+# Must fail the schema check: "kprobe" is not a TracingPolicy field.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: typo
+spec:
+  kprobe:
+    - call: security_file_permission
