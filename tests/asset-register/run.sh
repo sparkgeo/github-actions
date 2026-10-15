@@ -94,7 +94,8 @@ kri() { jq -r "$1" "${TMP}/hv/kri.json"; }
 [ "$(output hv high-value-count)" = "3" ] || fail "high-value-count output"
 [ "$(output hv kri-breached)" = "stale_inventories,unknown_internet_facing_assets,unowned_assets,unowned_high_value_assets" ] || fail "kri-breached output"
 grep -q '^3 high-value assets (1 without an owner), 1 tagged public. KRIs breached: ' "${TMP}/hv/summary.md" || fail "summary KRI line: $(sed -n 3p "${TMP}/hv/summary.md")"
-grep -q ' high-value.md$' "${TMP}/hv/SHA256SUMS" && grep -q ' kri.json$' "${TMP}/hv/SHA256SUMS" || fail "checksums cover the new files"
+grep -q ' high-value.md$' "${TMP}/hv/SHA256SUMS" || fail "checksums must cover high-value.md"
+grep -q ' kri.json$' "${TMP}/hv/SHA256SUMS" || fail "checksums must cover kri.json"
 
 echo "== KRIs without EASM findings or a high-value file"
 run nohv "${FIX}/inventories" --teams "${FIX}/teams.yml"
