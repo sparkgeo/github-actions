@@ -76,6 +76,65 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Fuzz (#76): the driver against the python (atheris) and Go fixture
+  # targets, each planting a crash on "{!" next to a clean target, then the
+  # composite on the python fixture asserting one crash input. A few seconds
+  # per target is enough for a two-byte magic.
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            proxy.golang.org:443
+            sum.golang.org:443
+            storage.googleapis.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install atheris
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/fuzz-env"
+          "${RUNNER_TEMP}/fuzz-env/bin/python" -m pip install --quiet --disable-pip-version-check "atheris==3.1.0"
+
+      - name: Fixture targets
+        env:
+          FUZZ_PYTHON: ${{ runner.temp }}/fuzz-env/bin/python
+          FUZZ_DURATION: 15s
+        run: tests/fuzz/run.sh
+
+      - id: composite
+        continue-on-error: true
+        uses: ./.github/actions/fuzz
+        with:
+          runtime: python
+          targets: fuzz_parse.py
+          duration: 15s
+          working-directory: tests/fuzz/fixtures/python
+          corpus-dir: ${{ runner.temp }}/fuzz-corpus
+          crash-dir: ${{ runner.temp }}/fuzz-crashes
+          python: ${{ runner.temp }}/fuzz-env/bin/python
+
+      - name: Outcome
+        env:
+          OUTCOME: ${{ steps.composite.outcome }}
+          CRASHES: ${{ steps.composite.outputs.crash-count }}
+          TARGETS: ${{ steps.composite.outputs.crashing-targets }}
+        run: |
+          [ "${OUTCOME}" = "failure" ] || { echo "::error title=fuzz::the composite should fail on the planted crash"; exit 1; }
+          { [ "${CRASHES}" = "1" ] && [ "${TARGETS}" = "fuzz_parse.py" ]; } || { echo "::error title=fuzz::expected 1 crash in fuzz_parse.py, got ${CRASHES} in '${TARGETS}'"; exit 1; }
+          [ -s "${RUNNER_TEMP}/fuzz-crashes/report.json" ] || { echo "::error title=fuzz::no report.json"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

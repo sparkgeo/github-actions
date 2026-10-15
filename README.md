@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| Fuzz | [`fuzz.yml`](.github/workflows/fuzz.yml) | `workflow_call` | Reusable scheduled fuzz run — atheris (python), `go test -fuzz` (go) or cargo-fuzz (rust) per target for `duration`; crash inputs and corpus as artefacts, corpus cached between runs, a `fuzz-crash` tracking issue opened or updated on a new crash (#76) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Fuzz | [`fuzz`](.github/actions/fuzz/action.yml) | Runs each fuzz target for the time box with the engine the caller installed, collects crash inputs into `crash-dir/<target>/`, annotates them and writes the summary and `report.json`; exit 1 on a crash or a target that did not run | `runtime` (python/go/rust), `targets`, `duration` (default: `10m`), `working-directory`, `corpus-dir` (default: `testdata/fuzz`), `crash-dir` (default: `fuzz-crashes`), `python` |
 
 ### GitHub Actionlint
 
@@ -120,6 +122,41 @@ jobs:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}  # leave empty on pull_request
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}           # leave empty on pull_request
 ```
+
+### Fuzz (scheduled, input-handling code)
+
+SecOps plan Step 39 Advanced (issue #76): services parse untrusted input (GeoJSON, STAC items, COG headers, tile requests), and fuzzing finds the crashes and hangs in that code that unit tests do not. Fuzzing never finishes, so it is time-boxed and scheduled, not a PR gate; the short per-PR replay of changed packages is #126, and both share the `Fuzz*` naming and the `testdata/fuzz` corpus so a crasher found here replays on every PR. Targets: atheris scripts (`python`), `<package>:<FuzzFunc>` (`go`), cargo-fuzz target names (`rust`). Crash inputs and the corpus are uploaded as `fuzz-crashes-<runtime>` and `fuzz-corpus-<runtime>`, the corpus is cached between runs, and a crash opens one `fuzz-crash` issue per target (later runs comment on it).
+
+```yaml
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  fuzz-python:
+    permissions:
+      contents: read
+      issues: write          # the tracking issue; drop with open-issue: false
+    uses: sparkgeo/github-actions/.github/workflows/fuzz.yml@<SHA>
+    with:
+      actions-ref: <SHA>     # same SHA as above
+      runtime: python
+      targets: fuzz/fuzz_geojson.py,fuzz/fuzz_stac.py
+      setup-command: pip install -e .
+      duration: 10m
+  fuzz-go:
+    permissions:
+      contents: read
+      issues: write
+    uses: sparkgeo/github-actions/.github/workflows/fuzz.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      runtime: go
+      targets: ./internal/tiles:FuzzParseTileRequest,./internal/cog:FuzzHeader
+```
+
+Set `fail-on-crash: false` to keep the scheduled job green and rely on the issue and the artefacts instead. Rust targets need `cargo fuzz init` in the repository; the workflow installs nightly and cargo-fuzz but that path is not exercised by this repository's CI.
 
 ### Storage Optimizer
 

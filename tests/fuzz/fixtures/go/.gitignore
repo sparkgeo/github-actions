@@ -1,0 +1,2 @@
+# Go writes crashers it finds into testdata/fuzz; the fixture must stay crash-free so each run finds it again.
+parse/testdata/
