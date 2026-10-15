@@ -4,6 +4,11 @@ SecOps plan Step 26 (issue #104): a serialized model is a supply-chain artefact 
 
 ## Policy
 
+Applies to any project that ships or loads model weights (the plan's Appendix A question "Loads external AI model weights").
+
+- **Scan before first load** (plan Step 26 Standard). In CI the scan runs before any step imports the model; in an image build, before the model is copied into the image. modelscan reads pickle, PyTorch, Keras, H5 and SavedModel files without loading them and exits non-zero on findings.
+- **Prefer safetensors.** Pickle-format files (`.pkl .pickle .pt .pth .bin .ckpt .joblib`) run code on load; safetensors holds tensors only. Each pickle-format model gets a notice recommending a safetensors export when the source offers one. Not a gate: modelscan's findings are the gate.
+- **Pull through the proxy.** Hub downloads go through the proxy registry or gateway (`HF_ENDPOINT`, #231) so every model pulled appears in the inventory.
 - A model loaded at runtime (pulled from a hub, an object store or an image layer) is **pinned by hash and listed in the ML-BOM**: an entry in `models.json` with `url`, `source`, `version` and `sha256`. An entry without `sha256` fails the PR. The loading code compares the downloaded file against that hash before use.
 - A model committed to the tree is scanned on every PR; a `CRITICAL` or `HIGH` finding (code execution on load) fails it by default (`fail-on-severity`).
 - Weights produced by a Sparkgeo workflow are signed with `model_signing` in that workflow (keyless, the workflow identity); consuming repositories verify with `verify-signature: true` and the signing workflow's identity. `require-signature: true` once every model in the tree is signed.
@@ -31,20 +36,23 @@ Severity bands come from modelscan: `CRITICAL` (operators that execute code: `ex
       "source": "https://github.com/sparkgeo/ml-training/releases/tag/v3.2.0",
       "version": "3.2.0",
       "sha256": "…",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "datasets": [{"name": "training-2026-q3", "url": "s3://sparkgeo-ml/datasets/training-2026-q3/", "license": "proprietary"}]
     },
     {
       "name": "embedder",
       "url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/<commit>/model.safetensors",
       "source": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
       "version": "<commit>",
-      "sha256": "…"
+      "sha256": "…",
+      "license": "Apache-2.0",
+      "datasets": [{"name": "s2orc", "url": "https://github.com/allenai/s2orc", "license": "ODC-By-1.0"}]
     }
   ]
 }
 ```
 
-A `path` entry describes a file in the tree: its `sha256` must equal the file's, and the entry's name, version, source and licence go into the ML-BOM component. A `url` entry describes a model fetched at runtime: it appears in the ML-BOM with `sparkgeo:loaded-at-runtime: true` and its hash. Models in the tree without an entry are still scanned and listed, with the hash as version and no source.
+A `path` entry describes a file in the tree: its `sha256` must equal the file's, and the entry's name, version, source and licence go into the ML-BOM component. A `url` entry describes a model fetched at runtime: it appears in the ML-BOM with `sparkgeo:loaded-at-runtime: true` and its hash. Models in the tree without an entry are still scanned and listed, with the hash as version and no source. `license` and `datasets` are optional; the plan's ML-BOM lists model, dataset, source and licence (Step 2 Advanced), so fill them where the source declares them.
 
 ## ML-BOM
 
@@ -52,8 +60,9 @@ A `path` entry describes a file in the tree: its `sha256` must equal the file's,
 
 | Component | `type` | From | Identity |
 |---|---|---|---|
-| model in the tree | `machine-learning-model` | discovery plus `models.json` | SHA-256 of the file (a SavedModel directory: SHA-256 over its sorted relative paths and file hashes); properties `sparkgeo:path`, `sparkgeo:signed`, `sparkgeo:modelscan`, `sparkgeo:signature-verified` |
-| model loaded at runtime | `machine-learning-model` | `models.json` `url` entries | the pinned SHA-256; `externalReferences` distribution URL |
+| model in the tree | `machine-learning-model` | discovery plus `models.json` | SHA-256 of the file (a SavedModel directory: SHA-256 over its sorted relative paths and file hashes); properties `sparkgeo:path`, `sparkgeo:format`, `sparkgeo:signed`, `sparkgeo:modelscan`, `sparkgeo:signature-verified` |
+| model loaded at runtime | `machine-learning-model` | `models.json` `url` entries | the pinned SHA-256; `externalReferences` distribution URL; licence when declared |
+| dataset | `data` | `datasets` of a `models.json` entry | name; distribution URL and licence when declared; referenced from the model's `modelCard.modelParameters.datasets` |
 | MCP server | `application` | `.mcp-scan.lock` (#103) | the tool-description hash; property `sparkgeo:mcp-config` |
 | skill or plugin manifest | `file` | `.mcp-scan.lock` | file hash |
 | agent | `application` | active rows of `docs/ai-agents.md` (#102) | config path, class, risk tier, owner and kill switch as properties |

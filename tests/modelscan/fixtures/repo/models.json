@@ -13,7 +13,15 @@
       "url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/model.safetensors",
       "source": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
       "version": "c9745ed",
-      "sha256": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db"
+      "sha256": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db",
+      "license": "Apache-2.0",
+      "datasets": [
+        {
+          "name": "s2orc",
+          "url": "https://github.com/allenai/s2orc",
+          "license": "ODC-By-1.0"
+        }
+      ]
     }
   ]
 }

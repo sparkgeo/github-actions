@@ -15,7 +15,7 @@ Usage: report.py --root DIR --scan modelscan.json[,more.json] [--paths DIR,FILE]
    error (unreadable file, missing extra such as tensorflow) is an error.
 3. --manifest lists models the code loads at runtime or expects in the tree:
    {"models": [{"name", "path" | "url", "source", "version", "sha256",
-   "license"}]}. Every entry needs a sha256 (the pin); a "path" entry's
+   "license", "datasets": [{"name", "url", "license"}]}]}. Every entry needs a sha256 (the pin); a "path" entry's
    sha256 must equal the file's. That is the policy: a model loaded at
    runtime is pinned by hash and listed in the ML-BOM.
 4. With --verify, a model with a sibling <path><suffix> signature is
@@ -25,7 +25,12 @@ Usage: report.py --root DIR --scan modelscan.json[,more.json] [--paths DIR,FILE]
 5. The ML-BOM (CycloneDX 1.6) lists every model (type machine-learning-model),
    plus the MCP servers and skills from --lock and the agent rows from the
    --inventory table (issue #102), so one document covers models, tools and
-   servers. Standard library only; run with python3 -I.
+   servers. A model's declared datasets become CycloneDX "data" components
+   referenced from its modelCard (plan Step 2 Advanced: model, dataset,
+   source, licence).
+6. Pickle-format files (PICKLE) get a notice recommending safetensors (plan
+   Step 26: "safetensors preferred over pickle formats"); no gate.
+Standard library only; run with python3 -I.
 """
 
 import argparse
@@ -44,6 +49,38 @@ from check import parse_inventory  # noqa: E402  (issue #102 inventory table par
 
 EXTENSIONS = (".pkl", ".pickle", ".pt", ".pth", ".h5", ".hdf5", ".keras", ".bin", ".safetensors", ".onnx", ".ckpt", ".joblib", ".npy", ".npz", ".gguf")
 SEVERITIES = ["low", "medium", "high", "critical"]
+# formats that run code on load through pickle; safetensors holds tensors only
+PICKLE = (".pkl", ".pickle", ".pt", ".pth", ".bin", ".ckpt", ".joblib")
+
+
+def model_format(rel):
+    low = rel.lower()
+    if low.endswith(PICKLE):
+        return "pickle"
+    for ext, name in ((".safetensors", "safetensors"), (".onnx", "onnx"), (".gguf", "gguf"),
+                      (".h5", "hdf5"), (".hdf5", "hdf5"), (".keras", "keras"), (".npy", "numpy"), (".npz", "numpy")):
+        if low.endswith(ext):
+            return name
+    return "savedmodel" if "." not in os.path.basename(rel) else "other"
+
+
+def dataset_components(m, owner_ref):
+    """CycloneDX data components for a manifest entry's datasets, and the modelCard refs to them."""
+    comps, refs = [], []
+    for d in m.get("datasets") or []:
+        name = d.get("name") or d.get("url")
+        if not name:
+            continue
+        ref = f"data:{name}"
+        c = {"type": "data", "bom-ref": ref, "name": name,
+             "properties": [{"name": "sparkgeo:used-by", "value": owner_ref}]}
+        if d.get("url"):
+            c["externalReferences"] = [{"type": "distribution", "url": d["url"]}]
+        if d.get("license"):
+            c["licenses"] = [{"license": {"id": d["license"]}}]
+        comps.append(c)
+        refs.append({"ref": ref})
+    return comps, refs
 EXCLUDE = (".git", "node_modules", ".sparkgeo-github-actions", ".sparkgeo-policies")
 
 
@@ -122,7 +159,7 @@ def main():
     ap.add_argument("--output")
     args = ap.parse_args()
 
-    errors, warnings = [], []
+    errors, warnings, notices = [], [], []
     models = {rel: {"sha256": h, "severity": None, "issues": [], "signed": False, "verified": None} for rel, h in discover(args.root, [p.strip() for p in args.paths.split(",") if p.strip()]).items()}
 
     # modelscan reports
@@ -186,8 +223,13 @@ def main():
         else:
             warnings.append(f"{rel}: unsigned (no {sig})")
 
+    for rel in sorted(models):
+        models[rel]["format"] = model_format(rel)
+        if models[rel]["format"] == "pickle" and models[rel]["sha256"]:
+            notices.append(f"{rel}: pickle format runs code on load; prefer a safetensors export when the source offers one (plan Step 26)")
+
     # ML-BOM
-    components = []
+    components, data_components = [], {}
     for rel, entry in sorted(models.items()):
         m = entry.get("manifest") or {}
         c = {"type": "machine-learning-model", "bom-ref": f"model:{rel}", "name": m.get("name") or os.path.basename(rel),
@@ -199,8 +241,13 @@ def main():
             c["hashes"] = [{"alg": "SHA-256", "content": entry["sha256"]}]
         if m.get("source"):
             c["externalReferences"] = [{"type": "distribution", "url": m["source"]}]
+        c["properties"].append({"name": "sparkgeo:format", "value": entry["format"]})
         if m.get("license"):
             c["licenses"] = [{"license": {"id": m["license"]}}]
+        comps, refs = dataset_components(m, c["bom-ref"])
+        if refs:
+            c["modelCard"] = {"modelParameters": {"datasets": refs}}
+            data_components.update({d["bom-ref"]: d for d in comps})
         if entry["verified"] is not None:
             c["properties"].append({"name": "sparkgeo:signature-verified", "value": str(entry["verified"]).lower()})
         components.append(c)
@@ -213,7 +260,14 @@ def main():
                 c["hashes"] = [{"alg": "SHA-256", "content": m["sha256"].removeprefix("sha256:")}]
             if m.get("source"):
                 c["externalReferences"].append({"type": "website", "url": m["source"]})
+            if m.get("license"):
+                c["licenses"] = [{"license": {"id": m["license"]}}]
+            comps, refs = dataset_components(m, c["bom-ref"])
+            if refs:
+                c["modelCard"] = {"modelParameters": {"datasets": refs}}
+                data_components.update({d["bom-ref"]: d for d in comps})
             components.append(c)
+    components += list(data_components.values())
     lock_path = os.path.join(args.root, args.lock)
     lock = {}
     if os.path.exists(lock_path):
@@ -253,6 +307,8 @@ def main():
         print(f"::error title=model-scan::{e}")
     for w in warnings:
         print(f"::warning title=model-scan::{w}")
+    for n in notices:
+        print(f"::notice title=model-scan::{n}")
     n_models = sum(1 for e in models.values() if e["sha256"])
     summary = [f"## Model scan: {n_models} model(s), {len(manifest)} manifest entr{'y' if len(manifest) == 1 else 'ies'}, {len(components)} ML-BOM component(s), {len(errors)} error(s), {len(warnings)} warning(s)", ""]
     if models:
@@ -276,7 +332,7 @@ def main():
             fh.write(f"model-count={n_models}\nerror-count={len(errors)}\ncomponent-count={len(components)}\n")
     if args.output:
         with open(args.output, "w") as fh:
-            json.dump({"models": models, "errors": errors, "warnings": warnings, "components": len(components)}, fh, indent=1)
+            json.dump({"models": models, "errors": errors, "warnings": warnings, "notices": notices, "components": len(components)}, fh, indent=1)
             fh.write("\n")
     return 1 if errors else 0
 
