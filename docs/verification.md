@@ -58,6 +58,22 @@ The plan keeps two self-contained reference workflows beside each other, uncommi
 **/geometry/** **/geom/** **/crs/** **/projection*/** **/transform*/** **/tiles/** **/tile*/** **/index*/** **/h3/** **/s2/** **/quadkey*
 ```
 
+### 5.3 Go: `verify-go.yml` (#126)
+
+The brief's "Go" step with pinned tools (`staticcheck` v0.8.2, `nilaway` v0.0.0-20260918162853-acb8859b9031, `errcheck` v1.30.0, `gremlins` v0.6.0; the brief installs `@latest`). `go.json` keeps the brief's fields (`vet`, `staticcheck`, `nilaway`, `vet_lines`, `staticcheck_lines`, `nilaway_lines`, `fuzz_targets`, `crashers`, `property_files`).
+
+| Check | How | Baseline | Standard |
+|---|---|---|---|
+| Static invariants | `go vet` on the changed packages | blocking | blocking |
+| Static analysis | `staticcheck`, `nilaway`, `errcheck` | advisory | blocking |
+| Fuzz targets present | `fuzzcover.go` (go/ast): every exported function in a mapped changed file is called by a `Fuzz*` target of its package, including from an external `_test` package | blocking | blocking |
+| Per-PR fuzz | `go test -run='^$' -fuzz='^<target>$' -fuzztime=<fuzz-time>` per target under `timeout 120`; crashers are new files under `testdata/fuzz/`, found by listing before and after; each gets a `go test -run='^<target>/<file>$' ./<pkg>` line in the comment and a copy in the artefact | crasher blocks | crasher blocks |
+| Properties | `rapid.Check` / `quick.Check` calls in the changed packages' tests; a high-risk package without one | advisory | blocking |
+| Corpus hygiene | a committed `testdata/fuzz/<Name>/<file>` must name a `Fuzz*` target of that package and be a `go test fuzz v1` file | advisory | blocking |
+| Mutation | `gremlins unleash --timeout-coefficient 20` per mapped package; score = (killed + timed out) / (killed + timed out + lived + not covered) | off | advisory; `mutation-threshold` gates |
+
+**Corpus convention, shared with `fuzz.yml` (#76).** Go keeps two corpora: the committed seed corpus in each package's `testdata/fuzz/<FuzzName>/` (replayed by every `go test`, where crashers belong once fixed) and the generated corpus in `$(go env GOCACHE)/fuzz`. Both workflows cache the same path list (`<working-directory>/testdata/fuzz`, `~/.cache/go-build/fuzz`, `<working-directory>/fuzz/corpus`) under the `fuzz-go-` key prefix; `verify-go.yml` keys on a hash of the committed corpus plus the run, and restores any `fuzz-go-` entry. The nightly long run seeds the PR run and the other way round. A crasher from either is fixed in the PR that commits it under `testdata/fuzz/<FuzzName>/`.
+
 ## 6. The map: `verify.yml`
 
 Schema: [`policies/verification/verify.schema.json`](../policies/verification/verify.schema.json); example with all three languages and the cross-language tools: [`examples/verify.yml`](examples/verify.yml). One entry per path glob: `risk` (`high`, `medium`, `low`), `rungs` (lowest first), `tool` (inferred from the extension when absent), `targets` for Dafny compile targets, `covers` for the implementation globs a model stands for, `budget` overrides. `verify-map.yml` validates the file, resolves the changed files to their entries (longest glob wins) or to the fallback, and writes `verify-map.json` (`files`, `mapped`, `bare_high_risk`, `by_tool`) for the other workflows. A changed high-risk path with no rung is a warning at Baseline and fails with `strict-high-risk`; an implementation change under a model's `covers` without a change to the model is a warning.

@@ -1,0 +1,169 @@
+name: Verify (Go)
+
+# Reusable PR check (issue #126, plan Step 39): the Go rungs of the
+# verification ladder. go vet (blocking), staticcheck, nilaway and errcheck
+# (pinned; blocking at standard), every exported function on a mapped path
+# called by a Fuzz* target (blocking), a per-PR fuzz of each Fuzz* target in
+# the changed packages (a crasher blocks; reproduced in the PR comment and
+# uploaded), rapid/quick properties on high-risk packages and corpus hygiene
+# (blocking at standard), gremlins at tier standard. go.json fields follow the
+# plan's reference verify-brief.yml; one rolling PR comment, artefacts 30
+# days, gate last.
+#
+# The fuzz corpus cache shares fuzz.yml's (#76) paths and `fuzz-go-` key
+# prefix, so the nightly long run seeds the PR run and the PR run's inputs
+# feed the next nightly.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com, proxy.golang.org.
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Go module root (go.mod)'
+        default: '.'
+        type: string
+      go-version:
+        description: 'Go version; empty reads go.mod'
+        default: ''
+        type: string
+      map-path:
+        description: 'verify.yml in the repository'
+        default: 'verify.yml'
+        type: string
+      high-risk-globs:
+        description: 'Fallback when verify.yml is absent; default is the HIGH_RISK_GLOBS list from verify-brief.yml'
+        default: ''
+        type: string
+      fuzz-time:
+        description: 'Per-target budget on a PR'
+        default: '45s'
+        type: string
+      tier:
+        description: 'baseline|standard'
+        default: 'baseline'
+        type: string
+      mutation-threshold:
+        description: 'Minimum gremlins score in percent at tier standard; 0 is advisory'
+        default: 0
+        type: number
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned verify-go.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      crashers:
+        description: 'New fuzz crashers'
+        value: ${{ jobs.go.outputs.crashers }}
+      mutation-score:
+        description: 'gremlins score in percent; empty when gremlins did not run'
+        value: ${{ jobs.go.outputs.mutation-score }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants contents: read and pull-requests: write (the
+# rolling comment).
+jobs:
+  go:
+    name: Verify Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      crashers: ${{ steps.verify.outputs.crashers }}
+      mutation-score: ${{ steps.verify.outputs.mutation-score }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the base must be reachable for the changed-files diff
+
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout verify composites
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: map
+        uses: ./.sparkgeo-github-actions/.github/actions/verify-map
+        with:
+          map-path: ${{ inputs.map-path }}
+          high-risk-globs: ${{ inputs.high-risk-globs }}
+          output-path: ${{ runner.temp }}/verify-map.json
+
+      # Same paths and key prefix as fuzz.yml (#76): a cache's version hashes
+      # its path list, so they must match exactly to be shared.
+      - name: Restore fuzz corpus
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ${{ inputs.working-directory }}/testdata/fuzz
+            ~/.cache/go-build/fuzz
+            ${{ inputs.working-directory }}/fuzz/corpus
+          key: fuzz-go-${{ hashFiles(format('{0}/**/testdata/fuzz/**', inputs.working-directory)) }}-${{ github.run_id }}
+          restore-keys: fuzz-go-
+
+      - id: verify
+        uses: ./.sparkgeo-github-actions/.github/actions/verify-go
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          go-version: ${{ inputs.go-version }}
+          map-json: ${{ runner.temp }}/verify-map.json
+          high-risk-globs: ${{ inputs.high-risk-globs }}
+          fuzz-time: ${{ inputs.fuzz-time }}
+          tier: ${{ inputs.tier }}
+          mutation-threshold: ${{ inputs.mutation-threshold }}
+          output-dir: ${{ runner.temp }}/verify-go
+          gate: 'false'
+
+      - name: Save fuzz corpus
+        if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ${{ inputs.working-directory }}/testdata/fuzz
+            ~/.cache/go-build/fuzz
+            ${{ inputs.working-directory }}/fuzz/corpus
+          key: fuzz-go-${{ hashFiles(format('{0}/**/testdata/fuzz/**', inputs.working-directory)) }}-${{ github.run_id }}
+
+      - name: Post the brief
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BRIEF: ${{ runner.temp }}/verify-go/verify-brief.md
+        run: |
+          [ -f "${BRIEF}" ] || exit 0
+          gh pr comment "${PR}" --body-file "${BRIEF}" --edit-last --create-if-none \
+            || gh pr comment "${PR}" --body-file "${BRIEF}" || true
+
+      - name: Keep the raw artefacts (crashers included)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: verify-go-${{ github.event.pull_request.number || github.run_id }}
+          path: |
+            ${{ runner.temp }}/verify-go
+            ${{ runner.temp }}/verify-map.json
+          retention-days: 30
+
+      # Last, after the brief is posted, so a red build always arrives with its
+      # explanation attached to the PR.
+      - name: Gate
+        if: always()
+        env:
+          SUMMARY: ${{ runner.temp }}/verify-go/summary.json
+        run: |
+          [ -f "${SUMMARY}" ] || { echo "::error title=verify-go::no summary.json; the verify step did not finish"; exit 1; }
+          jq -r '.gate.warn[] | "  warn: " + .' "${SUMMARY}"
+          jq -r '.gate.fail[] | "  FAIL: " + .' "${SUMMARY}"
+          jq -e '.gate.fail | length == 0' "${SUMMARY}" > /dev/null

@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Verify (Map) | [`verify-map.yml`](.github/workflows/verify-map.yml) | `workflow_call` | Reusable verification path-map check: validates `verify.yml`, resolves changed files to rungs and tools (HIGH_RISK_GLOBS fallback without a map), flags high-risk paths with no rung, requires the PR body's verification table at Standard; writes `verify-map.json` for the `verify-*.yml` workflows (#132) |
+| Verify (Go) | [`verify-go.yml`](.github/workflows/verify-go.yml) | `workflow_call` | Reusable Go verification rungs: `go vet`, pinned staticcheck/nilaway/errcheck, Fuzz*-target coverage of mapped exported functions (AST), per-PR fuzz with crashers reproduced in the PR comment, rapid/quick properties, corpus hygiene, gremlins at tier standard; fuzz corpus cache shared with `fuzz.yml` (#126) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -43,6 +44,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | Verification Map | [`verify-map`](.github/actions/verify-map/action.yml) | Validates `verify.yml` with jsonschema, maps the changed files, checks the PR body table, writes `verify-map.json` | `map-path` (default: `verify.yml`), `high-risk-globs`, `changed-list`, `pr-body-path`, `require-table` (default: `false`), `strict-high-risk` (default: `false`), `output-path` |
+| Verify Go | [`verify-go`](.github/actions/verify-go/action.yml) | vet, staticcheck, nilaway, errcheck, fuzz-target coverage, per-PR fuzz, properties, corpus hygiene and gremlins over the changed packages; writes `go.json`, the brief, `summary.json` and `crashers/` | `working-directory` (default: `.`), `go-version`, `changed-list`, `map-json`, `high-risk-globs`, `fuzz-time` (default: `45s`), `tier` (default: `baseline`), `mutation-threshold` (default: `0`), `output-dir`, `gate` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -136,7 +138,18 @@ jobs:
     with:
       actions-ref: <SHA>   # same SHA as above
       # require-table: true   # Standard tier
+  verify-go:
+    permissions:
+      contents: read
+      pull-requests: write     # the rolling brief comment
+    uses: sparkgeo/github-actions/.github/workflows/verify-go.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      # working-directory: services/tiler
+      # tier: standard            # gremlins; staticcheck/nilaway/errcheck, properties and corpus hygiene block
 ```
+
+A Go package with a `Fuzz*` round-trip target and a `rapid` property: [`docs/examples/verify/go/`](docs/examples/verify/go/).
 
 ### Storage Optimizer
 

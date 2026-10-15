@@ -1,0 +1,207 @@
+name: "Verify (Go)"
+description: |
+  Go rungs of the verification ladder (SecOps plan Step 39, issue #126):
+  go vet (blocking), staticcheck, nilaway and errcheck (pinned; advisory at
+  baseline, blocking at standard), an AST check that every exported function
+  on a mapped path is called by a Fuzz* target, a per-PR fuzz of every Fuzz*
+  target in the changed packages with crashers detected under testdata/fuzz,
+  rapid/quick property detection, corpus hygiene for committed crashers and
+  gremlins mutation testing at tier standard. go.json fields follow the plan's
+  reference verify-brief.yml. Writes go.json, the brief and summary.json under
+  the output directory; crashers are copied to <output-dir>/crashers.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  working-directory:
+    description: "Go module root (go.mod)."
+    default: "."
+  go-version:
+    description: "Go version; empty reads go.mod."
+    default: ""
+  changed-list:
+    description: "File listing changed paths relative to working-directory; empty derives it from the pull request (base..head) or lists the whole tree."
+    default: ""
+  map-json:
+    description: "verify-map.json written by the verify-map composite; empty uses the HIGH_RISK_GLOBS fallback for risk and maps nothing."
+    default: ""
+  high-risk-globs:
+    description: "Space-separated fallback globs; empty uses the HIGH_RISK_GLOBS list from verify-brief.yml."
+    default: ""
+  fuzz-time:
+    description: "Per-target fuzz budget on a PR (go test -fuzztime)."
+    default: "45s"
+  tier:
+    description: "baseline or standard; standard blocks on staticcheck/nilaway/errcheck, missing properties on high-risk packages and corpus hygiene, and runs gremlins."
+    default: "baseline"
+  mutation-threshold:
+    description: "Minimum gremlins score in percent at tier standard; 0 is advisory."
+    default: "0"
+  output-dir:
+    description: "Where go.json, the brief, summary.json and crashers/ go (absolute, or relative to working-directory)."
+    default: "verify-go-artifacts"
+  gate:
+    description: "Exit 1 on a blocking finding."
+    default: "true"
+outputs:
+  vet:
+    description: "go vet exit code on the changed packages."
+    value: ${{ steps.summary.outputs.vet }}
+  crashers:
+    description: "New fuzz crashers."
+    value: ${{ steps.summary.outputs.crashers }}
+  fuzz-targets:
+    description: "Fuzz* targets run."
+    value: ${{ steps.summary.outputs.fuzz-targets }}
+  uncovered:
+    description: "Exported functions on mapped paths with no Fuzz* target."
+    value: ${{ steps.summary.outputs.uncovered }}
+  mutation-score:
+    description: "gremlins score in percent; empty when gremlins did not run."
+    value: ${{ steps.summary.outputs.mutation-score }}
+  blocking:
+    description: "Blocking findings (summary.json .gate.fail)."
+    value: ${{ steps.summary.outputs.blocking }}
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      with:
+        go-version: ${{ inputs.go-version }}
+        go-version-file: ${{ inputs.go-version == '' && format('{0}/go.mod', inputs.working-directory) || '' }}
+        cache-dependency-path: ${{ format('{0}/go.sum', inputs.working-directory) }}
+
+    - id: scope
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CHANGED: ${{ inputs.changed-list }}
+        OUT: ${{ inputs.output-dir }}
+        MAP: ${{ inputs.map-json }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+      run: |
+        set -euo pipefail
+        ART="$(mkdir -p "${OUT}/status" && cd "${OUT}" && pwd)"
+        if [ -n "${CHANGED}" ]; then
+          cp "${CHANGED}" "${ART}/changed.txt"
+        elif [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
+          git fetch -q --depth=1 origin "${PR_BASE_SHA}" "${PR_HEAD_SHA}" 2>/dev/null || true
+          if ! git diff --name-only --diff-filter=ACMR --relative "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "${ART}/changed.txt" 2>/dev/null; then
+            echo "::notice title=verify-go::PR base or head not reachable (shallow checkout); scanning the whole tree"
+            git ls-files > "${ART}/changed.txt"
+          fi
+        else
+          git ls-files > "${ART}/changed.txt"
+        fi
+        grep -E '\.go$' "${ART}/changed.txt" | grep -v '^vendor/' > "${ART}/changed-go.txt" || true
+        # a package is in scope when a .go file or a committed corpus entry under it changed;
+        # go list drops directories that are not buildable packages
+        { xargs -r -n1 dirname < "${ART}/changed-go.txt"; sed -nE 's#^(.+)/testdata/fuzz/.*#\1#p; s#^testdata/fuzz/.*#.#p' "${ART}/changed.txt"; } \
+          | sort -u | while IFS= read -r d; do
+              [ -d "${d}" ] && go list -f '{{.Dir}}' "./${d}" >/dev/null 2>&1 && echo "${d}"
+            done > "${ART}/pkgs.txt" || true
+        : > "${ART}/mapped.txt"
+        if [ -n "${MAP}" ] && [ -f "${MAP}" ]; then
+          # map.json keys are repository-relative; keep the changed files whose path ends a mapped key
+          jq -r '.files | to_entries[] | select(.value.mapped) | .key' "${MAP}" > "${ART}/mapped-keys.txt"
+          grep -v '_test\.go$' "${ART}/changed-go.txt" | while IFS= read -r f; do
+            grep -qxE "(.*/)?$(printf '%s' "${f}" | sed 's/[.[\*^$/]/\\&/g')" "${ART}/mapped-keys.txt" && echo "${f}"
+          done > "${ART}/mapped.txt" || true
+        fi
+        echo "  $(wc -l < "${ART}/pkgs.txt") changed package(s), $(wc -l < "${ART}/mapped.txt") mapped file(s)"
+        { echo "art=${ART}"; echo "pkg-count=$(wc -l < "${ART}/pkgs.txt")"; } >> "${GITHUB_OUTPUT}"
+
+    - id: tools
+      if: steps.scope.outputs.pkg-count != '0'
+      shell: bash
+      env:
+        TIER: ${{ inputs.tier }}
+      run: |
+        set -euo pipefail
+        # pinned (the brief installs @latest); bumps go through Renovate
+        export GOBIN="${RUNNER_TEMP}/verify-go-bin"
+        go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+        go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260918162853-acb8859b9031
+        go install github.com/kisielk/errcheck@v1.30.0
+        [ "${TIER}" = "standard" ] && go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
+        echo "bin=${GOBIN}" >> "${GITHUB_OUTPUT}"
+
+    - id: static
+      if: steps.scope.outputs.pkg-count != '0'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+        BIN: ${{ steps.tools.outputs.bin }}
+      run: |
+        set -euo pipefail
+        mapfile -t PKGS < <(sed 's#^#./#' "${ART}/pkgs.txt")
+        run() { local name="$1"; shift; local rc=0; "$@" "${PKGS[@]}" > "${ART}/go-${name}.txt" 2>&1 || rc=$?; echo "${rc}" > "${ART}/status/${name}"; echo "  ${name} rc=${rc}"; }
+        run vet go vet
+        run staticcheck "${BIN}/staticcheck"
+        run nilaway "${BIN}/nilaway"
+        run errcheck "${BIN}/errcheck"
+        go run "${GITHUB_ACTION_PATH}/fuzzcover.go" -root . -pkgs "${ART}/pkgs.txt" -mapped "${ART}/mapped.txt" -out "${ART}/fuzzcover.json"
+
+    # Every Fuzz* target in the changed packages, one wall-clock budget each.
+    # Crashers are new files under testdata/fuzz, found by listing before and
+    # after (git status misses files in a new untracked directory).
+    - id: fuzz
+      if: steps.scope.outputs.pkg-count != '0'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+        FUZZ_TIME: ${{ inputs.fuzz-time }}
+      run: |
+        set -euo pipefail
+        list() { find . -path '*/testdata/fuzz/*' -type f -not -path './vendor/*' | sed 's#^\./##' | sort; }
+        list > "${ART}/corpus-before.txt"
+        : > "${ART}/fuzz-run.txt"; : > "${ART}/go-fuzz.txt"
+        jq -r '.[] | .dir as $d | .fuzz_targets[] | "\($d) \(.)"' "${ART}/fuzzcover.json" | while read -r pkg t; do
+          echo "${pkg} ${t}" >> "${ART}/fuzz-run.txt"
+          echo "== ${pkg} ${t}" >> "${ART}/go-fuzz.txt"
+          timeout 120 go test -run='^$' -fuzz="^${t}\$" -fuzztime="${FUZZ_TIME}" "./${pkg}" >> "${ART}/go-fuzz.txt" 2>&1 || true
+        done
+        list | comm -13 "${ART}/corpus-before.txt" - > "${ART}/crashers.txt"
+        while IFS= read -r c; do mkdir -p "${ART}/crashers/$(dirname "${c}")"; cp "${c}" "${ART}/crashers/${c}"; done < "${ART}/crashers.txt"
+        echo "  $(wc -l < "${ART}/fuzz-run.txt") target(s) fuzzed, $(wc -l < "${ART}/crashers.txt") crasher(s)"
+
+    - id: gremlins
+      if: inputs.tier == 'standard' && steps.scope.outputs.pkg-count != '0'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+        BIN: ${{ steps.tools.outputs.bin }}
+      run: |
+        set -euo pipefail
+        mapfile -t MPKGS < <(xargs -r -n1 dirname < "${ART}/mapped.txt" | sort -u | sed 's#^#./#')
+        [ "${#MPKGS[@]}" -gt 0 ] || { echo "  no mapped packages to mutate"; exit 0; }
+        # one report per package, merged; the coefficient keeps fuzz seed corpora from timing out
+        for p in "${MPKGS[@]}"; do
+          n="$(echo "${p}" | tr '/.' '__')"
+          timeout 600 "${BIN}/gremlins" unleash "${p}" --timeout-coefficient 20 -o "${ART}/gremlins-${n}.json" > "${ART}/gremlins-${n}.txt" 2>&1 || true
+          grep -E '^(Killed|Timed out|Test efficacy)' "${ART}/gremlins-${n}.txt" || true
+        done
+        jq -s '{files: (map(.files // []) | add)}' "${ART}"/gremlins-*.json > "${ART}/gremlins.json" 2>/dev/null || true
+
+    - id: summary
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+        MAP: ${{ inputs.map-json }}
+        GLOBS: ${{ inputs.high-risk-globs }}
+        TIER: ${{ inputs.tier }}
+        THRESHOLD: ${{ inputs.mutation-threshold }}
+        GATE: ${{ inputs.gate }}
+      run: |
+        set -euo pipefail
+        python3 -I "${GITHUB_ACTION_PATH}/go.py" --art "${ART}" --map "${MAP}" --high-risk-globs "${GLOBS}"
+        ARGS=(--art "${ART}" --tier "${TIER}" --mutation-threshold "${THRESHOLD}")
+        [ "${GATE}" = "true" ] && ARGS+=(--gate)
+        rc=0
+        python3 -I "${GITHUB_ACTION_PATH}/summary.py" "${ARGS[@]}" || rc=$?
+        cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+        exit "${rc}"

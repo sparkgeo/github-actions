@@ -116,6 +116,54 @@ jobs:
         run: |
           { [ "${FALLBACK}" = "true" ] && [ "${MAPPED}" = "0" ] && [ "${ERRORS}" = "0" ]; } || { echo "::error title=verify-map::expected fallback mode with nothing mapped and no errors; got fallback=${FALLBACK} mapped=${MAPPED} errors=${ERRORS}"; exit 1; }
 
+  verify-go:
+    name: Verify Go
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The example at tier standard with a fixed changed list and a map that
+      # marks quadkey/quadkey.go high risk: vet, staticcheck, nilaway,
+      # errcheck, fuzz-target coverage, a 20 s fuzz, properties and gremlins;
+      # nothing may block.
+      - name: Changed list
+        run: printf 'quadkey/quadkey.go\nquadkey/quadkey_test.go\n' > "${RUNNER_TEMP}/changed.txt"
+
+      - id: self
+        uses: ./.github/actions/verify-go
+        with:
+          working-directory: docs/examples/verify/go
+          changed-list: ${{ runner.temp }}/changed.txt
+          map-json: ${{ github.workspace }}/tests/verify-go/fixtures/map/verify-map.json
+          fuzz-time: 20s
+          tier: standard
+          mutation-threshold: 80
+          output-dir: ${{ runner.temp }}/verify-go
+
+      - name: Fixtures
+        run: tests/verify-go/run.sh
+
+      - name: Outcome
+        env:
+          VET: ${{ steps.self.outputs.vet }}
+          CRASHERS: ${{ steps.self.outputs.crashers }}
+          TARGETS: ${{ steps.self.outputs.fuzz-targets }}
+          UNCOVERED: ${{ steps.self.outputs.uncovered }}
+          SCORE: ${{ steps.self.outputs.mutation-score }}
+          BLOCKING: ${{ steps.self.outputs.blocking }}
+        run: |
+          { [ "${VET}" = "0" ] && [ "${CRASHERS}" = "0" ] && [ "${TARGETS}" = "1" ] && [ "${UNCOVERED}" = "0" ] && [ -n "${SCORE}" ] && [ "${BLOCKING}" = "0" ]; } \
+            || { echo "::error title=verify-go::expected a clean standard-tier run with one fuzz target and a gremlins score; got vet=${VET} crashers=${CRASHERS} targets=${TARGETS} uncovered=${UNCOVERED} score=${SCORE} blocking=${BLOCKING}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

@@ -1,0 +1,7 @@
+{
+  "fallback": false,
+  "high_risk_globs": [],
+  "files": {
+    "docs/examples/verify/go/quadkey/quadkey.go": {"glob": "docs/examples/verify/go/quadkey/**", "risk": "high", "rungs": ["fuzz", "properties"], "tool": "go", "mapped": true}
+  }
+}
