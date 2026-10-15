@@ -2,7 +2,10 @@
 # trivy gate. Inputs via env: RESULTS_JSON (trivy image --format json),
 # FAIL_ON (critical|high|medium|low|none). Writes per-severity counts and
 # max-severity to GITHUB_OUTPUT, a table to GITHUB_STEP_SUMMARY, and one
-# job-level annotation per finding. Mapping per docs/gate-policy.md:
+# job-level annotation per finding. Findings a VEX document marked
+# not_affected or fixed (trivy --vex --show-suppressed) are listed as notices
+# and counted in vex-suppressed-count; they never reach the gate. Mapping per
+# docs/gate-policy.md:
 #   critical -> CRITICAL; high -> HIGH+; medium -> MEDIUM+;
 #   low -> LOW, UNKNOWN and above; none -> never fails.
 set -euo pipefail
@@ -19,6 +22,8 @@ esac
 count() { jq --arg s "$1" '[.Results[]?.Vulnerabilities[]? | select(.Severity == $s)] | length' "${RESULTS_JSON}"; }
 CRIT=$(count CRITICAL); HIGH=$(count HIGH); MED=$(count MEDIUM); LOW=$(count LOW); UNK=$(count UNKNOWN)
 SECRETS=$(jq '[.Results[]?.Secrets[]?] | length' "${RESULTS_JSON}")
+VEX_FILTER='.Results[]?.ExperimentalModifiedFindings[]? | select(.Type == "vulnerability" and (.Status == "not_affected" or .Status == "fixed"))'
+SUPPRESSED=$(jq "[${VEX_FILTER}] | length" "${RESULTS_JSON}")
 TOTAL=$((CRIT+HIGH+MED+LOW+UNK))
 
 if   [ "${CRIT}" -gt 0 ]; then MAX=critical
@@ -33,6 +38,10 @@ jq -r '.Results[]? | .Target as $t | .Vulnerabilities[]?
   | while IFS=$'\t' read -r sev id pkg inst fix target; do
       case "${sev}" in CRITICAL|HIGH) kind=warning ;; *) kind=notice ;; esac
       echo "::${kind} title=trivy ${sev} ${id}::${pkg} ${inst} (fixed: ${fix}) in ${target}"
+    done
+jq -r "${VEX_FILTER}"' | "\(.Finding.Severity)\t\(.Finding.VulnerabilityID)\t\(.Finding.PkgName)\t\(.Finding.InstalledVersion)\t\(.Status)"' "${RESULTS_JSON}" \
+  | while IFS=$'\t' read -r sev id pkg inst status; do
+      echo "::notice title=trivy VEX ${id}::${pkg} ${inst} (${sev}) is ${status} per VEX; not gated"
     done
 jq -r '.Results[]? | .Target as $t | .Secrets[]?
   | "\($t)\t\(.RuleID)\t\(.Title)\t\(.StartLine // 0)"' "${RESULTS_JSON}" \
@@ -51,6 +60,7 @@ jq -r '.Results[]? | .Target as $t | .Secrets[]?
   echo "| LOW | ${LOW} |"
   echo "| UNKNOWN | ${UNK} |"
   echo "| Secrets | ${SECRETS} |"
+  echo "| Not affected per VEX | ${SUPPRESSED} |"
   echo
   echo "Gate: \`fail-on-severity: ${FAIL_ON}\`; highest found: \`${MAX}\`."
 } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
@@ -62,6 +72,7 @@ jq -r '.Results[]? | .Target as $t | .Secrets[]?
   echo "low-count=${LOW}"
   echo "unknown-count=${UNK}"
   echo "secret-count=${SECRETS}"
+  echo "vex-suppressed-count=${SUPPRESSED}"
   echo "max-severity=${MAX}"
 } >> "${GITHUB_OUTPUT:-/dev/null}"
 echo "trivy: ${TOTAL} vulnerabilit(y/ies) (critical ${CRIT}, high ${HIGH}, medium ${MED}, low ${LOW}, unknown ${UNK}), ${SECRETS} secret(s); threshold '${FAIL_ON}'"

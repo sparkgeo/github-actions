@@ -45,6 +45,10 @@ on:
         description: 'Upload SARIF results to the GitHub Security tab'
         default: true
         type: boolean
+      vex-artifact:
+        description: 'Optional: workflow artefact from vex.yml (issue #232); findings its statements mark not_affected or fixed are not gated'
+        default: ''
+        type: string
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the trivy
@@ -79,6 +83,13 @@ jobs:
           path: .sparkgeo-github-actions
           persist-credentials: false
 
+      - name: Download VEX artefact
+        if: inputs.vex-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: ${{ inputs.vex-artifact }}
+          path: ${{ runner.temp }}/vex
+
       - uses: ./.sparkgeo-github-actions/.github/actions/trivy
         with:
           image-ref: ${{ inputs.image-ref }}
@@ -89,3 +100,4 @@ jobs:
           ignore-unfixed: ${{ inputs.ignore-unfixed }}
           trivyignore-path: ${{ inputs.trivyignore-path }}
           sarif-upload: ${{ inputs.sarif-upload }}
+          vex: ${{ inputs.vex-artifact != '' && format('{0}/vex/vex.openvex.json', runner.temp) || '' }}

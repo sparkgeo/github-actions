@@ -42,7 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
-| Trivy | [`trivy`](.github/actions/trivy/action.yml) | Container image vulnerability and secret scan; job-level annotations, step-summary table, SARIF; gate per `fail-on-severity`; DB cached daily. Installs a checksum-verified trivy binary | `version` (default: `0.75.0`), `image-ref`, `image-artifact`, `image-tar` (default: `image.tar`), `scanners` (default: `vuln,secret`), `fail-on-severity` (default: `critical`), `ignore-unfixed` (default: `false`), `trivyignore-path` (default: `.trivyignore`), `sarif-upload` (default: `true`) |
+| Trivy | [`trivy`](.github/actions/trivy/action.yml) | Container image vulnerability and secret scan; job-level annotations, step-summary table, SARIF; gate per `fail-on-severity`; DB cached daily. Installs a checksum-verified trivy binary | `version` (default: `0.75.0`), `image-ref`, `image-artifact`, `image-tar` (default: `image.tar`), `scanners` (default: `vuln,secret`), `fail-on-severity` (default: `critical`), `ignore-unfixed` (default: `false`), `trivyignore-path` (default: `.trivyignore`), `sarif-upload` (default: `true`), `vex` (default: `""`; OpenVEX document whose not-affected findings are not gated) |
 
 ### GitHub Actionlint
 
@@ -434,6 +434,8 @@ If the image is not pushed on PRs, save it as an artifact; the scan job download
 # CVE-2024-12345: only reachable via the admin CLI, not shipped in this image. Review by 2026-12-31.
 CVE-2024-12345
 ```
+
+**VEX.** When a finding has been triaged as not affected, record it as an OpenVEX statement rather than a `.trivyignore` line. `vex.yml` (#232) publishes the statements beside the SBOM; pass its artefact as `vex-artifact: vex`. trivy runs with `--vex --show-suppressed`, so a covered finding becomes a "not affected per VEX" notice, is counted in the job summary, and is left out of the gate. Name the package URL as the product (for example `pkg:apk/alpine/busybox@1.36.0-r9`). trivy and grype both match that form, so one statement serves the image scan and the SBOM scan.
 
 **Egress.** The vulnerability DB comes from `ghcr.io` (`aquasecurity/trivy-db`), cached per day; the image registry (`ghcr.io`, ECR, `cgr.dev`, …) when `image-ref` is used.
 

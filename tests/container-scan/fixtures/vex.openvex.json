@@ -1,0 +1,23 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/sparkgeo/github-actions/tests/container-scan/CVE-2022-48174",
+  "author": "Sparkgeo security (fixture)",
+  "version": 1,
+  "timestamp": "2026-10-15T00:00:00Z",
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2022-48174"
+      },
+      "products": [
+        {
+          "@id": "pkg:apk/alpine/busybox@1.36.0-r9"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "Fixture: the image never runs busybox ash, the vulnerable component.",
+      "timestamp": "2026-10-15T00:00:00Z"
+    }
+  ]
+}

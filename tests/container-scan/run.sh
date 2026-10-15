@@ -30,6 +30,17 @@ results-alpine-3.18.0.json|none|0|critical|3
 results-chainguard-static.json|critical|0|none|0
 results-chainguard-static.json|low|0|none|0
 results-alpine-3.18.0.json|bogus|1||
+results-alpine-3.18.0-vex.json|critical|1|critical|2
 CASES
+
+# The VEX fixture marks busybox CVE-2022-48174 not_affected (issue #232): it is
+# a notice and counted as suppressed, not gated.
+out="$(mktemp)"; log="$(mktemp)"; : > "$out"
+GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null RESULTS_JSON="$HERE/fixtures/results-alpine-3.18.0-vex.json" FAIL_ON=none bash "$GATE" > "$log" 2>&1
+if grep -q '^vex-suppressed-count=1$' "$out" && grep -q '::notice title=trivy VEX CVE-2022-48174::busybox' "$log"; then
+  echo "ok   results-alpine-3.18.0-vex.json -> 1 finding not affected per VEX"
+else
+  echo "FAIL results-alpine-3.18.0-vex.json -> expected vex-suppressed-count=1 and a VEX notice"; fails=$((fails+1))
+fi
 echo "$fails failure(s)"
 exit "$fails"
