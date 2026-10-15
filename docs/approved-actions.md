@@ -28,6 +28,7 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress monitor — audits outbound network calls; baseline for enforce mode | 2026-06-01 |
 | `aws-actions/configure-aws-credentials` | AWS (Amazon) | `99214aa6` (v6.1.3) | `aws-oidc-auth` | Assume IAM role via GitHub OIDC; exchanges OIDC token for short-lived AWS credentials | 2026-06-09 |
 | `ghcr.io/oxsecurity/megalinter[-<flavor>]` (Docker image, not an action) | OX Security | tag `v9.6.0` (`MEGALINTER_VERSION` in `lint-app.yml`) | `lint-app.yml` | All-language lint/format gate; auto-detects languages, emits SARIF. Run with `docker run` so the `flavor` input selects the image and only one image is pulled; not in the dependency graph, so no licence exemption needed (AGPL-3.0, run in CI only, never redistributed) | 2026-06-10 |
+| `ghcr.io/viperproject/gobra` (Docker image, not an action) | Viper project, ETH Zurich | `v26.02`, digest `sha256:d9dc17cdb3725818943a6224872628610e130c349e059ad393ef4f88878cca19` (`gobra-image` default in `.github/actions/gobra` and `verify-gobra.yml`) | `verify-gobra.yml` | Gobra deductive verifier for annotated Go packages (#129); run with `docker run` by digest, so the image cannot change under a tag; egress `ghcr.io`, `pkg-containers.githubusercontent.com`. MPL-2.0, run in CI only | 2026-10-15 |
 
 ## Data handling and third-party telemetry
 

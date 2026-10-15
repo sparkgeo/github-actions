@@ -1,0 +1,6 @@
+Gobra 1.1-SNAPSHOT (@)
+(c) Copyright ETH Zurich 2012 - 2024
+05:44:06.127 [main] INFO viper.gobra.Gobra - Verifying package bad - bad [05:44:06]
+05:44:09.376 [ForkJoinPool-3-worker-1] ERROR viper.gobra.reporting.FileWriterReporter - Error at: <bad/bad.go:4:9> Postcondition might not hold. 
+Assertion res > 0 might not hold.
+05:44:09.409 [thread-16] ERROR viper.gobra.Gobra - Gobra found 1 error.

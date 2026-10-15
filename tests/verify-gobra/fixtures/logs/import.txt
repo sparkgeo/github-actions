@@ -1,0 +1,8 @@
+Gobra 1.1-SNAPSHOT (@)
+(c) Copyright ETH Zurich 2012 - 2024
+05:44:13.031 [main] INFO viper.gobra.Gobra - Verifying package unsup1 - unsup1 [05:44:13]
+05:44:13.434 [thread-6] ERROR viper.gobra.reporting.FileWriterReporter - Error at: <unsup1/u.go:3:8> unsup1/u.go:3:8:error: Explicit qualifier could not be derived (reason: 'No existing directory found for import path 'reflect'')
+import "reflect"
+       ^
+
+05:44:13.441 [thread-2] ERROR viper.gobra.Gobra - Gobra found 1 error.
