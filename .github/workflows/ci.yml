@@ -119,6 +119,8 @@ jobs:
           done
           echo "::error::no relevancy data after 30 minutes"
           kubectl get pods -A
+          kubectl -n security-scanners logs deploy/kubevuln --tail=40 || true
+          kubectl -n security-scanners logs ds/node-agent --tail=40 | grep -iE 'error|profile|learning|completed' || true
           exit 1
 
       - name: Collect
