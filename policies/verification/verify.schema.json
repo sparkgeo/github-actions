@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sparkgeo/github-actions/policies/verification/verify.schema.json",
+  "title": "Verification path map (verify.yml)",
+  "description": "Which rung of the verification ladder covers which paths (SecOps plan Step 39, issue #132). Every verify-*.yml reads this file; a high-risk path with no rung is a finding in all of them. Absent, workflows fall back to the HIGH_RISK_GLOBS list. Guide: docs/verification.md.",
+  "type": "object",
+  "required": ["paths"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"type": "integer", "const": 1},
+    "high_risk_globs": {"type": "array", "items": {"type": "string"}, "description": "Replaces the built-in HIGH_RISK_GLOBS fallback for paths not listed below."},
+    "paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["glob", "rungs"],
+        "additionalProperties": false,
+        "properties": {
+          "glob": {"type": "string", "minLength": 1, "description": "Gitignore-style glob (** spans directories) relative to the repository root."},
+          "risk": {"type": "string", "enum": ["high", "medium", "low"], "default": "medium", "description": "high: every rung listed must report; a changed high-risk path with no rung blocks at Standard. low: boundary contracts only."},
+          "rungs": {
+            "type": "array", "minItems": 1, "uniqueItems": true,
+            "items": {"type": "string", "enum": ["boundary-contracts", "contracts", "properties", "symbolic", "fuzz", "static", "model-based", "dafny", "gobra", "tla", "alloy", "lean", "kani"]},
+            "description": "Ladder rungs expected on this path, lowest first."
+          },
+          "tool": {"type": "string", "enum": ["python", "go", "ts", "dafny", "tla", "alloy", "lean", "rust"], "description": "Which verify-*.yml owns the path; inferred from the file extension when absent."},
+          "targets": {"type": "array", "items": {"type": "string", "enum": ["py", "go", "js", "cs", "java"]}, "description": "dafny: compile targets whose generated code is drift-checked (#128)."},
+          "covers": {"type": "array", "items": {"type": "string"}, "description": "tla, alloy, lean: implementation globs the model stands for; a change under them without a model change is reported (#130, #131)."},
+          "budget": {"type": "object", "additionalProperties": false, "properties": {
+            "per_path_timeout": {"type": "integer", "minimum": 1}, "per_condition_timeout": {"type": "integer", "minimum": 1},
+            "fuzz_time": {"type": "string", "pattern": "^\\d+[smh]$"}, "verification_time_limit": {"type": "integer", "minimum": 1}},
+            "description": "Per-path overrides of the brief's budgets (CrossHair 3/45 s, fuzz 45s, Dafny 60 s)."},
+          "owner": {"type": "string"},
+          "notes": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+version: 1
+paths:
+  - glob: "src/tiles/**"
+    risk: extreme
+    rungs: [magic]
+  - rungs: [contracts]
+    extra: nope

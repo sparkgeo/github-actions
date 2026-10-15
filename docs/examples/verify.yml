@@ -1,0 +1,30 @@
+# Verification path map (SecOps plan Step 39, issue #132). Copy to the
+# repository root as verify.yml. Every verify-*.yml reads it: the rungs say
+# what must report on a path, risk says what blocks. docs/verification.md.
+---
+version: 1
+paths:
+  - glob: "src/tiles/**"
+    risk: high
+    rungs: [contracts, symbolic, properties]     # python: icontract + CrossHair + Hypothesis (#125)
+    tool: python
+  - glob: "internal/geom/**"
+    risk: high
+    rungs: [fuzz, properties, gobra]             # go: Fuzz* targets + rapid (#126), Gobra proofs (#129)
+    tool: go
+  - glob: "web/src/geo/**"
+    risk: high
+    rungs: [properties, static]                  # ts: fast-check + strictest tsc (#127)
+    tool: ts
+  - glob: "verified/*.dfy"
+    rungs: [dafny]                               # shared core, compiled and drift-checked (#128)
+    targets: [py, go, js]
+  - glob: "specs/retry.tla"
+    rungs: [tla]                                 # design model (#130)
+    covers: ["internal/queue/**"]
+  - glob: "proofs/**/*.lean"
+    rungs: [lean]                                # machine-checked (#131, Advanced)
+    covers: ["src/pricing/**"]
+  - glob: "src/api/handlers/**"
+    risk: low
+    rungs: [boundary-contracts]                  # stop here for glue code
