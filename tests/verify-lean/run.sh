@@ -45,6 +45,12 @@ C="${TMP}/false"; mkdir -p "${C}"
 python3 -I "${PY}" lean --log "${LOGS}/false.txt" --rc 1 --output "${C}/lean.json" > /dev/null
 [ "$(j "${C}/lean.json" '.issues[0] | .kind + ":" + .message')" = "error:omega could not prove the goal:" ] || fail "false: $(cat "${C}/lean.json")"
 
+echo "== lean: an unpositioned warning fails under --wfail and is reported as the cause"
+G="${TMP}/warn"; mkdir -p "${G}"
+python3 -I "${PY}" lean --log "${LOGS}/module-warning.txt" --rc 1 --root docs/examples/verify/lean/ --output "${G}/lean.json" > /dev/null
+[ "$(j "${G}/lean.json" '.issues | map(.kind + "@" + .file + ":" + (.line|tostring)) | join(",")')" = "error@docs/examples/verify/lean/Tiles/Column.lean:1" ] || fail "module warning: $(cat "${G}/lean.json")"
+j "${G}/lean.json" '.issues[0].message' | grep -q '^warning (fails under --wfail): imports `Mathlib`' || fail "module warning message"
+
 echo "== kani: one verified harness, one overflow"
 D="${TMP}/kani"; mkdir -p "${D}"
 python3 -I "${PY}" kani --log "${LOGS}/kani.txt" --rc 1 --crate tests/verify-lean/fixtures/kani --output "${D}/kani-crate.json" > "${D}/parse.log"

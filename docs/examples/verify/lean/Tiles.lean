@@ -1,1 +1,3 @@
-import Tiles.Column
+module
+
+public import Tiles.Column

@@ -29,21 +29,31 @@ import sys
 # Lake prints "error: <file>:<l>:<c>: msg"; Lean itself prints "<file>:<l>:<c>: error: msg"
 MSG = re.compile(r"^(?P<level>error|warning): (?P<file>[^:\n]+\.lean):(?P<line>\d+):(?P<col>\d+): (?P<msg>.*)$")
 MSG2 = re.compile(r"^(?P<file>[^:\n]+\.lean):(?P<line>\d+):(?P<col>\d+): (?P<level>error|warning): (?P<msg>.*)$")
+# file-level messages carry no position, e.g. "warning: Tiles/Column.lean: imports `Mathlib` ..."
+MSG3 = re.compile(r"^(?P<level>error|warning): (?P<file>[^:\n]+\.lean): (?P<msg>.*)$")
 
 
 def lean(a):
     issues = []
     for l in open(a.log, encoding="utf-8", errors="ignore").read().splitlines():
-        m = MSG.match(l.strip()) or MSG2.match(l.strip())
+        m = MSG.match(l.strip()) or MSG2.match(l.strip()) or MSG3.match(l.strip())
         if not m:
             continue
-        d = m.groupdict()
+        d = dict(m.groupdict())
+        d.setdefault("line", "1"); d.setdefault("col", "1")
         kind = "sorry" if "declaration uses `sorry`" in d["msg"] or "declaration uses 'sorry'" in d["msg"] else d["level"]
         f = os.path.join(a.root, d["file"]) if a.root else d["file"]
         issues.append({"file": f, "line": int(d["line"]), "col": int(d["col"]), "kind": kind, "message": d["msg"][:300]})
         if kind != "warning":
             title = "unfinished proof (sorry)" if kind == "sorry" else "Lean error"
             print(f"::error file={f},line={d['line']},col={d['col']},title={title}::{d['msg'][:300]}")
+    if a.rc != 0 and not any(i["kind"] in ("error", "sorry") for i in issues) and any(i["kind"] == "warning" for i in issues):
+        # --wfail: the warnings are what failed the build
+        for i in issues:
+            if i["kind"] == "warning":
+                i["kind"] = "error"
+                i["message"] = "warning (fails under --wfail): " + i["message"]
+                print(f"::error file={i['file']},line={i['line']},col={i['col']},title=Lean warning under --wfail::{i['message'][:300]}")
     if a.rc != 0 and not any(i["kind"] in ("error", "sorry") for i in issues):
         issues.append({"file": a.root or ".", "line": 1, "col": 1, "kind": "error",
                        "message": f"lake build exited {a.rc} without a located error (see lake-build.txt)"})

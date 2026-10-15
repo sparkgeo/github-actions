@@ -1,4 +1,7 @@
-import Mathlib
+module
+
+-- Mathlib is built for the module system: a plain `import Mathlib` warns, and --wfail fails on it.
+public import Mathlib
 
 /-!
 # XYZ tile column of a longitude (issue #131)
