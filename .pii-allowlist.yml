@@ -1,0 +1,17 @@
+# This repository's PII allowlist (docs/data-classification.md section 5).
+# Changes need a second reviewer. Only reserved placeholders belong here.
+---
+version: 1
+literals:
+  - value: jane.doe@example.com
+    reason: documentation placeholder (example.com, RFC 2606)
+regexes:
+  - pattern: '^(192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}$'
+    reason: RFC 5737 documentation IPv4 ranges used in examples
+  - pattern: '@example\.(com|org|net)$'
+    reason: reserved example domains in README snippets
+paths:
+  - glob: tests/**
+    reason: synthetic fixtures for this repository's own scanners (PII scan, gitleaks PII rules, inventory)
+  - glob: docs/examples/**
+    reason: documented placeholders for consumers to copy

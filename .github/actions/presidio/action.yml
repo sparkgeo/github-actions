@@ -1,0 +1,131 @@
+name: "PII Scan (presidio)"
+description: |
+  Scans changed text and data files for personal data with presidio
+  (SecOps plan Step 23 Standard, issue #97): NER and pattern analysis with
+  the predefined recognizers plus the custom ones in
+  policies/pii/recognizers.yml (Canadian SIN with a Luhn check, Canadian
+  postal code next to a name, a client-identifier placeholder). Applies the
+  repository's .pii-allowlist.yml (docs/data-classification.md section 5),
+  writes SARIF, PR annotations and a job summary grouped by entity, and fails
+  only for entities in block-entities. A matched value is never printed,
+  logged or written to the report.
+
+  On a pull_request only the files the PR adds or changes are scanned
+  (base...head); otherwise the whole tree. Needs fetch-depth: 0 or the base
+  commit fetched. Egress: PyPI and the spaCy model wheel on
+  github.com/explosion/spacy-models releases.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  include-globs:
+    description: "Comma-separated globs of files to scan."
+    default: "**/*.md,**/*.txt,**/*.rst,**/*.csv,**/*.json,**/*.yaml,**/*.yml,**/*.ipynb,**/*.sql,**/fixtures/**"
+  entities:
+    description: "Entities to report."
+    default: "CREDIT_CARD,US_SSN,CA_SIN,IBAN_CODE,EMAIL_ADDRESS,PHONE_NUMBER,IP_ADDRESS,PERSON,LOCATION"
+  block-entities:
+    description: "Subset that fails the job."
+    default: "CREDIT_CARD,US_SSN,CA_SIN,IBAN_CODE"
+  score-threshold:
+    description: "Minimum presidio confidence."
+    default: "0.7"
+  model:
+    description: "spaCy model: en_core_web_sm or en_core_web_lg."
+    default: "en_core_web_sm"
+  allowlist-path:
+    description: "Allowlist file in the repository."
+    default: ".pii-allowlist.yml"
+  recognizers-path:
+    description: "Custom recognizers YAML; empty uses the bundled policies/pii/recognizers.yml."
+    default: ""
+  scope:
+    description: "changed (PR diff when on a pull_request, else the tree) or all."
+    default: "changed"
+  sarif-path:
+    description: "SARIF output file."
+    default: "pii-scan.sarif"
+  presidio-version:
+    description: "presidio-analyzer version (PyPI)."
+    default: "2.2.364"
+  spacy-version:
+    description: "spaCy version (PyPI)."
+    default: "3.8.16"
+  model-version:
+    description: "spaCy model release (github.com/explosion/spacy-models)."
+    default: "3.8.0"
+outputs:
+  finding-count:
+    description: "Findings at or above the threshold."
+    value: ${{ steps.scan.outputs.finding-count }}
+  blocking-count:
+    description: "Findings whose entity is in block-entities."
+    value: ${{ steps.scan.outputs.blocking-count }}
+  file-count:
+    description: "Files scanned."
+    value: ${{ steps.scan.outputs.file-count }}
+  sarif-path:
+    description: "SARIF file written."
+    value: ${{ inputs.sarif-path }}
+runs:
+  using: "composite"
+  steps:
+    - id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ${{ runner.temp }}/presidio-env
+        key: presidio-${{ runner.os }}-${{ inputs.presidio-version }}-${{ inputs.spacy-version }}-${{ inputs.model }}-${{ inputs.model-version }}
+
+    - id: install
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        PRESIDIO_VERSION: ${{ inputs.presidio-version }}
+        SPACY_VERSION: ${{ inputs.spacy-version }}
+        MODEL: ${{ inputs.model }}
+        MODEL_VERSION: ${{ inputs.model-version }}
+      run: |
+        set -euo pipefail
+        ENV="${RUNNER_TEMP}/presidio-env"
+        python3 -m venv "${ENV}"
+        "${ENV}/bin/python" -m pip install --quiet --disable-pip-version-check "presidio-analyzer==${PRESIDIO_VERSION}" "spacy==${SPACY_VERSION}" \
+          "https://github.com/explosion/spacy-models/releases/download/${MODEL}-${MODEL_VERSION}/${MODEL}-${MODEL_VERSION}-py3-none-any.whl"
+
+    - id: files
+      shell: bash
+      env:
+        SCOPE: ${{ inputs.scope }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+      run: |
+        set -euo pipefail
+        LIST="${RUNNER_TEMP}/pii-files.txt"
+        if [ "${SCOPE}" = "changed" ] && [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
+          git fetch -q --depth=1 origin "${PR_BASE_SHA}" 2>/dev/null || true
+          git diff --name-only --diff-filter=ACMR "${PR_BASE_SHA}...${PR_HEAD_SHA}" > "${LIST}" 2>/dev/null \
+            || git diff --name-only --diff-filter=ACMR "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "${LIST}"
+          echo "Scope: files changed in ${PR_BASE_SHA:0:7}...${PR_HEAD_SHA:0:7} ($(wc -l < "${LIST}") candidate(s))"
+        else
+          git ls-files > "${LIST}"
+          echo "Scope: whole tree ($(wc -l < "${LIST}") candidate(s))"
+        fi
+        echo "list=${LIST}" >> "${GITHUB_OUTPUT}"
+
+    - id: scan
+      shell: bash
+      env:
+        LIST: ${{ steps.files.outputs.list }}
+        INCLUDE: ${{ inputs.include-globs }}
+        ENTITIES: ${{ inputs.entities }}
+        BLOCK: ${{ inputs.block-entities }}
+        THRESHOLD: ${{ inputs.score-threshold }}
+        MODEL: ${{ inputs.model }}
+        ALLOWLIST: ${{ inputs.allowlist-path }}
+        RECOGNIZERS: ${{ inputs.recognizers-path }}
+        BUNDLED: ${{ github.action_path }}/../../../policies/pii/recognizers.yml
+        SARIF: ${{ inputs.sarif-path }}
+      run: |
+        set -euo pipefail
+        "${RUNNER_TEMP}/presidio-env/bin/python" -I "${GITHUB_ACTION_PATH}/scan.py" --root . --files-from "${LIST}" \
+          --include-globs "${INCLUDE}" --entities "${ENTITIES}" --block-entities "${BLOCK}" --score-threshold "${THRESHOLD}" \
+          --model "${MODEL}" --allowlist "${ALLOWLIST}" --recognizers "${RECOGNIZERS:-${BUNDLED}}" --sarif "${SARIF}" \
+          --output "${RUNNER_TEMP}/pii-scan.json"

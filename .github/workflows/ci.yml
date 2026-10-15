@@ -76,6 +76,53 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # PII scan (#97): the composite over this whole repository, which must have
+  # no blocking finding (tests/ and docs/examples/ are allowlisted by path),
+  # then the recognizer unit tests and scan.py against the fixture repository
+  # (synthetic placeholders plus values generated at run time) on the
+  # composite's cached virtualenv.
+  pii-scan:
+    name: PII Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: self
+        uses: ./.github/actions/presidio
+        with:
+          scope: all
+          entities: CREDIT_CARD,US_SSN,CA_SIN,IBAN_CODE  # the blocking set; names and places in the docs are expected
+          sarif-path: ${{ runner.temp }}/pii-self.sarif
+
+      - name: Fixture repository
+        env:
+          PRESIDIO_PYTHON: ${{ runner.temp }}/presidio-env/bin/python
+        run: tests/pii-scan/run.sh
+
+      - name: Outcome
+        env:
+          BLOCKING: ${{ steps.self.outputs.blocking-count }}
+          FILES: ${{ steps.self.outputs.file-count }}
+        run: |
+          [ "${BLOCKING}" = "0" ] || { echo "::error title=pii::this repository has ${BLOCKING} blocking PII finding(s)"; exit 1; }
+          [ "${FILES}" -gt 0 ] || { echo "::error title=pii::no files scanned"; exit 1; }
+          [ -s "${RUNNER_TEMP}/pii-self.sarif" ] || { echo "::error title=pii::no SARIF written"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
