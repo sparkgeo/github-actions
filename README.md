@@ -507,5 +507,6 @@ This repo is part of the Sparkgeo GitHub Actions security programme. The pillars
 | OIDC & secret federation | #27 | No static credentials; OIDC for cloud auth; environment-scoped secrets |
 | Runner egress control | #28 | `harden-runner` audit → block; self-hosted runner isolation policy |
 | Enterprise governance & observability | #29 | Org rulesets; OpenSSF Scorecard; audit log → SIEM |
+| EU Cyber Resilience Act | #235 | Applicability test, obligation-to-workflow map and reporting clocks for products shipped to the EU: [docs/cra.md](docs/cra.md) |
 
 To report a security vulnerability, use the [Security Advisory](../../security/advisories/new) process — do not open a public issue.
