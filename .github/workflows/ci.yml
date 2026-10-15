@@ -258,3 +258,56 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/storage-optimizer
+
+  # Malicious-package check (issue #229): gate.py against GuardDog scans of the
+  # fixture packages (a PyPI install hook and an npm postinstall downloader,
+  # both high_risk; one allowlisted), then the composite on a clean lockfile
+  # plus a fixture .vsix built here, asserting the counts. Audit egress: the
+  # hosts are documented in malicious-package-check.yml.
+  guarddog:
+    name: GuardDog
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Same venv path the composite uses, so its install step is a no-op.
+      - name: Gate fixtures
+        run: |
+          set -euo pipefail
+          python3 -m venv "${RUNNER_TEMP}/guarddog-venv"
+          "${RUNNER_TEMP}/guarddog-venv/bin/python" -m pip install -q --disable-pip-version-check guarddog==3.2.0
+          tests/guarddog/run.sh "${RUNNER_TEMP}/guarddog-venv/bin"
+
+      - name: Build the fixture .vsix
+        working-directory: tests/guarddog/fixtures/vsix
+        run: |
+          python3 -I -c 'import os, sys, zipfile
+          with zipfile.ZipFile(sys.argv[1], "w") as z:
+              [z.write(os.path.join(r, f)) for r, _, fs in os.walk("extension") for f in fs]' "${GITHUB_WORKSPACE}/fixture.vsix"
+
+      - id: fixture
+        uses: ./.github/actions/guarddog
+        with:
+          working-directory: tests/guarddog/fixtures/clean
+          vsix-paths: fixture.vsix
+          fail-on: none
+          sarif-upload: "false"
+
+      - name: Assert the clean lockfile and .vsix counts
+        env:
+          SCANNED: ${{ steps.fixture.outputs.scanned-count }}
+          FLAGGED: ${{ steps.fixture.outputs.flagged-count }}
+        run: |
+          set -euo pipefail
+          # six, github.com/pkg/errors and the .vsix; only the .vsix is flagged.
+          [ "${SCANNED}" = "3" ] || { echo "::error title=guarddog::expected 3 scanned, got ${SCANNED}"; exit 1; }
+          [ "${FLAGGED}" = "1" ] || { echo "::error title=guarddog::expected only the .vsix flagged, got ${FLAGGED}"; exit 1; }

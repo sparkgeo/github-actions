@@ -1,0 +1,8 @@
+{
+  "name": "fixture-postinstall",
+  "version": "0.0.1",
+  "description": "Test fixture for the malicious-package check (issue #229); never installed",
+  "scripts": {
+    "postinstall": "node install.js"
+  }
+}

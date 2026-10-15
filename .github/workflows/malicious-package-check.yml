@@ -1,0 +1,102 @@
+name: Malicious Package Check
+
+# Reusable GuardDog gate (SecOps plan Step 3 Standard; issue #229): reads
+# each package the lockfiles pin and blocks one whose GuardDog label is at or
+# above fail-on until a reviewer adds it to the allowlist. On a pull request
+# only packages added or changed against the base are verified; on any other
+# event (schedule, push, dispatch) every pinned package is. Optional .vsix
+# files cover the IDE extension allowlist (Step 33).
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. The hosts it reaches: pypi.org and
+# files.pythonhosted.org (GuardDog install and PyPI packages),
+# registry.npmjs.org, proxy.golang.org and github.com (Go modules), and DNS
+# lookups of maintainer email domains (expired-domain rule).
+
+on:
+  workflow_call:
+    inputs:
+      ecosystems:
+        description: 'Comma-separated: pypi, npm, go'
+        default: 'pypi,npm,go'
+        type: string
+      working-directory:
+        description: 'Only lockfiles under this directory are read'
+        default: '.'
+        type: string
+      fail-on:
+        description: 'Block when a package is at or above: high (GuardDog high_risk), medium (suspicious), none (report only)'
+        default: 'high'
+        type: string
+      allowlist-path:
+        description: 'Reviewed exceptions: package@version, rule, reviewer, date (see README)'
+        default: '.guarddog-allowlist.yml'
+        type: string
+      vsix-paths:
+        description: 'Optional .vsix files to scan, relative to the repository root'
+        default: ''
+        type: string
+      guarddog-version:
+        description: 'GuardDog version installed from PyPI'
+        default: '3.2.0'
+        type: string
+      sarif-upload:
+        description: 'Upload the SARIF to the GitHub Security tab'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the guarddog
+          composite from. Pin this to the SAME SHA you pinned
+          malicious-package-check.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      blocking-count:
+        description: 'Packages at or above fail-on that are not allowlisted'
+        value: ${{ jobs.guarddog.outputs.blocking-count }}
+      flagged-count:
+        description: 'Packages with any GuardDog risk'
+        value: ${{ jobs.guarddog.outputs.flagged-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always) and adds
+# `security-events: write` only when it wants SARIF upload. See README.
+
+jobs:
+  guarddog:
+    name: GuardDog
+    runs-on: ubuntu-latest
+    outputs:
+      blocking-count: ${{ steps.scan.outputs.blocking-count }}
+      flagged-count: ${{ steps.scan.outputs.flagged-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the PR base must be reachable for the lockfile diff
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout guarddog composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: scan
+        uses: ./.sparkgeo-github-actions/.github/actions/guarddog
+        with:
+          ecosystems: ${{ inputs.ecosystems }}
+          working-directory: ${{ inputs.working-directory }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          fail-on: ${{ inputs.fail-on }}
+          allowlist-path: ${{ inputs.allowlist-path }}
+          vsix-paths: ${{ inputs.vsix-paths }}
+          version: ${{ inputs.guarddog-version }}
+          sarif-upload: ${{ inputs.sarif-upload }}
