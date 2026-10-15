@@ -1,0 +1,145 @@
+name: "cdk-nag"
+description: |
+  DR readiness for AWS CDK apps with cdk-nag (SecOps plan Step 8 and 19;
+  issue #94). cdk-nag 3 is a CDK policy-validation plugin: during
+  `cdk synth`, NIST80053R5Checks writes its results to
+  cdk.out/validation-report.json. This composite synthesises with CDK_NAG=1
+  (the app registers the plugin only then, so local synth stays quiet),
+  keeps the resilience rules from policies/dr/cdk-nag-rules.txt (or the
+  rules input), annotates each finding at the line that created the
+  construct, and fails only on strict-rules. Acknowledgements
+  (Validations.of(construct).acknowledge({ id, reason })) are listed with
+  their reason. A reason shorter than min-reason-length is reported, and
+  for a strict rule it does not count.
+
+  On a pull request it keeps one comment updated with the findings
+  (pull-requests: write); elsewhere the table goes to the job summary only.
+  Synthesis failing on cdk-nag errors is expected and does not fail the step.
+  A missing validation report does, because it means the app did not
+  register cdk-nag.
+
+  Required permissions on the calling job: contents: read, plus
+  pull-requests: write for the PR comment.
+inputs:
+  working-directory:
+    description: "Directory holding cdk.json."
+    default: "."
+  runtime:
+    description: "node (npm ci) or python (pip install -r requirements.txt into a venv)."
+    default: "node"
+  rules:
+    description: "Comma-separated rule names to report (without the NIST.800.53.R5- prefix); empty uses policies/dr/cdk-nag-rules.txt."
+    default: ""
+  strict-rules:
+    description: "Comma-separated rule names that fail the job when violated."
+    default: ""
+  min-reason-length:
+    description: "Acknowledgement reasons shorter than this are reported."
+    default: "20"
+  cdk-version:
+    description: "aws-cdk CLI version run with npx."
+    default: "2.1145.0"
+  install:
+    description: "Install the app's dependencies first."
+    default: "true"
+  comment:
+    description: "Post or update one PR comment with the findings."
+    default: "true"
+  github-token:
+    description: "Token for the PR comment."
+    default: ${{ github.token }}
+outputs:
+  violation-count:
+    description: "Resilience violations."
+    value: ${{ steps.report.outputs.violation-count }}
+  acknowledged-count:
+    description: "Acknowledged resilience findings."
+    value: ${{ steps.report.outputs.acknowledged-count }}
+  weak-count:
+    description: "Acknowledgements with a reason under min-reason-length."
+    value: ${{ steps.report.outputs.weak-count }}
+  blocking-count:
+    description: "Findings that fail the job (strict-rules)."
+    value: ${{ steps.report.outputs.blocking-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install the app's dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        RUNTIME: ${{ inputs.runtime }}
+      run: |
+        set -euo pipefail
+        case "${RUNTIME}" in
+          node) if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi ;;
+          python)
+            python3 -m venv "${RUNNER_TEMP}/cdk-venv"
+            "${RUNNER_TEMP}/cdk-venv/bin/pip" install -q --disable-pip-version-check -r requirements.txt ;;
+          *) echo "::error title=dr-check-cdk::runtime must be node or python"; exit 1 ;;
+        esac
+
+    - name: Synthesise with cdk-nag
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CDK_NAG: "1"
+        CDK_VERSION: ${{ inputs.cdk-version }}
+        RUNTIME: ${{ inputs.runtime }}
+      run: |
+        set -euo pipefail
+        # A Python app's `python3 app.py` runs from the venv; PATH is set for this command only.
+        [ "${RUNTIME}" != "python" ] || PATH="${RUNNER_TEMP}/cdk-venv/bin:${PATH}"
+        status=0
+        npx --yes "aws-cdk@${CDK_VERSION}" synth --quiet > "${RUNNER_TEMP}/cdk-synth.txt" 2>&1 || status=$?
+        if [ ! -f cdk.out/validation-report.json ]; then
+          cat "${RUNNER_TEMP}/cdk-synth.txt"
+          echo "::error title=dr-check-cdk::no cdk.out/validation-report.json (synth exit ${status}). Does the app add NIST80053R5Checks when CDK_NAG=1? See docs/examples/dr/cdk."
+          exit 1
+        fi
+        echo "cdk synth exit ${status} (non-zero is expected when cdk-nag reports errors)"
+
+    - name: Report resilience findings
+      id: report
+      shell: bash
+      env:
+        WORKDIR: ${{ inputs.working-directory }}
+        RULES: ${{ inputs.rules }}
+        STRICT: ${{ inputs.strict-rules }}
+        MIN_REASON: ${{ inputs.min-reason-length }}
+      run: |
+        set -euo pipefail
+        [ -n "${RULES}" ] || RULES="${GITHUB_ACTION_PATH}/../../../policies/dr/cdk-nag-rules.txt"
+        status=0
+        python3 -I "${GITHUB_ACTION_PATH}/report.py" --report "${WORKDIR}/cdk.out/validation-report.json" --rules "${RULES}" \
+          --strict "${STRICT}" --min-reason "${MIN_REASON}" --root "${WORKDIR}" --comment "${RUNNER_TEMP}/dr-check-cdk.md" \
+          >> "${GITHUB_OUTPUT}" || status=$?
+        echo "status=${status}" >> "${GITHUB_OUTPUT}"
+
+    - name: Post or update the PR comment
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+      run: |
+        set -euo pipefail
+        BODY="$(cat "${RUNNER_TEMP}/dr-check-cdk.md")"
+        id="$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+          --jq '[.[] | select(.body | startswith("<!-- dr-check-cdk -->")) | .id][0] // empty')"
+        if [ -n "${id}" ]; then
+          gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="${BODY}" > /dev/null
+        else
+          gh api -X POST "repos/${REPO}/issues/${PR}/comments" -f body="${BODY}" > /dev/null
+        fi
+
+    - name: Gate on strict-rules
+      if: steps.report.outputs.status != '0'
+      shell: bash
+      env:
+        COUNT: ${{ steps.report.outputs.blocking-count }}
+      run: |
+        echo "::error title=dr-check-cdk::${COUNT:-the report could not be read; see above} finding(s) on strict-rules"
+        exit 1

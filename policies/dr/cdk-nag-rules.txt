@@ -1,0 +1,16 @@
+# cdk-nag NIST 800-53 rev 5 rules that cover backup and recovery, the subset
+# dr-check-cdk.yml reports by default (issue #94). One rule name per line,
+# without the "NIST.800.53.R5-" prefix. Names checked against cdk-nag 3.0.2
+# RULES.md. RDSEnhancedMonitoringEnabled is optional: pass it in the rules
+# input to report it as well.
+RDSInBackupPlan
+RDSInstanceBackupEnabled
+RDSMultiAZSupport
+DynamoDBInBackupPlan
+DynamoDBPITREnabled
+EFSInBackupPlan
+EC2EBSInBackupPlan
+S3BucketVersioningEnabled
+S3BucketReplicationEnabled
+ElastiCacheRedisClusterAutomaticBackup
+RedshiftBackupEnabled

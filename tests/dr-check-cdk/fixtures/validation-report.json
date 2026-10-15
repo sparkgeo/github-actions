@@ -1,0 +1,423 @@
+{
+  "version": "54.0.0",
+  "title": "Validation Report",
+  "pluginReports": [
+    {
+      "pluginName": "NIST.800.53.R5",
+      "conclusion": "failure",
+      "violations": [
+        {
+          "ruleName": "NIST.800.53.R5-VPCDefaultSecurityGroupClosed",
+          "description": "The VPC's default security group allows inbound or outbound traffic - (Control IDs: AC-4(21), AC-17b, AC-17(1), AC-17(1), AC-17(4)(a), AC-17(9), AC-17(10), CM-6a, CM-9b, SC-7a, SC-7c, SC-7(5), SC-7(7), SC-7(11), SC-7(12), SC-7(16), SC-7(21), SC-7(24)(b), SC-7(25), SC-7(26), SC-7(27), SC-7(28)).",
+          "severity": "warning",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Vpc/Resource",
+              "stackTraces": [
+                "...new Vpc2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:17:13)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-VPCFlowLogsEnabled",
+          "description": "The VPC does not have an associated Flow Log - (Control IDs: AC-4(26), AU-2b, AU-3a, AU-3b, AU-3c, AU-3d, AU-3e, AU-6(3), AU-6(4), AU-6(6), AU-6(9), AU-8b, AU-12a, AU-12c, AU-12(1), AU-12(2), AU-12(3), AU-12(4), AU-14a, AU-14b, AU-14b, AU-14(3), CA-7b, CM-5(1)(b), CM-6a, CM-9b, IA-3(3)(b), MA-4(1)(a), PM-14a.1, PM-14b, PM-31, SI-4(17), SI-7(8)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Vpc/Resource",
+              "stackTraces": [
+                "...new Vpc2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:17:13)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-VPCSubnetAutoAssignPublicIpDisabled",
+          "description": "The subnet auto-assigns public IP addresses - (Control IDs: AC-2(6), AC-3, AC-3(7), AC-4(21), AC-6, AC-17b, AC-17(1), AC-17(1), AC-17(4)(a), AC-17(9), AC-17(10), MP-2, SC-7a, SC-7b, SC-7c, SC-7(2), SC-7(3), SC-7(7), SC-7(9)(a), SC-7(11), SC-7(12), SC-7(16), SC-7(20), SC-7(21), SC-7(24)(b), SC-7(25), SC-7(26), SC-7(27), SC-7(28), SC-25).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Vpc/PublicSubnet1/Subnet",
+              "stackTraces": []
+            },
+            {
+              "constructPath": "DrFixture/Vpc/PublicSubnet2/Subnet",
+              "stackTraces": []
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-VPCNoUnrestrictedRouteToIGW",
+          "description": "The route table may contain one or more unrestricted route(s) to an IGW ('0.0.0.0/0' or '::/0') - (Control IDs: AC-4(21), CM-7b).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Vpc/PublicSubnet1/DefaultRoute",
+              "stackTraces": [
+                "...@APP@/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:225 in aws-cdk-lib...\nArray.forEach (:)\n...new Vpc2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:17:13)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Vpc/PublicSubnet2/DefaultRoute",
+              "stackTraces": [
+                "...@APP@/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:225 in aws-cdk-lib...\nArray.forEach (:)\n...new Vpc2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:17:13)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-SecretsManagerRotationEnabled",
+          "description": "The secret does not have automatic rotation scheduled - (Control IDs: AC-4, AC-4(22), AC-24(1), AU-9(3), CA-9b, PM-17b, SC-7(4)(b), SC-7(4)(g), SC-8, SC-8(1), SC-8(2), SC-8(3), SC-8(4), SC-8(5), SC-13a, SC-23, SI-1a.2, SI-1a.2, SI-1c.2).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Database/Secret/Resource",
+              "stackTraces": [
+                "...new DatabaseInstance2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:18:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-SecretsManagerUsingKMSKey",
+          "description": "The secret is not encrypted with a KMS Customer managed key - (Control IDs: AU-9(3), CP-9d, SC-8(3), SC-8(4), SC-13a, SC-28(1), SI-19(4)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Database/Secret/Resource",
+              "stackTraces": [
+                "...new DatabaseInstance2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:18:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-RDSEnhancedMonitoringEnabled",
+          "description": "The RDS DB Instance does not have enhanced monitoring enabled - (Control IDs: AU-12(3), AU-14a, AU-14b, CA-2(2), CA-7, CA-7b, PM-14a.1, PM-14b, PM-31, SC-36(1)(a), SI-2a).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Database/Resource",
+              "stackTraces": [
+                "...new DatabaseInstance2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:18:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-RDSInBackupPlan",
+          "description": "The RDS DB instance is not in an AWS Backup plan - (Control IDs: CP-1(2), CP-2(5), CP-6a, CP-6(1), CP-6(2), CP-9a, CP-9b, CP-9c, CP-10, CP-10(2), SC-5(2), SI-13(5)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Database/Resource",
+              "stackTraces": [
+                "...new DatabaseInstance2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:18:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-RDSInstanceDeletionProtectionEnabled",
+          "description": "The RDS DB Instance or Aurora Cluster does not have deletion protection enabled - (Control IDs: CA-7(4)(c), CM-3a, CP-1a.1(b), CP-1a.2, CP-2a, CP-2a.6, CP-2a.7, CP-2d, CP-2e, CP-2(5), SA-15a.4, SC-5(2), SC-22, SI-13(5)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Database/Resource",
+              "stackTraces": [
+                "...new DatabaseInstance2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:18:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-RDSLoggingEnabled[LogExport::postgresql]",
+          "description": "The non-Aurora RDS DB instance or Aurora cluster does not have all CloudWatch log types exported - (Control IDs: AC-2(4), AC-3(1), AC-3(10), AC-4(26), AC-6(9), AU-2b, AU-3a, AU-3b, AU-3c, AU-3d, AU-3e, AU-3f, AU-6(3), AU-6(4), AU-6(6), AU-6(9), AU-8b, AU-10, AU-12a, AU-12c, AU-12(1), AU-12(2), AU-12(3), AU-12(4), AU-14a, AU-14b, AU-14b, AU-14(3), CA-7b, CM-5(1)(b), IA-3(3)(b), MA-4(1)(a), PM-14a.1, PM-14b, PM-31, SC-7(9)(b), SI-1(1)(c), SI-3(8)(b), SI-4(2), SI-4(17), SI-4(20), SI-7(8), SI-10(1)(c)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Database/Resource",
+              "stackTraces": [
+                "...new DatabaseInstance2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:18:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-RDSLoggingEnabled[LogExport::upgrade]",
+          "description": "The non-Aurora RDS DB instance or Aurora cluster does not have all CloudWatch log types exported - (Control IDs: AC-2(4), AC-3(1), AC-3(10), AC-4(26), AC-6(9), AU-2b, AU-3a, AU-3b, AU-3c, AU-3d, AU-3e, AU-3f, AU-6(3), AU-6(4), AU-6(6), AU-6(9), AU-8b, AU-10, AU-12a, AU-12c, AU-12(1), AU-12(2), AU-12(3), AU-12(4), AU-14a, AU-14b, AU-14b, AU-14(3), CA-7b, CM-5(1)(b), IA-3(3)(b), MA-4(1)(a), PM-14a.1, PM-14b, PM-31, SC-7(9)(b), SI-1(1)(c), SI-3(8)(b), SI-4(2), SI-4(17), SI-4(20), SI-7(8), SI-10(1)(c)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Database/Resource",
+              "stackTraces": [
+                "...new DatabaseInstance2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:18:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-RDSMultiAZSupport",
+          "description": "The RDS DB Instance does not have multi-AZ support - (Control IDs: CP-1a.1(b), CP-1a.2, CP-2a, CP-2a.6, CP-2a.7, CP-2d, CP-2e, CP-2(5), CP-2(6), CP-6(2), CP-10, SC-5(2), SC-6, SC-22, SC-36, SI-13(5)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Database/Resource",
+              "stackTraces": [
+                "...new DatabaseInstance2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:18:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-RDSStorageEncrypted",
+          "description": "The RDS DB Instance or Aurora Cluster does not have storage encrypted - (Control IDs: AU-9(3), CP-9d, SC-8(3), SC-8(4), SC-13a, SC-28(1), SI-19(4)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Database/Resource",
+              "stackTraces": [
+                "...new DatabaseInstance2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:18:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-DynamoDBAutoScalingEnabled",
+          "description": "The provisioned capacity DynamoDB table does not have Auto Scaling enabled on it's indexes - (Control IDs: CP-1a.1(b), CP-1a.2, CP-2a, CP-2a.6, CP-2a.7, CP-2d, CP-2e, CP-2(5), CP-2(6), CP-6(2), CP-10, SC-5(2), SC-6, SC-22, SC-36, SI-13(5)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Orders/Resource",
+              "stackTraces": [
+                "...new Table2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:25:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-DynamoDBInBackupPlan",
+          "description": "The DynamoDB table is not in an AWS Backup plan - (Control IDs: CP-1(2), CP-2(5), CP-6a, CP-6(1), CP-6(2), CP-9a, CP-9b, CP-9c, CP-10, CP-10(2), SC-5(2), SI-13(5)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Orders/Resource",
+              "stackTraces": [
+                "...new Table2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:25:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-DynamoDBPITREnabled",
+          "description": "The DynamoDB table does not have Point-in-time Recovery enabled - (Control IDs: CP-1(2), CP-2(5), CP-6(2), CP-9a, CP-9b, CP-9c, CP-10, CP-10(2), SC-5(2), SI-13(5)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Orders/Resource",
+              "stackTraces": [
+                "...new Table2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:25:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-S3BucketLoggingEnabled",
+          "description": "The S3 Buckets does not have server access logs enabled - (Control IDs: AC-2(4), AC-3(1), AC-3(10), AC-4(26), AC-6(9), AU-2b, AU-3a, AU-3b, AU-3c, AU-3d, AU-3e, AU-3f, AU-6(3), AU-6(4), AU-6(6), AU-6(9), AU-8b, AU-10, AU-12a, AU-12c, AU-12(1), AU-12(2), AU-12(3), AU-12(4), AU-14a, AU-14b, AU-14b, AU-14(3), CA-7b, CM-5(1)(b), CM-6a, CM-9b, IA-3(3)(b), MA-4(1)(a), PM-14a.1, PM-14b, PM-31, SC-7(9)(b), SI-1(1)(c), SI-3(8)(b), SI-4(2), SI-4(17), SI-4(20), SI-7(8), SI-10(1)(c)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Uploads/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:29:1)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Scratch/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:31:17)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Cache/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:36:15)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-S3BucketPublicReadProhibited",
+          "description": "The S3 Bucket does not prohibit public read access through its Block Public Access configurations and bucket ACLs - (Control IDs: AC-2(6), AC-3, AC-3(7), AC-4(21), AC-6, AC-17b, AC-17(1), AC-17(1), AC-17(4)(a), AC-17(9), AC-17(10), CM-6a, CM-9b, MP-2, SC-7a, SC-7b, SC-7c, SC-7(2), SC-7(3), SC-7(7), SC-7(9)(a), SC-7(11), SC-7(12), SC-7(16), SC-7(20), SC-7(21), SC-7(24)(b), SC-7(25), SC-7(26), SC-7(27), SC-7(28), SC-25).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Uploads/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:29:1)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Scratch/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:31:17)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Cache/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:36:15)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-S3BucketPublicWriteProhibited",
+          "description": "The S3 Bucket does not prohibit public write access through its Block Public Access configurations and bucket ACLs - (Control IDs: AC-2(6), AC-3, AC-3(7), AC-4(21), AC-6, AC-17b, AC-17(1), AC-17(1), AC-17(4)(a), AC-17(9), AC-17(10), CM-6a, CM-9b, MP-2, SC-7a, SC-7b, SC-7c, SC-7(2), SC-7(3), SC-7(7), SC-7(9)(a), SC-7(11), SC-7(12), SC-7(16), SC-7(20), SC-7(21), SC-7(24)(b), SC-7(25), SC-7(26), SC-7(27), SC-7(28), SC-25).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Uploads/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:29:1)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Scratch/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:31:17)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Cache/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:36:15)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-S3BucketReplicationEnabled",
+          "description": "The S3 Bucket does not have replication enabled - (Control IDs: AU-9(2), CM-6a, CM-9b, CP-1(2), CP-2(5), CP-6a, CP-6(1), CP-6(2), CP-9a, CP-9b, CP-9c, CP-10, CP-10(2), SC-5(2), SI-13(5)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Uploads/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:29:1)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Scratch/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:31:17)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Cache/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:36:15)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-S3BucketSSLRequestsOnly",
+          "description": "The S3 Bucket or bucket policy does not require requests to use SSL - (Control IDs: AC-4, AC-4(22), AC-17(2), AC-24(1), AU-9(3), CA-9b, CM-6a, CM-9b, IA-5(1)(c), PM-11b, PM-17b, SC-7(4)(b), SC-7(4)(g), SC-8, SC-8(1), SC-8(2), SC-8(3), SC-8(4), SC-8(5), SC-13a, SC-16(1), SC-23, SI-1a.2, SI-1a.2, SI-1c.2).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Uploads/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:29:1)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Scratch/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:31:17)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Cache/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:36:15)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-S3BucketVersioningEnabled",
+          "description": "The S3 Bucket does not have versioning enabled - (Control IDs: AU-9(2), CP-1(2), CP-2(5), CP-6a, CP-6(1), CP-6(2), CP-9a, CP-9b, CP-9c, CP-10, CP-10(2), PM-11b, PM-17b, SC-5(2), SC-16(1), SI-1a.2, SI-1a.2, SI-1c.2, SI-13(5)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Uploads/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:29:1)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-S3DefaultEncryptionKMS",
+          "description": "The S3 Bucket is not encrypted with a KMS Key by default - (Control IDs: AU-9(3), CP-9d, CP-9(8), SC-8(3), SC-8(4), SC-13a, SC-28(1), SI-19(4)).",
+          "severity": "error",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Uploads/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:29:1)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Scratch/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:31:17)\n...node internals..."
+              ]
+            },
+            {
+              "constructPath": "DrFixture/Cache/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:36:15)\n...node internals..."
+              ]
+            }
+          ]
+        }
+      ],
+      "suppressedViolations": [
+        {
+          "ruleName": "NIST.800.53.R5-S3BucketVersioningEnabled",
+          "description": "The S3 Bucket does not have versioning enabled - (Control IDs: AU-9(2), CP-1(2), CP-2(5), CP-6a, CP-6(1), CP-6(2), CP-9a, CP-9b, CP-9c, CP-10, CP-10(2), PM-11b, PM-17b, SC-5(2), SC-16(1), SI-1a.2, SI-1a.2, SI-1c.2, SI-13(5)).",
+          "severity": "error",
+          "reason": "Scratch space for build intermediates; objects are regenerated on every run.",
+          "acknowledgedId": "NIST.800.53.R5::NIST.800.53.R5-S3BucketVersioningEnabled",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Scratch/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:31:17)\n...node internals..."
+              ]
+            }
+          ]
+        },
+        {
+          "ruleName": "NIST.800.53.R5-S3BucketVersioningEnabled",
+          "description": "The S3 Bucket does not have versioning enabled - (Control IDs: AU-9(2), CP-1(2), CP-2(5), CP-6a, CP-6(1), CP-6(2), CP-9a, CP-9b, CP-9c, CP-10, CP-10(2), PM-11b, PM-17b, SC-5(2), SC-16(1), SI-1a.2, SI-1a.2, SI-1c.2, SI-13(5)).",
+          "severity": "error",
+          "reason": "ok",
+          "acknowledgedId": "NIST.800.53.R5::NIST.800.53.R5-S3BucketVersioningEnabled",
+          "violatingConstructs": [
+            {
+              "constructPath": "DrFixture/Cache/Resource",
+              "stackTraces": [
+                "...new Bucket2 in aws-cdk-lib...\n<anonymous> (@APP@/app.js:36:15)\n...node internals..."
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

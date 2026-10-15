@@ -299,6 +299,9 @@ jobs:
         with:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
+          # tests/dr-check-cdk/fixtures/app is synthesised in CI and never
+          # shipped; aws-cdk-lib bundles minimatch, which is BlueOak-1.0.0.
+          allow-dependencies-licenses: pkg:npm/minimatch
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
@@ -339,3 +342,46 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/storage-optimizer
+
+  # DR check for CDK (issue #94): report.py against a recorded validation
+  # report, then the composite on tests/dr-check-cdk/fixtures/app (npm ci,
+  # cdk synth with CDK_NAG=1) with RDSMultiAZSupport strict, which the fixture
+  # violates. PR comment off so CI does not comment on this repo's PRs.
+  # Audit egress: registry.npmjs.org.
+  dr-check-cdk:
+    name: DR check (CDK)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Report fixtures
+        run: tests/dr-check-cdk/run.sh
+
+      - id: live
+        uses: ./.github/actions/cdk-nag
+        continue-on-error: true
+        with:
+          working-directory: tests/dr-check-cdk/fixtures/app
+          strict-rules: RDSMultiAZSupport
+          comment: "false"
+
+      - name: Assert the live synth
+        env:
+          OUTCOME: ${{ steps.live.outcome }}
+          VIOLATIONS: ${{ steps.live.outputs.violation-count }}
+          WEAK: ${{ steps.live.outputs.weak-count }}
+          BLOCKING: ${{ steps.live.outputs.blocking-count }}
+        run: |
+          set -euo pipefail
+          [ "${OUTCOME}" = "failure" ] || { echo "::error title=dr-check-cdk::strict RDSMultiAZSupport did not fail (${OUTCOME})"; exit 1; }
+          [ "${VIOLATIONS}" = "8" ] || { echo "::error title=dr-check-cdk::expected 8 resilience violations, got ${VIOLATIONS}"; exit 1; }
+          [ "${WEAK}/${BLOCKING}" = "1/1" ] || { echo "::error title=dr-check-cdk::expected 1 weak acknowledgement and 1 blocking, got ${WEAK}/${BLOCKING}"; exit 1; }

@@ -1,0 +1,78 @@
+name: DR Check (CDK)
+
+# Reusable DR-readiness check for AWS CDK apps (SecOps plan Steps 8 and 19;
+# issue #94): synthesises with CDK_NAG=1 so the app registers cdk-nag's NIST
+# 800-53 rev 5 pack, keeps the backup and recovery rules
+# (policies/dr/cdk-nag-rules.txt), annotates each finding at the line that
+# created the construct, keeps one PR comment updated, and fails only on
+# strict-rules. Advisory by default, like dr-check-tofu.yml (#93).
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. The hosts it reaches: registry.npmjs.org
+# (or PyPI) for the app's dependencies and the aws-cdk CLI.
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory holding cdk.json'
+        default: '.'
+        type: string
+      runtime:
+        description: 'node|python'
+        default: 'node'
+        type: string
+      rules:
+        description: 'Comma-separated cdk-nag rule names to report (default: resilience subset)'
+        default: ''
+        type: string
+      strict-rules:
+        description: 'Comma-separated rule names that fail the job'
+        default: ''
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the cdk-nag
+          composite from. Pin this to the SAME SHA you pinned dr-check-cdk.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      violation-count:
+        description: 'Resilience violations'
+        value: ${{ jobs.cdk-nag.outputs.violation-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` and `pull-requests: write`
+# (the PR comment). See README.
+jobs:
+  cdk-nag:
+    name: cdk-nag resilience rules
+    runs-on: ubuntu-latest
+    outputs:
+      violation-count: ${{ steps.nag.outputs.violation-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout cdk-nag composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: nag
+        uses: ./.sparkgeo-github-actions/.github/actions/cdk-nag
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          runtime: ${{ inputs.runtime }}
+          rules: ${{ inputs.rules }}
+          strict-rules: ${{ inputs.strict-rules }}
