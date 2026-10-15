@@ -460,7 +460,7 @@ jobs:
 
 A `services:` container on the job works the same way when the API ships as an image.
 
-**Authentication.** `AUTH_HEADER` (or the composite's `auth-header`) is a `Header-Name: value` pair. It reaches ZAP through the `ZAP_AUTH_HEADER` environment variables, never the command line. It is masked in logs and sent only to the target's host, never to other hosts the definition mentions. For login flows that need more than a static header, add a ZAP context file through the rules-file mechanism and a follow-up input.
+**Authentication.** `AUTH_HEADER` (or the composite's `auth-header`) is a `Header-Name: value` pair. It reaches ZAP through the `ZAP_AUTH_HEADER` environment variables, never the command line. It is masked in logs and sent only to the target's host, never to other hosts the definition mentions. Login flows that need more than a static header (form login, OAuth code flow) are not covered; mint a token in an earlier step and pass it as the header.
 
 **Gate and rules file.** These work as for the baseline scan: ZAP risk against `fail-on`, and a ZAP rules file to IGNORE, downgrade or FAIL single rules.
 
