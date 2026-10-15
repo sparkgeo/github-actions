@@ -1,0 +1,25 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "registry.example/app@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "ArtifactType": "container_image",
+  "Results": [
+    {
+      "Target": "registry.example/app (debian 12.5)",
+      "Class": "os-pkgs",
+      "Type": "debian",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2024-6119",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.0.11-1~deb12u2",
+          "FixedVersion": "3.0.14-1~deb12u2",
+          "Severity": "HIGH",
+          "Title": "openssl: Possible denial of service in X.509 name checks",
+          "Description": "Applications performing certificate name checks may crash.",
+          "References": ["https://www.openssl.org/news/secadv/20240903.txt"],
+          "CVSS": {"nvd": {"V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H", "V3Score": 7.5}}
+        }
+      ]
+    }
+  ]
+}

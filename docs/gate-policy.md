@@ -122,3 +122,43 @@ raised on LEV and nothing is downgraded.
 
 The SARIF uploaded to the Security tab keeps the tool's own scores; the job
 summary lists every finding that moved and why.
+
+## DefectDojo hand-off
+
+The gate decides whether a pull request merges; DefectDojo (Step 25 Standard)
+is where the findings wait to be fixed. One queue across repositories, a
+deadline that starts at triage, and the same CVE from trivy, grype and
+osv-scanner deduplicated. The `defectdojo-import` composite re-imports a
+findings file with `POST /api/v2/reimport-scan/`; `dep-scan-app.yml` and
+`secrets-scan.yml` call it behind `defectdojo: true`, and every new scan
+workflow does the same.
+
+| Setting | Value |
+|---|---|
+| Product / engagement / test | the repository name / `ci` / one test per scan type, created on first import (`auto_create_context`) |
+| Re-import | deduplicates against that test; findings missing from the new file are closed (`close_old_findings`): the **Fix** outcome |
+| Severity | the file as the gate saw it: the `epss-kev-override` output when `epss-override` is on, so the queue carries the adjusted row and the `override` annotations |
+| Environment | `production` or `staging` etc. as the DefectDojo environment and an `env:` tag |
+| Not configured | `DEFECTDOJO_URL` or `DEFECTDOJO_TOKEN` unset: skipped with a summary line |
+
+**Root-cause tags.** Pass `tags` so one change can close many findings, and
+order the fix queue by findings removed per change:
+
+| Tag | Use for |
+|---|---|
+| `base-image:<digest>` | every container finding inherited from one base image |
+| `iac-module:<path>` | every IaC finding from one shared module |
+| `dependency:<name>` | every finding fixed by bumping one package |
+| `chokepoint:<id>` | the permission, group or credential most attack paths run through (Step 40) |
+
+**SLA.** DefectDojo counts SLA in whole days. `docs/defectdojo-sla-setup.sh`
+creates two SLA configurations from the table above, "Sparkgeo production"
+(critical 2 days, high 7, medium 30, low 90) and "Sparkgeo non-production"
+(7, 30, 90, 90), and assigns one to each named product. Secrets have no row
+there: they are hard-blocked in CI and rotated at once.
+
+**Decision outcomes (#81).** Fix is recorded by the re-import that no longer
+reports the finding. Mitigate, Monitor and Accept are DefectDojo risk
+acceptances with the evidence note and an expiry; the import keeps them
+accepted (`do_not_reactivate`).
+

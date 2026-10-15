@@ -48,6 +48,14 @@ on:
         description: 'Threat-feeds snapshot to read: latest, or a date (YYYY-MM-DD) to reproduce an earlier run'
         default: 'latest'
         type: string
+      defectdojo:
+        description: 'Re-import the findings into DefectDojo (needs the DEFECTDOJO_URL and DEFECTDOJO_TOKEN secrets; skipped when they are unset)'
+        default: false
+        type: boolean
+      defectdojo-environment:
+        description: 'DefectDojo environment for the import: production, staging, development or test'
+        default: 'production'
+        type: string
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the osv-scanner
@@ -56,6 +64,11 @@ on:
         default: 'main'
         type: string
 
+    secrets:
+      DEFECTDOJO_URL:
+        required: false
+      DEFECTDOJO_TOKEN:
+        required: false
 # No permissions block: a reusable workflow inherits the caller job's granted
 # permissions. The caller grants `contents: read` (always) and adds
 # `security-events: write` only when it wants SARIF upload. See README.
@@ -149,3 +162,15 @@ jobs:
           findings-file: ${{ steps.override.outputs.findings-file }}
           fail-on-severity: ${{ inputs.fail-on-severity }}
           fail-on-malicious: ${{ inputs.fail-on-malicious }}
+
+      # DefectDojo hand-off (#185): runs even when the gate failed, so the
+      # queue always has the latest findings; skipped when the secrets are unset.
+      - name: Re-import into DefectDojo
+        if: ${{ always() && inputs.defectdojo }}
+        uses: ./.sparkgeo-github-actions/.github/actions/defectdojo-import
+        with:
+          file: ${{ inputs.epss-override && steps.override.outputs.findings-file || steps.osv.outputs.json }}
+          scan-type: OSV Scan
+          environment: ${{ inputs.defectdojo-environment }}
+          url: ${{ secrets.DEFECTDOJO_URL }}
+          token: ${{ secrets.DEFECTDOJO_TOKEN }}

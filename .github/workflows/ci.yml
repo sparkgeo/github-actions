@@ -190,6 +190,86 @@ jobs:
             jq -r '"\(.feed): \(.count) entries fetched \(.fetched_at)"' "${DIR}/${f}.json"
           done
 
+  # DefectDojo hand-off (#185): the unconfigured path skips; then a real
+  # DefectDojo 3.3.300 started from tests/defectdojo/docker-compose.yml takes
+  # SARIF and Trivy imports, deduplicates a re-import, closes a fixed finding
+  # and gets the SLA configuration. Audit egress: images from Docker Hub.
+  defectdojo:
+    name: DefectDojo Import
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Skip path
+        run: tests/defectdojo/run.sh skip
+
+      - id: unconfigured
+        uses: ./.github/actions/defectdojo-import
+        with:
+          file: tests/defectdojo/fixtures/findings.sarif
+          scan-type: SARIF
+
+      - name: Start DefectDojo
+        env:
+          UNCONFIGURED_IMPORTED: ${{ steps.unconfigured.outputs.imported }}
+        run: |
+          set -euo pipefail
+          [ "${UNCONFIGURED_IMPORTED}" = "false" ]
+          docker compose -f tests/defectdojo/docker-compose.yml up -d --quiet-pull
+          for _ in $(seq 120); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v2/ || true)"
+            # Unauthenticated API calls get 403 once Django is serving.
+            case "${code}" in 200|401|403) echo "DefectDojo up"; exit 0 ;; esac
+            sleep 5
+          done
+          docker compose -f tests/defectdojo/docker-compose.yml logs --tail 50
+          exit 1
+
+      - name: Import, deduplicate, close, SLA
+        run: tests/defectdojo/run.sh integration
+
+      - name: Token for the composite check
+        id: token
+        run: |
+          set -euo pipefail
+          token="$(curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' \
+            -d '{"username":"admin","password":"ci-only-admin-password"}' http://localhost:8080/api/v2/api-token-auth/ | jq -r .token)"
+          echo "::add-mask::${token}"
+          echo "token=${token}" >> "${GITHUB_OUTPUT}"
+
+      - id: composite
+        uses: ./.github/actions/defectdojo-import
+        with:
+          file: tests/defectdojo/fixtures/trivy.json
+          scan-type: Trivy Scan
+          product: ci-fixture
+          environment: staging
+          url: http://localhost:8080
+          token: ${{ steps.token.outputs.token }}
+
+      - name: Composite re-import is a no-op
+        env:
+          IMPORTED: ${{ steps.composite.outputs.imported }}
+          CREATED: ${{ steps.composite.outputs.created }}
+          UNTOUCHED: ${{ steps.composite.outputs.untouched }}
+        run: |
+          echo "imported=${IMPORTED} created=${CREATED} untouched=${UNTOUCHED}"
+          [ "${IMPORTED}" = "true" ] && [ "${CREATED}" = "0" ] && [ "${UNTOUCHED}" = "1" ]
+
+      - name: DefectDojo logs on failure
+        if: failure()
+        run: docker compose -f tests/defectdojo/docker-compose.yml logs --tail 80 uwsgi initializer
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

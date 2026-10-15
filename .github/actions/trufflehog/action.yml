@@ -28,6 +28,10 @@ inputs:
   sarif-upload:
     description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
     default: "true"
+outputs:
+  sarif:
+    description: "Path of the SARIF findings file (also written when the scan fails the gate)."
+    value: ${{ steps.scan.outputs.sarif }}
 runs:
   using: "composite"
   steps:

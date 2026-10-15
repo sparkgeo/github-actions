@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "fixture-scanner",
+          "version": "1.0.0",
+          "rules": [
+            {
+              "id": "FX001",
+              "shortDescription": {
+                "text": "Hard-coded credential"
+              },
+              "properties": {
+                "security-severity": "9.1"
+              }
+            },
+            {
+              "id": "FX002",
+              "shortDescription": {
+                "text": "Weak hash"
+              },
+              "properties": {
+                "security-severity": "5.3"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "FX001",
+          "level": "error",
+          "message": {
+            "text": "Credential in config"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/config.py"
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
