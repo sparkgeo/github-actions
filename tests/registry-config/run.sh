@@ -33,7 +33,7 @@ H="${TMP}/set"
 mkdir -p "${H}/.config/pip"
 printf 'registry=https://registry.npmjs.org/\nsave-exact=true\n' > "${H}/.npmrc"
 printf '[global]\ntimeout = 30\n' > "${H}/.config/pip/pip.conf"
-run "${H}" NPM_URL=http://localhost:4873/ PYPI_URL=http://localhost:3141/root/dev/+simple/ \
+run "${H}" NPM_URL=http://localhost:4873/ PYPI_URL=http://localhost:8080/simple/ \
   GO_URL=https://athens.example/ HF_URL=https://hf.example/
 [ "${rc}" -eq 0 ] || fail "rc ${rc}: $(cat "${H}/log")"
 grep -qx 'configured=npm,pypi,go,huggingface' "${H}/out" || fail "configured: $(cat "${H}/out")"
@@ -42,21 +42,21 @@ grep -qx 'hf-endpoint=https://hf.example/' "${H}/out" || fail "hf-endpoint"
 grep -qx 'registry=http://localhost:4873/' "${H}/.npmrc" || fail "npmrc registry"
 grep -qx 'save-exact=true' "${H}/.npmrc" || fail "npmrc lost other settings"
 grep -q '^timeout = 30' "${H}/.config/pip/pip.conf" || fail "pip.conf lost timeout"
-grep -q '^index-url = http://localhost:3141/root/dev/+simple/' "${H}/.config/pip/pip.conf" || fail "pip index-url"
-grep -q '^url = "http://localhost:3141/root/dev/+simple/"' "${H}/.config/uv/uv.toml" || fail "uv index"
+grep -q '^index-url = http://localhost:8080/simple/' "${H}/.config/pip/pip.conf" || fail "pip index-url"
+grep -q '^url = "http://localhost:8080/simple/"' "${H}/.config/uv/uv.toml" || fail "uv index"
 grep -qx 'GOPROXY=https://athens.example/' "${H}/.config/go/env" || fail "GOPROXY"
 grep -qx 'GONOSUMDB=' "${H}/.config/go/env" || fail "GONOSUMDB"
 
 echo "== the clients read it back"
 if command -v npm > /dev/null; then
-  [ "$(HOME="${H}" npm config get registry)" = "http://localhost:4873/" ] || fail "npm reads $(HOME="${H}" npm config get registry)"
+  [ "$(env -u XDG_CONFIG_HOME HOME="${H}" npm config get registry)" = "http://localhost:4873/" ] || fail "npm reads $(env -u XDG_CONFIG_HOME HOME="${H}" npm config get registry)"
 fi
 if python3 -m pip --version > /dev/null 2>&1; then
-  HOME="${H}" python3 -m pip config list 2>/dev/null | grep -q "global.index-url='http://localhost:3141/root/dev/+simple/'" \
-    || fail "pip reads: $(HOME="${H}" python3 -m pip config list 2>&1)"
+  env -u XDG_CONFIG_HOME HOME="${H}" python3 -m pip config list 2>/dev/null | grep -q "global.index-url='http://localhost:8080/simple/'" \
+    || fail "pip reads: $(env -u XDG_CONFIG_HOME HOME="${H}" python3 -m pip config list 2>&1)"
 fi
 if command -v go > /dev/null; then
-  [ "$(env -u GOPROXY HOME="${H}" go env GOPROXY)" = "https://athens.example/" ] || fail "go reads $(env -u GOPROXY HOME="${H}" go env GOPROXY)"
+  [ "$(env -u GOPROXY -u XDG_CONFIG_HOME HOME="${H}" go env GOPROXY)" = "https://athens.example/" ] || fail "go reads $(env -u GOPROXY -u XDG_CONFIG_HOME HOME="${H}" go env GOPROXY)"
 fi
 
 echo "== second run replaces, does not duplicate"

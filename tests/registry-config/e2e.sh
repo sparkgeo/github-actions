@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # End-to-end check for the registry-config composite (issue #231), run by the
 # ci.yml registry-config job on a GitHub-hosted runner (needs docker and sudo).
+# pypiserver stands in for devpi or Nexus: one image, no pip manifest to vet.
 #
-#   e2e.sh setup    start Verdaccio (npm) and devpi (PyPI) on localhost, with
+#   e2e.sh setup    start Verdaccio (npm) and pypiserver (PyPI) on localhost, with
 #                   no upstream, publish one fixture package to each, write a
 #                   package-lock.json whose URLs point at registry.npmjs.org,
 #                   then blackhole registry.npmjs.org, pypi.org and
@@ -15,8 +16,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK="${RUNNER_TEMP:-/tmp}/registry-e2e"
 NPM_REG="http://localhost:4873/"
 PKG=sparkgeo-registry-fixture
-# verdaccio/verdaccio:6.10.4
+# verdaccio/verdaccio:6.10.4, pypiserver/pypiserver:v2.4.2
 VERDACCIO_IMAGE="verdaccio/verdaccio@sha256:43c4067288b050422265407ea2fe747e511fcd0c407a85ec90ab9a326d9400cd"
+PYPISERVER_IMAGE="pypiserver/pypiserver@sha256:6c4874820281d5045c739f049dc1077d292177d8fd5c18d306b8239439c44925"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 wait_for() {  # <url>
@@ -45,18 +47,7 @@ setup() {
   sed -i 's#http://localhost:4873/#https://registry.npmjs.org/#' "${WORK}/npm-app/package-lock.json"
   grep -q '"resolved": "https://registry.npmjs.org/' "${WORK}/npm-app/package-lock.json" || fail "lockfile not rewritten"
 
-  echo "== devpi"
-  python3 -m venv "${WORK}/devpi"
-  "${WORK}/devpi/bin/pip" install --quiet --require-hashes -r "${HERE}/requirements-devpi.txt"
-  "${WORK}/devpi/bin/devpi-init" --serverdir "${WORK}/devpi-data" > /dev/null
-  nohup "${WORK}/devpi/bin/devpi-server" --serverdir "${WORK}/devpi-data" --host 127.0.0.1 --port 3141 \
-    > "${WORK}/devpi-server.out" 2>&1 &
-  wait_for "http://localhost:3141/+api"
-  dp() { "${WORK}/devpi/bin/devpi" --clientdir "${WORK}/devpi-client" "$@"; }
-  dp use http://localhost:3141 > /dev/null
-  dp login root --password '' > /dev/null
-  dp index -c dev bases= volatile=True > /dev/null   # no root/pypi base: no upstream
-  dp use root/dev > /dev/null
+  echo "== pypiserver"
   python3 -I - "${WORK}/dist" <<'PY'
 import base64, hashlib, os, sys, zipfile
 out = sys.argv[1]; os.makedirs(out, exist_ok=True)
@@ -77,7 +68,12 @@ with zipfile.ZipFile(f"{out}/{name}-{ver}-py3-none-any.whl", "w") as z:
     for p, c in files.items():
         z.writestr(p, c)
 PY
-  dp upload --from-dir "${WORK}/dist" > /dev/null
+  # Serves only its packages directory: no upstream, no upload. Copied in rather
+  # than mounted because the entrypoint chowns the directory to its own user.
+  docker create --name pypiserver -p 8080:8080 "${PYPISERVER_IMAGE}" run -p 8080 -a . -P . /data/packages > /dev/null
+  docker cp "${WORK}/dist/." pypiserver:/data/packages/
+  docker start pypiserver > /dev/null
+  wait_for "http://localhost:8080/simple/"
 
   echo "== blackhole the public registries"
   echo "0.0.0.0 registry.npmjs.org pypi.org files.pythonhosted.org" | sudo tee -a /etc/hosts > /dev/null
@@ -91,7 +87,13 @@ install() {
   # Empty cache: the tarball must come over the wire, not from the publish step.
   (cd "${WORK}/npm-app" && npm ci --no-audit --no-fund --cache "${WORK}/npm-ci-cache")
   [ "$(cd "${WORK}/npm-app" && node -p "require('${PKG}')")" = "served by the proxy" ] || fail "npm fixture not installed"
-  served="$(docker logs verdaccio 2>&1)"  # not piped into grep -q: pipefail + SIGPIPE
+  # Verdaccio's log reaches `docker logs` a moment later; not piped into
+  # grep -q, which with pipefail fails on SIGPIPE.
+  for _ in $(seq 15); do
+    served="$(docker logs verdaccio 2>&1)"
+    grep -q "GET /${PKG}/-/${PKG}-1.0.0.tgz" <<< "${served}" && break
+    sleep 1
+  done
   grep -q "GET /${PKG}/-/${PKG}-1.0.0.tgz" <<< "${served}" || fail "Verdaccio did not serve the tarball"
 
   echo "== pip install through the proxy"

@@ -101,10 +101,10 @@ jobs:
           npx --yes --package renovate@44.161.1 renovate-config-validator --strict default.json
           npx --yes --package renovate@44.161.1 renovate-config-validator --strict .github/renovate-global.json
 
-  # Proxy registry (#231): unit checks, then a local Verdaccio and devpi with no
+  # Proxy registry (#231): unit checks, then a local Verdaccio and pypiserver with no
   # upstream, the public registries blackholed in /etc/hosts, and real npm ci
-  # and pip install through the composite's config. Public hosts below are only
-  # for the devpi install and the Verdaccio image, before the blackhole.
+  # and pip install through the composite's config. Docker Hub hosts below are
+  # only for the two images, pulled before the blackhole.
   registry-config:
     name: Registry Config
     runs-on: ubuntu-latest
@@ -117,8 +117,6 @@ jobs:
           egress-policy: block
           allowed-endpoints: >
             github.com:443
-            pypi.org:443
-            files.pythonhosted.org:443
             registry-1.docker.io:443
             auth.docker.io:443
             production.cloudflare.docker.com:443
@@ -137,7 +135,7 @@ jobs:
         uses: ./.github/actions/registry-config
         with:
           npm-url: http://localhost:4873/
-          pypi-url: http://localhost:3141/root/dev/+simple/
+          pypi-url: http://localhost:8080/simple/
           go-url: http://localhost:3000/
           hf-url: http://localhost:8080/
 
