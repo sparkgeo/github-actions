@@ -1,0 +1,57 @@
+name: "Fuzz"
+description: |
+  Time-boxed fuzzing of input-handling code (SecOps plan Step 39 Advanced,
+  issue #76): atheris targets (python), go test -fuzz functions (go) or
+  cargo-fuzz targets (rust), each run for `duration`. Crash inputs are copied
+  into crash-dir/<target>/ and annotated; the job summary lists each target's
+  result and the log tail of a failing one. The toolchain and the fuzzing
+  engine are installed by the caller (fuzz.yml does it); this composite runs
+  the targets and reports. Exit 1 on any crash or a target that did not run.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  runtime:
+    description: "python|go|rust"
+    required: true
+  targets:
+    description: "Comma-separated targets: python = atheris script paths; go = <package dir>:<FuzzFunc>; rust = cargo-fuzz target names."
+    required: true
+  duration:
+    description: "Time box per target, e.g. 30s, 10m, 1h."
+    default: "10m"
+  working-directory:
+    description: "Directory the targets are resolved from (the module or package root)."
+    default: "."
+  corpus-dir:
+    description: "python: corpus root, one subdirectory per target script stem (shared with the per-PR fuzz of #126)."
+    default: "testdata/fuzz"
+  crash-dir:
+    description: "Where crash inputs are collected."
+    default: "fuzz-crashes"
+  python:
+    description: "Python interpreter with atheris installed (python runtime)."
+    default: "python3"
+outputs:
+  crash-count:
+    description: "Crash inputs found across all targets."
+    value: ${{ steps.fuzz.outputs.crash-count }}
+  crashing-targets:
+    description: "Comma-separated targets that crashed."
+    value: ${{ steps.fuzz.outputs.crashing-targets }}
+runs:
+  using: "composite"
+  steps:
+    - id: fuzz
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        RUNTIME: ${{ inputs.runtime }}
+        TARGETS: ${{ inputs.targets }}
+        DURATION: ${{ inputs.duration }}
+        CORPUS: ${{ inputs.corpus-dir }}
+        CRASHES: ${{ inputs.crash-dir }}
+        PYTHON: ${{ inputs.python }}
+      run: |
+        set -euo pipefail
+        python3 -I "${GITHUB_ACTION_PATH}/fuzz.py" --runtime "${RUNTIME}" --targets "${TARGETS}" --duration "${DURATION}" \
+          --corpus-dir "${CORPUS}" --crash-dir "${CRASHES}" --python "${PYTHON}" --output "${CRASHES}/report.json"

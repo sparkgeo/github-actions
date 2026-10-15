@@ -1,0 +1,222 @@
+name: Fuzz
+
+# Reusable scheduled fuzz run (issue #76, plan Step 39 Advanced): each target
+# fuzzes for `duration`; crash inputs and the corpus are uploaded as
+# artefacts, the corpus is cached between runs, and a new crash opens (or
+# comments on) a tracking issue in the calling repository. Not a PR gate: the
+# short per-PR fuzz of changed packages is #126; both share the Fuzz* target
+# naming and the testdata/fuzz corpus so a crasher found here replays on
+# every PR.
+#
+# Caller permissions: contents: read, plus issues: write for open-issue.
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable.
+
+on:
+  workflow_call:
+    inputs:
+      runtime:
+        description: 'python|go|rust'
+        required: true
+        type: string
+      targets:
+        description: 'Comma-separated fuzz target names or paths (python: atheris scripts; go: <package dir>:<FuzzFunc>; rust: cargo-fuzz targets)'
+        required: true
+        type: string
+      duration:
+        description: 'Time box per target (30s, 10m, 1h)'
+        default: '10m'
+        type: string
+      working-directory:
+        description: 'Module or package root the targets are resolved from'
+        default: '.'
+        type: string
+      setup-command:
+        description: 'Shell command that installs the project for the targets (python: e.g. "pip install -e ."); the fuzzing engine is installed by this workflow'
+        default: ''
+        type: string
+      python-version:
+        description: 'Python version (python runtime)'
+        default: '3.12'
+        type: string
+      go-version:
+        description: 'Go version, or empty to read go.mod (go runtime)'
+        default: ''
+        type: string
+      corpus-dir:
+        description: 'python: corpus root, one subdirectory per target'
+        default: 'testdata/fuzz'
+        type: string
+      open-issue:
+        description: 'Open or update a tracking issue labelled fuzz-crash when a crash is found'
+        default: true
+        type: boolean
+      fail-on-crash:
+        description: 'Fail the job when a crash is found'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned fuzz.yml to, so the whole
+          workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      crash-count:
+        description: 'Crash inputs found'
+        value: ${{ jobs.fuzz.outputs.crash-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions.
+jobs:
+  fuzz:
+    name: Fuzz (${{ inputs.runtime }})
+    runs-on: ubuntu-latest
+    outputs:
+      crash-count: ${{ steps.fuzz.outputs.crash-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        if: ${{ inputs.runtime == 'python' }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install atheris
+        if: ${{ inputs.runtime == 'python' }}
+        run: python -m pip install --quiet --disable-pip-version-check "atheris==3.1.0"
+
+      - name: Set up Go
+        if: ${{ inputs.runtime == 'go' }}
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version: ${{ inputs.go-version }}
+          go-version-file: ${{ inputs.go-version == '' && format('{0}/go.mod', inputs.working-directory) || '' }}
+          cache-dependency-path: ${{ format('{0}/go.sum', inputs.working-directory) }}
+
+      - name: Install cargo-fuzz
+        if: ${{ inputs.runtime == 'rust' }}
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo install cargo-fuzz --locked
+
+      - name: Project setup
+        if: ${{ inputs.setup-command != '' }}
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          SETUP_COMMAND: ${{ inputs.setup-command }}
+        run: bash -euo pipefail -c "${SETUP_COMMAND}"
+
+      # The corpus grows run over run; restore the latest and save after the
+      # run even when it failed (a crash is the point).
+      - name: Restore corpus
+        id: corpus
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ${{ inputs.working-directory }}/${{ inputs.corpus-dir }}
+            ~/.cache/go-build/fuzz
+            ${{ inputs.working-directory }}/fuzz/corpus
+          key: fuzz-${{ inputs.runtime }}-${{ github.run_id }}
+          restore-keys: fuzz-${{ inputs.runtime }}-
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout fuzz composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: fuzz
+        continue-on-error: true
+        uses: ./.sparkgeo-github-actions/.github/actions/fuzz
+        with:
+          runtime: ${{ inputs.runtime }}
+          targets: ${{ inputs.targets }}
+          duration: ${{ inputs.duration }}
+          working-directory: ${{ inputs.working-directory }}
+          corpus-dir: ${{ inputs.corpus-dir }}
+          crash-dir: ${{ runner.temp }}/fuzz-crashes
+          python: python
+
+      - name: Save corpus
+        if: ${{ always() }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ${{ inputs.working-directory }}/${{ inputs.corpus-dir }}
+            ~/.cache/go-build/fuzz
+            ${{ inputs.working-directory }}/fuzz/corpus
+          key: fuzz-${{ inputs.runtime }}-${{ github.run_id }}
+
+      - name: Upload crash inputs and report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: fuzz-crashes-${{ inputs.runtime }}
+          path: ${{ runner.temp }}/fuzz-crashes/
+          if-no-files-found: ignore
+
+      - name: Upload corpus
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: fuzz-corpus-${{ inputs.runtime }}
+          path: |
+            ${{ inputs.working-directory }}/${{ inputs.corpus-dir }}
+            ${{ inputs.working-directory }}/**/testdata/fuzz/
+            ${{ inputs.working-directory }}/fuzz/corpus
+          if-no-files-found: ignore
+
+      # One open issue per crashing target: created on the first crash,
+      # commented on later runs so the history stays in one place.
+      - name: Open or update the tracking issue
+        if: ${{ always() && inputs.open-issue && steps.fuzz.outputs.crash-count != '' && steps.fuzz.outputs.crash-count != '0' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CRASHING: ${{ steps.fuzz.outputs.crashing-targets }}
+          RUNTIME: ${{ inputs.runtime }}
+          REPORT: ${{ runner.temp }}/fuzz-crashes/report.json
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh label create fuzz-crash --description "Crash input found by the scheduled fuzz run" --color B60205 --force >/dev/null
+          IFS=',' read -r -a TARGETS <<< "${CRASHING}"
+          for target in "${TARGETS[@]}"; do
+            [ -n "${target}" ] || continue
+            TITLE="fuzz: crash in ${target} (${RUNTIME})"
+            # shellcheck disable=SC2016  # jq programs use $t and $url as jq variables
+            BODY="$(jq -r --arg t "${target}" --arg url "${RUN_URL}" --arg rt "${RUNTIME}" '.results[] | select(.target == $t) |
+              "Crash input(s) found by the scheduled fuzz run " + $url + " (artefact `fuzz-crashes-" + $rt + "`):\n\n" +
+              (.crashes | map("- `" + (.file | split("/") | last) + "` sha256 `" + .sha256 + "`") | join("\n")) +
+              "\n\nLog tail:\n\n```\n" + .log_tail + "\n```\n\nReplay the input against the target, fix the parser, and commit the input to the corpus so every PR replays it (#126)."' "${REPORT}")"
+            # shellcheck disable=SC2016
+            NUMBER="$(gh issue list --label fuzz-crash --state open --search "in:title \"${TITLE}\"" --json number,title | jq -r --arg t "${TITLE}" '.[] | select(.title == $t) | .number' | head -1)"
+            if [ -n "${NUMBER}" ]; then
+              gh issue comment "${NUMBER}" --body "${BODY}"
+              echo "updated #${NUMBER}: ${TITLE}"
+            else
+              gh issue create --title "${TITLE}" --label fuzz-crash --body "${BODY}"
+            fi
+          done
+
+      - name: Outcome
+        if: ${{ always() }}
+        env:
+          CRASHES: ${{ steps.fuzz.outputs.crash-count }}
+          OUTCOME: ${{ steps.fuzz.outcome }}
+          FAIL: ${{ inputs.fail-on-crash }}
+        run: |
+          [ "${OUTCOME}" != "failure" ] || [ "${FAIL}" != "true" ] || { echo "::error title=fuzz::${CRASHES:-?} crash input(s) or a target that did not run; see the summary"; exit 1; }
+          if [ "${OUTCOME}" = "failure" ]; then echo "fail-on-crash is off: ${CRASHES:-?} crash input(s) reported without failing the job"; fi
