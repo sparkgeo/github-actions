@@ -1,0 +1,106 @@
+name: "Lean"
+description: |
+  Machine-checked proofs with Lean 4 (SecOps plan Step 39, issue #131):
+  installs elan from its checksum-verified release, the toolchain named by
+  lean-toolchain (or the lean-toolchain input), fetches the Mathlib build
+  cache when the project depends on Mathlib, and runs `lake build --wfail` so
+  an unfinished proof (`sorry` is a warning) fails. Errors and sorries are
+  annotated. Same behaviour as leanprover/lean-action with
+  `build-args: --wfail`, in shell: the org allowlist admits no unlisted
+  third-party action. Writes lean.json, the build log, the brief and
+  summary.json; the .olean tree stays in <project-dir>/.lake/build for
+  upload as evidence.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  project-dir:
+    description: "Lake project (lakefile.lean or lakefile.toml)."
+    default: "proofs/"
+  lean-toolchain:
+    description: "Toolchain override, e.g. leanprover/lean4:v4.35.0; empty reads the project's lean-toolchain file."
+    default: ""
+  use-mathlib-cache:
+    description: "Run `lake exe cache get` when the manifest requires Mathlib."
+    default: "true"
+  elan-version:
+    description: "elan release; versions other than the default need elan-sha256."
+    default: "4.2.4"
+  elan-sha256:
+    description: "SHA-256 of elan-x86_64-unknown-linux-gnu.tar.gz; empty uses the recorded checksum for the default version."
+    default: ""
+  output-dir:
+    description: "Where lean.json, the build log, the brief and summary.json go."
+    default: "verify-lean-artifacts"
+  gate:
+    description: "Build the brief and exit 1 when the build fails or a proof is unfinished."
+    default: "true"
+outputs:
+  lean:
+    description: "success or failure; empty when the project has no lakefile."
+    value: ${{ steps.build.outputs.outcome }}
+  blocking:
+    description: "Blocking findings (set when gate is true)."
+    value: ${{ steps.brief.outputs.blocking }}
+runs:
+  using: "composite"
+  steps:
+    - id: install
+      shell: bash
+      env:
+        VERSION: ${{ inputs.elan-version }}
+        SHA: ${{ inputs.elan-sha256 }}
+        OUT: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        # elan publishes no checksum file; recorded from the download
+        declare -A KNOWN=([4.2.4]=42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63)
+        SHA="${SHA:-${KNOWN[${VERSION}]:-}}"
+        [ -n "${SHA}" ] || { echo "::error title=lean::no recorded checksum for elan ${VERSION}; set elan-sha256"; exit 1; }
+        export ELAN_HOME="${HOME}/.elan"
+        if [ ! -x "${ELAN_HOME}/bin/elan" ]; then
+          D="${RUNNER_TEMP}/elan-${VERSION}"; mkdir -p "${D}"
+          curl -fsSL -o "${D}/elan.tar.gz" "https://github.com/leanprover/elan/releases/download/v${VERSION}/elan-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${SHA}  ${D}/elan.tar.gz" | sha256sum -c --quiet
+          tar -xzf "${D}/elan.tar.gz" -C "${D}"
+          "${D}/elan-init" -y --default-toolchain none --no-modify-path > /dev/null
+        fi
+        ART="$(mkdir -p "${OUT}" && cd "${OUT}" && pwd)"
+        { echo "elan-home=${ELAN_HOME}"; echo "art=${ART}"; } >> "${GITHUB_OUTPUT}"
+
+    - id: build
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      env:
+        ELAN_HOME: ${{ steps.install.outputs.elan-home }}
+        TOOLCHAIN: ${{ inputs.lean-toolchain }}
+        MATHLIB_CACHE: ${{ inputs.use-mathlib-cache }}
+        ART: ${{ steps.install.outputs.art }}
+      run: |
+        set -euo pipefail
+        export PATH="${ELAN_HOME}/bin:${PATH}"
+        if [ ! -f lakefile.lean ] && [ ! -f lakefile.toml ]; then echo "  no lakefile in $(pwd); skipped"; exit 0; fi
+        [ -n "${TOOLCHAIN}" ] && export ELAN_TOOLCHAIN="${TOOLCHAIN}"
+        if [ "${MATHLIB_CACHE}" = "true" ] && [ -f lake-manifest.json ] && jq -e '.packages[] | select(.name == "mathlib")' lake-manifest.json > /dev/null; then
+          lake exe cache get > "${ART}/cache-get.txt" 2>&1 || lake exe cache get > "${ART}/cache-get.txt" 2>&1 \
+            || echo "::warning title=lean::Mathlib cache download failed; building Mathlib from source"
+          tail -2 "${ART}/cache-get.txt"
+        fi
+        rc=0
+        lake build --wfail > "${ART}/lake-build.txt" 2>&1 || rc=$?
+        if [ "${rc}" -eq 0 ]; then tail -2 "${ART}/lake-build.txt"
+        else grep -v '^trace:' "${ART}/lake-build.txt" | tail -80; fi
+        PREFIX="$(git rev-parse --show-prefix 2>/dev/null || true)"
+        python3 -I "${GITHUB_ACTION_PATH}/lean.py" lean --log "${ART}/lake-build.txt" --rc "${rc}" --root "${PREFIX}" --output "${ART}/lean.json"
+        echo "outcome=$([ "${rc}" -eq 0 ] && echo success || echo failure)" >> "${GITHUB_OUTPUT}"
+
+    - id: brief
+      if: inputs.gate == 'true'
+      shell: bash
+      env:
+        ART: ${{ steps.install.outputs.art }}
+      run: |
+        set -euo pipefail
+        rc=0
+        python3 -I "${GITHUB_ACTION_PATH}/lean.py" brief --art "${ART}" --gate || rc=$?
+        cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+        exit "${rc}"

@@ -58,6 +58,24 @@ The plan keeps two self-contained reference workflows beside each other, uncommi
 **/geometry/** **/geom/** **/crs/** **/projection*/** **/transform*/** **/tiles/** **/tile*/** **/index*/** **/h3/** **/s2/** **/quadkey*
 ```
 
+### 5.7 Lean and Kani: `verify-lean.yml` (#131)
+
+**Lean 4.** `lake build --wfail` on `project-dir`. `sorry` is a warning that `--wfail` turns into a failure, so an unfinished proof cannot merge. The composite installs elan v4.2.4 from its release, checked against a recorded SHA-256, then the toolchain named in `lean-toolchain`. When `lake-manifest.json` requires Mathlib it runs `lake exe cache get` first, so Mathlib is downloaded rather than built. The workflow caches `~/.elan`, `~/.cache/mathlib` and `.lake` on the toolchain and manifest. The `.olean` tree, the build log, `lean-toolchain` and `lake-manifest.json` are uploaded as design-assurance evidence for `retain-artifacts-days`, 400 by default. GitHub caps artifact retention per repository and organisation, so raise that cap or copy the evidence to the release. Pin Mathlib to a tag in `lakefile.toml` (`rev = "v4.35.0"`) and commit `lake-manifest.json`. Mathlib is built for the Lean module system: a file that does a plain `import Mathlib` gets a warning, and `--wfail` fails on it. Start such files with `module` and `public import Mathlib`, as the example does. The example in [`docs/examples/verify/lean/`](examples/verify/lean/) proves `tileX_mem`: every longitude in `[-180, 180)` maps to a column `0 ≤ x < 2 ^ z`. It also proves that moving east by one column width moves the column by exactly one.
+
+**Kani.** The `kani` job runs only when a tracked `.rs` file contains `kani::proof`. It runs `cargo kani` in each crate holding one, using `kani-verifier` 0.68.0 installed with `cargo install --locked`, and a reachable panic, overflow or failed assertion within the harness bounds blocks. Write harnesses with `kani::any()` inputs and `kani::assume` for the preconditions. Keep loops bounded, or set `#[kani::unwind(n)]`.
+
+**Why shell, not the actions.** The plan names `leanprover/lean-action` and `model-checking/kani-github-action`. The org allowlist admits only listed third-party actions, and an unlisted one fails the whole calling run at startup. The composites do the same steps in shell (`lake exe cache get`, `lake build --wfail`; `cargo kani setup`, `cargo kani`). Switch only after both are allowlisted and added to [`approved-actions.md`](approved-actions.md).
+
+**Statement review.** The kernel checks the proof; nobody checks the statement unless a reviewer does. A theorem that proves the wrong thing passes `--wfail`. For every theorem a PR adds or changes, the reviewer confirms:
+
+- The theorem says what the acceptance criterion says: the same quantities, the same bounds, no extra hypotheses that make it trivially true (a `False` premise, a range that excludes the interesting inputs).
+- Definitions in the statement (`tileX` here) are the ones the implementation uses, or are tied to it by a separate theorem or a property test.
+- No `axiom`, `sorry` or `native_decide` in the dependency cone: run `#print axioms <theorem>` and expect only `propext`, `Classical.choice` and `Quot.sound`.
+
+**AI proof generation.** Lean Copilot, LLM "vericoding" and similar tools may write proofs. They run under the security-agent controls of Step 26 (#101) and are listed in the agent inventory (#102). The checker is the gate, so a generated proof is as good as a hand-written one. The statement is not: a human writes or reviews every theorem statement, and generated changes to a statement go through statement review like any other.
+
+**Documented, not automated.** Verus (proofs about executable Rust): `cargo verus verify` in the crate, with the toolchain from the Verus release. Aeneas (Rust translated to Lean, proven there): `charon` then `aeneas -backend lean`, and the generated Lean builds under this workflow. A reusable workflow follows when a project adopts one.
+
 ## 6. The map: `verify.yml`
 
 Schema: [`policies/verification/verify.schema.json`](../policies/verification/verify.schema.json); example with all three languages and the cross-language tools: [`examples/verify.yml`](examples/verify.yml). One entry per path glob: `risk` (`high`, `medium`, `low`), `rungs` (lowest first), `tool` (inferred from the extension when absent), `targets` for Dafny compile targets, `covers` for the implementation globs a model stands for, `budget` overrides. `verify-map.yml` validates the file, resolves the changed files to their entries (longest glob wins) or to the fallback, and writes `verify-map.json` (`files`, `mapped`, `bare_high_risk`, `by_tool`) for the other workflows. A changed high-risk path with no rung is a warning at Baseline and fails with `strict-high-risk`; an implementation change under a model's `covers` without a change to the model is a warning.
@@ -90,6 +108,12 @@ Each acceptance criterion cites the contract, property, model or proof that cove
 | Acceptance criterion | Covered by | Where |
 |---|---|---|
 | <criterion> | contract / property / fuzz target / Dafny lemma / TLA+ invariant / Lean theorem | `path:line` |
+
+Statement review (Lean theorems, Dafny lemmas, TLA+ invariants this PR adds or changes):
+
+- [ ] Each statement says what its acceptance criterion says: same quantities and bounds, no hypothesis that makes it trivially true.
+- [ ] Definitions in the statements are the ones the implementation uses, or are tied to it.
+- [ ] `#print axioms` shows no `sorryAx` or project axiom (Lean); no `assume` or `{:axiom}` (Dafny).
 ```
 
 ## Consuming
