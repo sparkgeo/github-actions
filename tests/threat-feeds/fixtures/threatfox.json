@@ -1,0 +1,92 @@
+{
+ "1000001": [
+  {
+   "ioc_value": "evil.example.com",
+   "ioc_type": "domain",
+   "threat_type": "botnet_cc",
+   "malware": "Cobalt Strike",
+   "malware_alias": null,
+   "malware_printable": "Cobalt Strike",
+   "first_seen_utc": "2026-10-06 12:00:00",
+   "last_seen_utc": null,
+   "confidence_level": 100,
+   "is_compromised": false,
+   "reference": "",
+   "tags": "fixture",
+   "anonymous": 0,
+   "reporter": "fixture"
+  }
+ ],
+ "1000002": [
+  {
+   "ioc_value": "203.0.113.10:4444",
+   "ioc_type": "ip:port",
+   "threat_type": "botnet_cc",
+   "malware": "Cobalt Strike",
+   "malware_alias": null,
+   "malware_printable": "Cobalt Strike",
+   "first_seen_utc": "2026-10-01 08:00:00",
+   "last_seen_utc": "2026-10-06 09:00:00",
+   "confidence_level": 75,
+   "is_compromised": false,
+   "reference": "",
+   "tags": "fixture",
+   "anonymous": 0,
+   "reporter": "fixture"
+  }
+ ],
+ "1000003": [
+  {
+   "ioc_value": "http://198.51.100.7/loader.bin",
+   "ioc_type": "url",
+   "threat_type": "botnet_cc",
+   "malware": "Mirai",
+   "malware_alias": null,
+   "malware_printable": "Mirai",
+   "first_seen_utc": "2026-10-05 00:00:00",
+   "last_seen_utc": null,
+   "confidence_level": 50,
+   "is_compromised": false,
+   "reference": "",
+   "tags": "fixture",
+   "anonymous": 0,
+   "reporter": "fixture"
+  }
+ ],
+ "1000004": [
+  {
+   "ioc_value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "ioc_type": "sha256_hash",
+   "threat_type": "botnet_cc",
+   "malware": "Cobalt Strike",
+   "malware_alias": null,
+   "malware_printable": "Cobalt Strike",
+   "first_seen_utc": "2026-10-06 00:00:00",
+   "last_seen_utc": null,
+   "confidence_level": 100,
+   "is_compromised": false,
+   "reference": "",
+   "tags": "fixture",
+   "anonymous": 0,
+   "reporter": "fixture"
+  }
+ ],
+ "1000005": [
+  {
+   "ioc_value": "stale.example.net",
+   "ioc_type": "domain",
+   "threat_type": "botnet_cc",
+   "malware": "Cobalt Strike",
+   "malware_alias": null,
+   "malware_printable": "Cobalt Strike",
+   "first_seen_utc": "2025-01-01 00:00:00",
+   "last_seen_utc": "2025-06-01 00:00:00",
+   "confidence_level": 100,
+   "is_compromised": false,
+   "reference": "",
+   "tags": "fixture",
+   "anonymous": 0,
+   "reporter": "fixture"
+  }
+ ]
+}

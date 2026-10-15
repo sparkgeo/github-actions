@@ -110,11 +110,18 @@ jobs:
           # Same contract as the upstream Docker action: workspace mounted,
           # settings passed as environment. Only the listed variables cross
           # into the container.
+          #
+          # An empty env var overrides the same key in the repo's
+          # .mega-linter.yml, so only pass FILTER_REGEX_EXCLUDE when set.
+          EXTRA_ENV=()
+          if [ -n "${FILTER_REGEX_EXCLUDE}" ]; then
+            EXTRA_ENV+=(--env FILTER_REGEX_EXCLUDE)
+          fi
           docker run --rm \
             --volume "${GITHUB_WORKSPACE}:/tmp/lint" \
             --env DEFAULT_WORKSPACE=/tmp/lint \
             --env DEFAULT_BRANCH \
-            --env FILTER_REGEX_EXCLUDE \
+            "${EXTRA_ENV[@]}" \
             --env VALIDATE_ALL_CODEBASE \
             --env APPLY_FIXES=none \
             --env SARIF_REPORTER=true \

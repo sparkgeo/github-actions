@@ -25,7 +25,7 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `zizmorcore/zizmor-action` | zizmorcore | `5f14fd08` (v0.5.6) | `zizmor` | Zizmor static security analysis; uploads SARIF | 2026-05-21 |
 | `opentofu/setup-opentofu` | OpenTofu | `847eaa4a` (v2.0.1) | `terramate-opentofu-setup` | Install OpenTofu CLI | 2026-05-21 |
 | `terramate-io/terramate-action` | Terramate | `c5a13758` (v3.0.0) | `terramate-opentofu-setup` | Install Terramate CLI | 2026-05-21 |
-| `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress monitor — audits outbound network calls; baseline for enforce mode | 2026-06-01 |
+| `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress firewall — `egress-policy: block` with per-job allowlists in [egress-allowlist.md](egress-allowlist.md) | 2026-06-01 |
 | `aws-actions/configure-aws-credentials` | AWS (Amazon) | `99214aa6` (v6.1.3) | `aws-oidc-auth` | Assume IAM role via GitHub OIDC; exchanges OIDC token for short-lived AWS credentials | 2026-06-09 |
 | `ghcr.io/oxsecurity/megalinter[-<flavor>]` (Docker image, not an action) | OX Security | tag `v9.6.0` (`MEGALINTER_VERSION` in `lint-app.yml`) | `lint-app.yml` | All-language lint/format gate; auto-detects languages, emits SARIF. Run with `docker run` so the `flavor` input selects the image and only one image is pulled; not in the dependency graph, so no licence exemption needed (AGPL-3.0, run in CI only, never redistributed) | 2026-06-10 |
 

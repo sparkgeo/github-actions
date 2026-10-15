@@ -26,10 +26,16 @@ jobs:
       contents: read
       checks: write
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -45,10 +51,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -108,10 +118,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -119,10 +133,136 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Dogfood the threat-feeds composite against the mirror's latest snapshot
+  # (threat-feeds-mirror.yml). Until the first mirror run after merge there is
+  # no release, so the composite step is skipped with a warning rather than
+  # failing. The normaliser is checked against recorded feed samples first.
+  threat-feeds:
+    name: Threat Feeds
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Normaliser fixtures
+        run: tests/threat-feeds/run.sh
+
+      - name: Check for a published snapshot
+        id: snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view threat-feeds-latest --json id >/dev/null 2>&1; then
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+            echo "::warning title=threat-feeds::no threat-feeds-latest release yet; composite not exercised"
+          fi
+
+      - id: feeds
+        if: steps.snapshot.outputs.exists == 'true'
+        uses: ./.github/actions/threat-feeds
+        with:
+          feeds: kev,threatfox
+
+      - name: Inspect snapshot
+        if: steps.snapshot.outputs.exists == 'true'
+        env:
+          DIR: ${{ steps.feeds.outputs.feeds-dir }}
+          TAG: ${{ steps.feeds.outputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "snapshot ${TAG}"
+          for f in kev threatfox; do
+            jq -r '"\(.feed): \(.count) entries fetched \(.fetched_at)"' "${DIR}/${f}.json"
+          done
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
   # job-step features composite-internal steps don't support. See lint-app.yml.)
+  # EPSS/KEV/LEV override (#80): script fixtures, then the composite itself on
+  # recorded osv-scanner output with fixture feeds, gated by severity-gate.
+  epss-kev-override:
+    name: EPSS/KEV Override
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Override fixtures
+        run: tests/epss-kev-override/run.sh
+
+      - name: Build fixture feeds
+        id: fixture
+        run: |
+          set -euo pipefail
+          N=.github/actions/threat-feeds/normalize.py
+          F=tests/epss-kev-override/fixtures
+          D="${RUNNER_TEMP}/feeds"
+          mkdir -p "${D}"
+          python3 -I "${N}" --feed kev --input "${F}/kev.json" --output "${D}/kev.json"
+          python3 -I "${N}" --feed epss --input "${F}/epss-2026-10-07.csv" --output "${D}/epss.json"
+          for d in 2026-08-08 2026-09-07; do
+            python3 -I "${N}" --feed epss --input "${F}/epss-${d}.csv" --output "${RUNNER_TEMP}/epss-${d}.json"
+          done
+          {
+            echo "dir=${D}"
+            echo "history<<EOF"
+            echo "${RUNNER_TEMP}/epss-2026-08-08.json"
+            echo "${RUNNER_TEMP}/epss-2026-09-07.json"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - id: override
+        uses: ./.github/actions/epss-kev-override
+        with:
+          findings-file: tests/severity-gate/fixtures/osv-node-cvss-8.1.json
+          feeds-dir: ${{ steps.fixture.outputs.dir }}
+          snapshot-tag: fixture
+          epss-history: ${{ steps.fixture.outputs.history }}
+          downgrade: "true"
+
+      - id: gate
+        uses: ./.github/actions/severity-gate
+        with:
+          findings-file: ${{ steps.override.outputs.findings-file }}
+          fail-on-severity: none
+
+      - name: Check composite outputs
+        env:
+          UP: ${{ steps.override.outputs.uplifted }}
+          DOWN: ${{ steps.override.outputs.downgraded }}
+          MAX: ${{ steps.gate.outputs.max-severity }}
+        run: |
+          set -euo pipefail
+          echo "uplifted=${UP} downgraded=${DOWN} gate max-severity=${MAX}"
+          [ "${UP}" = "3" ] && [ "${DOWN}" = "1" ] && [ "${MAX}" = "critical" ]
+
   lint-app:
     name: Lint App
     permissions:
@@ -140,10 +280,18 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            proxy.golang.org:443
+            sum.golang.org:443
+            storage.googleapis.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -160,10 +308,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -182,10 +334,15 @@ jobs:
       contents: read
       security-events: write  # SARIF upload to the Security tab
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -202,10 +359,16 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -224,10 +387,20 @@ jobs:
       actions: read
       security-events: write
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            api.deps.dev:443
+            api.osv.dev:443
+            www.bestpractices.dev:443
+            oss-fuzz-build-logs.storage.googleapis.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -248,10 +421,14 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -270,10 +447,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
+            get.opentofu.org:443
+            release-assets.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -281,6 +463,12 @@ jobs:
           fetch-depth: 0  # terramate --changed requires full git history
 
       - uses: ./.github/actions/terramate-opentofu-setup
+        env:
+          # Telemetry hosts (analytics.terramate.io, checkpoint-api.mineiros.io)
+          # are not on the allowlist; tell both CLIs not to call them.
+          CHECKPOINT_DISABLE: "1"
+          TM_DISABLE_CHECKPOINT: "1"
+          TM_DISABLE_TELEMETRY: "1"
 
   # Verify the storage optimizer composite action runs without error.
   # Runs on push to main (demonstration) and workflow_dispatch (on-demand).
@@ -291,10 +479,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner (block all egress except the allowlist)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          # docs/egress-allowlist.md — update there and here in the same PR.
+          allowed-endpoints: >
+            github.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

@@ -1,0 +1,86 @@
+name: "EPSS/KEV Severity Override"
+description: |
+  Applies the Remediation SLA Table likelihood override (SecOps plan Step 25,
+  Advanced tier) to a findings file before the severity-gate composite reads
+  it. A finding whose CVE has EPSS >= epss-threshold, is on CISA KEV, or has
+  NIST LEV >= lev-threshold is raised to critical. With downgrade: true, a
+  high or critical finding with EPSS < 0.01, absent from KEV and LEV < 0.1
+  drops one row. With runtime-relevance-file, a finding the #179 export marks
+  relevant: false drops one row.
+
+  Reads KEV and EPSS from a threat-feeds snapshot (`feeds-dir` output of the
+  threat-feeds composite, #109); makes no network calls. Each adjusted
+  finding records its scores, the snapshot tag, and the SSVC decision points
+  (exploitation, automatable). Rules: docs/gate-policy.md.
+
+  Formats:
+    osv-json   output of `osv-scanner scan --format json`
+inputs:
+  findings-file:
+    description: "Path to the findings file."
+    required: true
+  format:
+    description: "Findings format: osv-json"
+    default: "osv-json"
+  feeds-dir:
+    description: "Directory holding kev.json and epss.json (threat-feeds composite output `feeds-dir`)."
+    required: true
+  snapshot-tag:
+    description: "Release tag of the snapshot (threat-feeds output `tag`), recorded on each finding."
+    default: ""
+  epss-threshold:
+    description: "EPSS score at or above which a finding is raised to critical."
+    default: "0.10"
+  kev:
+    description: "Raise any finding whose CVE is on CISA KEV to critical."
+    default: "true"
+  lev-threshold:
+    description: "NIST LEV at or above which a CVE counts as a KEV hit."
+    default: "0.5"
+  epss-history:
+    description: "Older epss.json snapshots (one path per line) for the LEV calculation. Without at least one, LEV is unknown and nothing is downgraded."
+    default: ""
+  downgrade:
+    description: "Drop high and critical findings one row when EPSS, KEV and LEV all say exploitation is unlikely."
+    default: "false"
+  runtime-relevance-file:
+    description: "runtime-relevance.json export (#179). Findings it marks relevant: false drop one row. Empty: off."
+    default: ""
+outputs:
+  findings-file:
+    description: "Path of the adjusted findings file."
+    value: ${{ steps.override.outputs.findings-file }}
+  uplifted:
+    description: "Number of findings raised to critical."
+    value: ${{ steps.override.outputs.uplifted }}
+  downgraded:
+    description: "Number of findings lowered one or more rows."
+    value: ${{ steps.override.outputs.downgraded }}
+runs:
+  using: "composite"
+  steps:
+    - name: Apply EPSS/KEV/LEV override
+      id: override
+      shell: bash
+      env:
+        FINDINGS: ${{ inputs.findings-file }}
+        FORMAT: ${{ inputs.format }}
+        FEEDS_DIR: ${{ inputs.feeds-dir }}
+        TAG: ${{ inputs.snapshot-tag }}
+        EPSS_THRESHOLD: ${{ inputs.epss-threshold }}
+        KEV: ${{ inputs.kev }}
+        LEV_THRESHOLD: ${{ inputs.lev-threshold }}
+        HISTORY: ${{ inputs.epss-history }}
+        DOWNGRADE: ${{ inputs.downgrade }}
+        RUNTIME: ${{ inputs.runtime-relevance-file }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/findings-override.json"
+        mapfile -t hist < <(printf '%s\n' "${HISTORY}" | sed '/^[[:space:]]*$/d')
+        python3 -I "${GITHUB_ACTION_PATH}/override.py" \
+          --findings "${FINDINGS}" --output "${OUT}" --format "${FORMAT}" \
+          --feeds-dir "${FEEDS_DIR}" --snapshot-tag "${TAG}" \
+          --epss-threshold "${EPSS_THRESHOLD}" --kev "${KEV}" --lev-threshold "${LEV_THRESHOLD}" \
+          --epss-history "${hist[@]}" --downgrade "${DOWNGRADE}" \
+          --runtime-relevance "${RUNTIME}" --summary "${GITHUB_STEP_SUMMARY}"
+        echo "findings-file=${OUT}" >> "${GITHUB_OUTPUT}"

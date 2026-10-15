@@ -27,6 +27,27 @@ on:
         description: 'Upload SARIF results to the GitHub Security tab'
         default: true
         type: boolean
+      epss-override:
+        description: >-
+          Advanced tier: raise findings with EPSS >= epss-threshold, on CISA KEV,
+          or NIST LEV >= 0.5 to critical before the gate (docs/gate-policy.md).
+          Reads the threat-feeds mirror releases of sparkgeo/github-actions.
+        default: false
+        type: boolean
+      epss-threshold:
+        description: 'EPSS score that raises a finding to critical (with epss-override)'
+        default: '0.10'
+        type: string
+      downgrade:
+        description: >-
+          With epss-override: drop high and critical findings one row when
+          EPSS < 0.01, not on KEV and LEV < 0.1
+        default: false
+        type: boolean
+      feeds-ref:
+        description: 'Threat-feeds snapshot to read: latest, or a date (YYYY-MM-DD) to reproduce an earlier run'
+        default: 'latest'
+        type: string
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the osv-scanner
@@ -60,9 +81,71 @@ jobs:
           path: .sparkgeo-github-actions
           persist-credentials: false
 
-      - uses: ./.sparkgeo-github-actions/.github/actions/osv-scanner
+      - id: osv
+        uses: ./.sparkgeo-github-actions/.github/actions/osv-scanner
         with:
           directory: ${{ inputs.directory }}
           fail-on-severity: ${{ inputs.fail-on-severity }}
           fail-on-malicious: ${{ inputs.fail-on-malicious }}
           sarif-upload: ${{ inputs.sarif-upload }}
+          gate: ${{ !inputs.epss-override }}
+
+      # EPSS/KEV override (#80): fetch the threat-feeds snapshot, adjust the
+      # findings, then gate. Talks only to GitHub.
+      - id: feeds
+        if: inputs.epss-override
+        uses: ./.sparkgeo-github-actions/.github/actions/threat-feeds
+        with:
+          feeds: kev,epss
+          ref: ${{ inputs.feeds-ref }}
+
+      # LEV needs older EPSS scores: the dated mirror releases 30 and 60 days
+      # before the snapshot was published. A missing release (mirror younger than 60 days,
+      # or a failed day) is skipped; with no history LEV is unknown and
+      # nothing is downgraded. Fetched outside the threat-feeds composite
+      # because it caches one directory per release.
+      - name: Fetch EPSS history for LEV
+        id: history
+        if: inputs.epss-override
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISHED: ${{ steps.feeds.outputs.published-at }}
+        run: |
+          set -euo pipefail
+          # Dated tags are named after the mirror run, which published this snapshot.
+          day="${PUBLISHED:0:10}"
+          : > "${RUNNER_TEMP}/epss-history.txt"
+          for back in 30 60; do
+            tag="threat-feeds-$(date -u -d "${day} - ${back} days" +%F)"
+            dir="${RUNNER_TEMP}/epss-history/${tag}"
+            mkdir -p "${dir}"
+            if gh release download "${tag}" -R sparkgeo/github-actions -D "${dir}" -p epss.json -p SHA256SUMS 2>/dev/null \
+              && (cd "${dir}" && sha256sum -c --ignore-missing SHA256SUMS); then
+              echo "${dir}/epss.json" >> "${RUNNER_TEMP}/epss-history.txt"
+            else
+              echo "::notice title=epss-kev-override::no ${tag} release; LEV computed without it"
+            fi
+          done
+          {
+            echo "files<<EOF"
+            cat "${RUNNER_TEMP}/epss-history.txt"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - id: override
+        if: inputs.epss-override
+        uses: ./.sparkgeo-github-actions/.github/actions/epss-kev-override
+        with:
+          findings-file: ${{ steps.osv.outputs.json }}
+          feeds-dir: ${{ steps.feeds.outputs.feeds-dir }}
+          snapshot-tag: ${{ steps.feeds.outputs.tag }}
+          epss-threshold: ${{ inputs.epss-threshold }}
+          epss-history: ${{ steps.history.outputs.files }}
+          downgrade: ${{ inputs.downgrade }}
+
+      - if: inputs.epss-override
+        uses: ./.sparkgeo-github-actions/.github/actions/severity-gate
+        with:
+          findings-file: ${{ steps.override.outputs.findings-file }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          fail-on-malicious: ${{ inputs.fail-on-malicious }}
