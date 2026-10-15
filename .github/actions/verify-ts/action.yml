@@ -1,0 +1,262 @@
+name: "Verify (TypeScript)"
+description: |
+  TypeScript / JavaScript rungs of the verification ladder (SecOps plan
+  Step 39, issue #127): tsc under the strictest flags (only errors in changed
+  files count), typescript-eslint strict with switch exhaustiveness, a census
+  of zod/valibot schemas and fast-check properties as in the plan's reference
+  verify-brief.yml, an AST check that exported entry points on mapped paths
+  parse untrusted input, and at tier standard XState model-based tests
+  (@xstate/graph simple paths executed) and Stryker mutation testing. Writes
+  ts.json, the brief and summary.json under the output directory.
+
+  Package manager detected from the lockfile (pnpm-lock.yaml, yarn.lock,
+  package-lock.json); install runs with scripts disabled. Tools come from the
+  project's own node_modules: typescript, eslint + typescript-eslint, vitest,
+  xstate + @xstate/graph, @stryker-mutator/core; a missing one is skipped
+  with a warning, never installed on the fly.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  working-directory:
+    description: "Project directory (package.json and the lockfile)."
+    default: "."
+  node-version:
+    description: "Node version; empty reads .nvmrc, then .node-version, then 22."
+    default: "22"
+  changed-list:
+    description: "File listing changed paths relative to working-directory; empty derives it from the pull request (base..head) or lists the whole tree."
+    default: ""
+  map-json:
+    description: "verify-map.json written by the verify-map composite; empty uses the HIGH_RISK_GLOBS fallback for risk."
+    default: ""
+  high-risk-globs:
+    description: "Space-separated fallback globs; empty uses the HIGH_RISK_GLOBS list from verify-brief.yml."
+    default: ""
+  strict-high-risk:
+    description: "Fail on tsc errors in changed files at tier baseline."
+    default: "false"
+  tier:
+    description: "baseline or standard; standard blocks on tsc errors, unvalidated entry points and missing properties on high-risk paths, and runs XState paths and Stryker."
+    default: "baseline"
+  mutation-threshold:
+    description: "Minimum Stryker mutation score in percent at tier standard; 0 is advisory."
+    default: "0"
+  xstate-state-limit:
+    description: "Maximum unique states @xstate/graph may traverse per machine before falling back to value-only keys."
+    default: "500"
+  output-dir:
+    description: "Where ts.json, the brief, summary.json and reports/ go (absolute, or relative to working-directory)."
+    default: "verify-ts-artifacts"
+  gate:
+    description: "Exit 1 on a blocking finding."
+    default: "true"
+outputs:
+  ts-errors-changed:
+    description: "tsc errors in changed files under the strictest flags."
+    value: ${{ steps.summary.outputs.ts-errors-changed }}
+  eslint-errors:
+    description: "ESLint errors in changed files."
+    value: ${{ steps.summary.outputs.eslint-errors }}
+  unvalidated:
+    description: "Exported entry points on mapped paths taking untrusted input without a schema parse."
+    value: ${{ steps.summary.outputs.unvalidated }}
+  xstate-failures:
+    description: "XState paths that failed when executed."
+    value: ${{ steps.summary.outputs.xstate-failures }}
+  mutation-score:
+    description: "Stryker mutation score in percent; empty when Stryker did not run."
+    value: ${{ steps.summary.outputs.mutation-score }}
+  blocking:
+    description: "Blocking findings (summary.json .gate.fail)."
+    value: ${{ steps.summary.outputs.blocking }}
+runs:
+  using: "composite"
+  steps:
+    - id: detect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        REQUESTED: ${{ inputs.node-version }}
+      run: |
+        set -euo pipefail
+        v="${REQUESTED}"
+        if [ -z "${v}" ] && [ -f .nvmrc ]; then v="$(head -n1 .nvmrc | tr -d '[:space:]v')"; fi
+        if [ -z "${v}" ] && [ -f .node-version ]; then v="$(head -n1 .node-version | tr -d '[:space:]v')"; fi
+        if [ -f pnpm-lock.yaml ]; then pm=pnpm; lock=pnpm-lock.yaml
+        elif [ -f yarn.lock ]; then pm=yarn; lock=yarn.lock
+        elif [ -f package-lock.json ]; then pm=npm; lock=package-lock.json
+        elif [ -f npm-shrinkwrap.json ]; then pm=npm; lock=npm-shrinkwrap.json
+        else echo "::error title=verify-ts::no pnpm-lock.yaml, yarn.lock or package-lock.json in $(pwd)"; exit 1
+        fi
+        { echo "version=${v:-22}"; echo "pm=${pm}"; echo "lockfile=${lock}"; } >> "${GITHUB_OUTPUT}"
+
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+      with:
+        node-version: ${{ steps.detect.outputs.version }}
+
+    # corepack, not pnpm/action-setup: no third-party action in the composite
+    # (an unlisted one is a silent startup_failure under the org allowlist)
+    - name: Install dependencies (scripts disabled)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PM: ${{ steps.detect.outputs.pm }}
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      run: |
+        set -euo pipefail
+        case "${PM}" in
+          npm)  npm ci --ignore-scripts --no-audit --no-fund ;;
+          pnpm) corepack enable pnpm; pnpm install --frozen-lockfile --ignore-scripts ;;
+          yarn) corepack enable yarn
+                if yarn --version | grep -q '^1\.'; then yarn install --frozen-lockfile --ignore-scripts
+                else YARN_ENABLE_SCRIPTS=false yarn install --immutable; fi ;;
+        esac
+
+    - id: scope
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CHANGED: ${{ inputs.changed-list }}
+        OUT: ${{ inputs.output-dir }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+      run: |
+        set -euo pipefail
+        ART="$(mkdir -p "${OUT}" && cd "${OUT}" && pwd)"
+        if [ -n "${CHANGED}" ]; then
+          cp "${CHANGED}" "${ART}/changed.txt"
+        elif [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
+          git fetch -q --depth=1 origin "${PR_BASE_SHA}" "${PR_HEAD_SHA}" 2>/dev/null || true
+          if ! git diff --name-only --diff-filter=ACMR --relative "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "${ART}/changed.txt" 2>/dev/null; then
+            echo "::notice title=verify-ts::PR base or head not reachable (shallow checkout); scanning the whole tree"
+            git ls-files > "${ART}/changed.txt"
+          fi
+        else
+          git ls-files > "${ART}/changed.txt"
+        fi
+        grep -E '\.(ts|tsx|js|jsx|mjs)$' "${ART}/changed.txt" | grep -vE '(^|/)node_modules/|\.d\.ts$' > "${ART}/changed-ts.txt" || true
+        echo "  $(wc -l < "${ART}/changed-ts.txt") changed ts/js file(s)"
+        { echo "art=${ART}"; echo "count=$(wc -l < "${ART}/changed-ts.txt")"; } >> "${GITHUB_OUTPUT}"
+
+    - id: tsc
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+        MAP: ${{ inputs.map-json }}
+        GLOBS: ${{ inputs.high-risk-globs }}
+      run: |
+        set -euo pipefail
+        export PATH="${PWD}/node_modules/.bin:${PATH}"
+        tsc_rc=0
+        if [ ! -s "${ART}/changed-ts.txt" ]; then
+          echo "  no changed ts/js files"; exit 0
+        elif [ -f tsconfig.json ] && command -v tsc >/dev/null; then
+          tsc --noEmit --strict --noUncheckedIndexedAccess --exactOptionalPropertyTypes --pretty false > "${ART}/tsc.txt" 2>&1 || tsc_rc=$?
+        else
+          echo "no tsconfig.json or typescript" > "${ART}/tsc.txt"; tsc_rc=-1
+        fi
+        python3 -I "${GITHUB_ACTION_PATH}/ts.py" --art "${ART}" --tsc-rc "${tsc_rc}" --map "${MAP}" --high-risk-globs "${GLOBS}"
+
+    - id: eslint
+      if: steps.scope.outputs.count != '0'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+      run: |
+        set -euo pipefail
+        export PATH="${PWD}/node_modules/.bin:${PATH}"
+        rc=-1
+        if ! command -v eslint >/dev/null; then
+          echo "::warning title=verify-ts::eslint is not installed in the project; lint skipped"
+        else
+          ARGS=()
+          if ! ls eslint.config.* >/dev/null 2>&1; then
+            [ -d node_modules/typescript-eslint ] || { echo "::warning title=verify-ts::no eslint.config.* and no typescript-eslint; lint skipped"; echo "rc=-1" >> "${GITHUB_OUTPUT}"; exit 0; }
+            mkdir -p .verify-ts && cp "${GITHUB_ACTION_PATH}/eslint.verify.config.mjs" .verify-ts/eslint.config.mjs
+            ARGS=(--config .verify-ts/eslint.config.mjs)
+          fi
+          rc=0
+          xargs -r -d '\n' -a "${ART}/changed-ts.txt" eslint "${ARGS[@]}" --no-warn-ignored --format json --output-file "${ART}/eslint.json" || rc=$?
+          [ "${rc}" -le 1 ] || { echo "::error title=verify-ts::eslint crashed (rc ${rc})"; cat "${ART}/eslint.json" 2>/dev/null | head -20; }
+        fi
+        echo "rc=${rc}" >> "${GITHUB_OUTPUT}"
+
+    - id: entrypoints
+      if: steps.scope.outputs.count != '0'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+      run: |
+        set -euo pipefail
+        jq -r '.mapped[]' "${ART}/ts.json" | grep -E '\.tsx?$' > "${ART}/entry-files.txt" || true
+        [ -s "${ART}/entry-files.txt" ] || { echo "  no mapped ts files"; exit 0; }
+        [ -d node_modules/typescript ] || { echo "::warning title=verify-ts::typescript is not installed in the project; entry-point check skipped"; exit 0; }
+        node "${GITHUB_ACTION_PATH}/entrypoints.mjs" . "${ART}/entry-files.txt" "${ART}/entrypoints.json"
+
+    # Model-based tests: every simple path of every exported XState machine in
+    # a changed (mapped, when verify.yml exists) file, executed on an actor.
+    - id: xstate
+      if: inputs.tier == 'standard' && steps.scope.outputs.count != '0'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+        LIMIT: ${{ inputs.xstate-state-limit }}
+      run: |
+        set -euo pipefail
+        MACHINES="$(jq -r '.mapped[]' "${ART}/ts.json" | while IFS= read -r f; do grep -lE '\.createMachine\(|createMachine\(' "${f}" 2>/dev/null || true; done)"
+        [ -n "${MACHINES}" ] || { echo "  no XState machines in mapped changed files"; exit 0; }
+        for d in xstate @xstate/graph vitest; do
+          [ -d "node_modules/${d}" ] || { echo "::warning title=verify-ts::${d} is not installed in the project; XState paths skipped"; exit 0; }
+        done
+        mkdir -p .verify-ts
+        cp "${GITHUB_ACTION_PATH}/xstate-paths.test.mjs" .verify-ts/
+        printf 'export default { test: { include: [".verify-ts/*.test.mjs"], root: process.cwd() } };\n' > .verify-ts/vitest.config.mjs
+        export VERIFY_TS_MACHINES
+        VERIFY_TS_MACHINES="$(printf '%s\n' "${MACHINES}" | jq -R --arg pwd "${PWD}" '$pwd + "/" + .' | jq -sc .)"
+        export VERIFY_TS_XSTATE_OUT="${ART}/xstate.json" VERIFY_TS_XSTATE_LIMIT="${LIMIT}"
+        node_modules/.bin/vitest run --config .verify-ts/vitest.config.mjs > "${ART}/xstate.txt" 2>&1 || true
+        tail -6 "${ART}/xstate.txt"
+        [ -s "${ART}/xstate.json" ] || { echo "::error title=verify-ts::XState path runner produced no results"; tail -40 "${ART}/xstate.txt"; exit 1; }
+
+    - id: stryker
+      if: inputs.tier == 'standard' && steps.scope.outputs.count != '0'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+      run: |
+        set -euo pipefail
+        MUTATE="$(jq -r '.mapped | map(select(test("\\.(ts|tsx|js|mjs)$"))) | join(",")' "${ART}/ts.json")"
+        [ -n "${MUTATE}" ] || { echo "  no mapped source files to mutate"; exit 0; }
+        [ -d node_modules/@stryker-mutator/core ] || { echo "::warning title=verify-ts::@stryker-mutator/core is not installed in the project; mutation skipped"; exit 0; }
+        mkdir -p "${ART}/reports"
+        # Stryker writes reports/mutation/mutation.{json,html} in the project
+        timeout 900 node_modules/.bin/stryker run --mutate "${MUTATE}" --reporters json,html,clear-text \
+          > "${ART}/stryker.txt" 2>&1 || true
+        grep -E '^(All files|File) ' "${ART}/stryker.txt" || true
+        cp reports/mutation/mutation.json reports/mutation/mutation.html "${ART}/reports/" 2>/dev/null \
+          || { echo "::warning title=verify-ts::Stryker wrote no report"; tail -30 "${ART}/stryker.txt"; }
+
+    - id: summary
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.scope.outputs.art }}
+        TIER: ${{ inputs.tier }}
+        STRICT: ${{ inputs.strict-high-risk }}
+        THRESHOLD: ${{ inputs.mutation-threshold }}
+        ESLINT_RC: ${{ steps.eslint.outputs.rc || '-1' }}
+        GATE: ${{ inputs.gate }}
+      run: |
+        set -euo pipefail
+        ARGS=(--art "${ART}" --tier "${TIER}" --mutation-threshold "${THRESHOLD}" --eslint-rc "${ESLINT_RC}")
+        [ "${STRICT}" = "true" ] && ARGS+=(--strict)
+        [ "${GATE}" = "true" ] && ARGS+=(--gate)
+        rc=0
+        python3 -I "${GITHUB_ACTION_PATH}/summary.py" "${ARGS[@]}" || rc=$?
+        cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+        exit "${rc}"

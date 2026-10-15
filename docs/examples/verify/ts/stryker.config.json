@@ -1,0 +1,15 @@
+{
+  "testRunner": "vitest",
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "mutate": [
+    "src/**/*.ts"
+  ],
+  "reporters": [
+    "json",
+    "html",
+    "clear-text"
+  ],
+  "coverageAnalysis": "perTest"
+}

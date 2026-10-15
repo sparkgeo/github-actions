@@ -1,0 +1,4 @@
+src/bbox.ts(12,5): error TS2322: Type 'number' is not assignable to type 'Degrees'.
+src/bbox.ts(30,9): error TS18048: 'x' is possibly 'undefined'.
+src/legacy/old.ts(4,1): error TS7006: Parameter 'a' implicitly has an 'any' type.
+Found 3 errors in 2 files.

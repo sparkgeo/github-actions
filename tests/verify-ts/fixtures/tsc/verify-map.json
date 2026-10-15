@@ -1,0 +1,8 @@
+{
+  "fallback": false,
+  "high_risk_globs": [],
+  "files": {
+    "docs/examples/verify/ts/src/bbox.ts": {"glob": "docs/examples/verify/ts/src/**", "risk": "high", "rungs": ["boundary-contracts", "properties"], "tool": "ts", "mapped": true},
+    "docs/examples/verify/ts/src/upload.machine.ts": {"glob": "docs/examples/verify/ts/src/**", "risk": "medium", "rungs": ["model-based"], "tool": "ts", "mapped": true}
+  }
+}

@@ -1,0 +1,144 @@
+name: Verify (TypeScript)
+
+# Reusable PR check (issue #127, plan Step 39): the TypeScript / JavaScript
+# rungs of the verification ladder. tsc under the strictest flags (only errors
+# in changed files count; advisory until strict-high-risk, blocking at
+# standard), typescript-eslint strict with switch exhaustiveness (blocking),
+# the brief's census of zod/valibot schemas and fast-check properties, an AST
+# check that exported entry points on mapped paths parse untrusted input, and
+# at tier standard XState model-based tests (@xstate/graph) and Stryker
+# mutation testing. Verdict wording follows the plan's reference
+# verify-brief.yml; one rolling PR comment, artefacts 30 days (Stryker HTML
+# report included), gate last.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com, the npm registry, PyPI.
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Project directory (package.json and the lockfile)'
+        default: '.'
+        type: string
+      node-version:
+        description: 'Node version; empty reads .nvmrc, then .node-version'
+        default: '22'
+        type: string
+      strict-high-risk:
+        description: 'Fail on tsc errors in changed files at tier baseline'
+        default: false
+        type: boolean
+      map-path:
+        description: 'verify.yml in the repository'
+        default: 'verify.yml'
+        type: string
+      high-risk-globs:
+        description: 'Fallback when verify.yml is absent; default is the HIGH_RISK_GLOBS list from verify-brief.yml'
+        default: ''
+        type: string
+      tier:
+        description: 'baseline|standard'
+        default: 'baseline'
+        type: string
+      mutation-threshold:
+        description: 'Minimum Stryker mutation score in percent at tier standard; 0 is advisory'
+        default: 0
+        type: number
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned verify-ts.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      ts-errors-changed:
+        description: 'tsc errors in changed files under the strictest flags'
+        value: ${{ jobs.ts.outputs.ts-errors-changed }}
+      mutation-score:
+        description: 'Stryker mutation score in percent; empty when Stryker did not run'
+        value: ${{ jobs.ts.outputs.mutation-score }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants contents: read and pull-requests: write (the
+# rolling comment).
+jobs:
+  ts:
+    name: Verify TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      ts-errors-changed: ${{ steps.verify.outputs.ts-errors-changed }}
+      mutation-score: ${{ steps.verify.outputs.mutation-score }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the base must be reachable for the changed-files diff
+
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout verify composites
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: map
+        uses: ./.sparkgeo-github-actions/.github/actions/verify-map
+        with:
+          map-path: ${{ inputs.map-path }}
+          high-risk-globs: ${{ inputs.high-risk-globs }}
+          output-path: ${{ runner.temp }}/verify-map.json
+
+      - id: verify
+        uses: ./.sparkgeo-github-actions/.github/actions/verify-ts
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          node-version: ${{ inputs.node-version }}
+          map-json: ${{ runner.temp }}/verify-map.json
+          high-risk-globs: ${{ inputs.high-risk-globs }}
+          strict-high-risk: ${{ inputs.strict-high-risk }}
+          tier: ${{ inputs.tier }}
+          mutation-threshold: ${{ inputs.mutation-threshold }}
+          output-dir: ${{ runner.temp }}/verify-ts
+          gate: 'false'
+
+      - name: Post the brief
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BRIEF: ${{ runner.temp }}/verify-ts/verify-brief.md
+        run: |
+          [ -f "${BRIEF}" ] || exit 0
+          gh pr comment "${PR}" --body-file "${BRIEF}" --edit-last --create-if-none \
+            || gh pr comment "${PR}" --body-file "${BRIEF}" || true
+
+      - name: Keep the raw artefacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: verify-ts-${{ github.event.pull_request.number || github.run_id }}
+          path: |
+            ${{ runner.temp }}/verify-ts
+            ${{ runner.temp }}/verify-map.json
+          retention-days: 30
+
+      # Last, after the brief is posted, so a red build always arrives with its
+      # explanation attached to the PR.
+      - name: Gate
+        if: always()
+        env:
+          SUMMARY: ${{ runner.temp }}/verify-ts/summary.json
+        run: |
+          [ -f "${SUMMARY}" ] || { echo "::error title=verify-ts::no summary.json; the verify step did not finish"; exit 1; }
+          jq -r '.gate.warn[] | "  warn: " + .' "${SUMMARY}"
+          jq -r '.gate.fail[] | "  FAIL: " + .' "${SUMMARY}"
+          jq -e '.gate.fail | length == 0' "${SUMMARY}" > /dev/null

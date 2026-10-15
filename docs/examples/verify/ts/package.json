@@ -1,0 +1,27 @@
+{
+  "name": "verify-example-bbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Antimeridian-safe bbox normalisation with a branded Degrees type, a zod boundary schema, a fast-check property and an XState upload machine (issue #127)",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit --strict --noUncheckedIndexedAccess --exactOptionalPropertyTypes",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "mutation": "stryker run"
+  },
+  "dependencies": {
+    "xstate": "5.33.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
+    "@xstate/graph": "3.0.4",
+    "eslint": "10.12.0",
+    "fast-check": "4.10.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
+    "vitest": "4.1.9"
+  }
+}

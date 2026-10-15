@@ -58,6 +58,21 @@ The plan keeps two self-contained reference workflows beside each other, uncommi
 **/geometry/** **/geom/** **/crs/** **/projection*/** **/transform*/** **/tiles/** **/tile*/** **/index*/** **/h3/** **/s2/** **/quadkey*
 ```
 
+### 5.2 TypeScript: `verify-ts.yml` (#127)
+
+The brief's "TypeScript / JavaScript" step as `ts.py` (same `ts.json` fields: `tsc`, `tsc_errors_all`, `tsc_errors_changed`, `changed`, `test_files`, `property_files`, `schema_files`; install with scripts disabled), plus what the brief leaves out, all from the project's own `node_modules` (nothing installed on the fly):
+
+| Check | How | Baseline | Standard |
+|---|---|---|---|
+| Strict types | `tsc --noEmit --strict --noUncheckedIndexedAccess --exactOptionalPropertyTypes`; errors in changed files only | advisory (`strict-high-risk` blocks) | blocking |
+| Lint | the project's `eslint.config.*`; without one, typescript-eslint `strictTypeChecked` plus `switch-exhaustiveness-check` (the `never` check) | blocking | blocking |
+| Boundary contracts | `entrypoints.mjs` parses mapped changed files with the TypeScript compiler API: an exported function taking `unknown`, `any` or an untyped parameter must call a schema parser (`.parse`, `.safeParse`, valibot `parse`); branded types counted | advisory | blocking |
+| Properties | a high-risk changed module that no test file imports with `fc.assert`/`fc.property`/`fc.asyncProperty`/`fc.check` | advisory | blocking |
+| Model-based tests | every exported XState machine in a mapped changed file: `@xstate/graph` `getSimplePaths`, each path executed on a fresh actor (final value and context must match, no error); unreached states reported | off | blocking on a failed path |
+| Mutation | Stryker on the mapped changed files; score = (killed + timeout) / (killed + timeout + survived + no coverage); HTML report in the artefact | off | advisory; `mutation-threshold` gates |
+
+A machine whose context grows without bound (a retry counter) needs a traversal bound: export `<machineName>Graph` with `@xstate/graph` options (`stopWhen`, `events`) beside it, as [`upload.machine.ts`](examples/verify/ts/src/upload.machine.ts) does. Without one, a traversal past `xstate-state-limit` states is retried keyed on the state value only and the brief says so. In the example, the fast-check property "in-range longitudes are unchanged" found that `wrapLongitude(-0)` returned `0`; the fix is in the code, the property stays.
+
 ## 6. The map: `verify.yml`
 
 Schema: [`policies/verification/verify.schema.json`](../policies/verification/verify.schema.json); example with all three languages and the cross-language tools: [`examples/verify.yml`](examples/verify.yml). One entry per path glob: `risk` (`high`, `medium`, `low`), `rungs` (lowest first), `tool` (inferred from the extension when absent), `targets` for Dafny compile targets, `covers` for the implementation globs a model stands for, `budget` overrides. `verify-map.yml` validates the file, resolves the changed files to their entries (longest glob wins) or to the fallback, and writes `verify-map.json` (`files`, `mapped`, `bare_high_risk`, `by_tool`) for the other workflows. A changed high-risk path with no rung is a warning at Baseline and fails with `strict-high-risk`; an implementation change under a model's `covers` without a change to the model is a warning.

@@ -1,0 +1,8 @@
+{"schemaVersion": "1.0", "thresholds": {"high": 80, "low": 60}, "files": {"src/a.ts": {"language": "typescript", "source": "", "mutants": [
+ {"id": "1", "mutatorName": "x", "replacement": "", "location": {"start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 2}}, "status": "Killed"},
+ {"id": "2", "mutatorName": "x", "replacement": "", "location": {"start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 2}}, "status": "Killed"},
+ {"id": "3", "mutatorName": "x", "replacement": "", "location": {"start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 2}}, "status": "Timeout"},
+ {"id": "4", "mutatorName": "x", "replacement": "", "location": {"start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 2}}, "status": "Survived"},
+ {"id": "5", "mutatorName": "x", "replacement": "", "location": {"start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 2}}, "status": "NoCoverage"},
+ {"id": "6", "mutatorName": "x", "replacement": "", "location": {"start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 2}}, "status": "CompileError"}
+]}}}
