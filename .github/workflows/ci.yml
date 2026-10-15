@@ -76,6 +76,65 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Runtime scanners (#179) on a throwaway kind cluster: install both
+  # operators with the composite, run a workload with known CVEs, wait for
+  # Kubescape's relevancy data, then export it. Audit egress: images and
+  # vulnerability databases come from several registries and CDNs.
+  runtime-scanners:
+    name: Runtime Scanners (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create kind cluster
+        run: kind create cluster --name ci --wait 180s
+
+      - uses: ./.github/actions/runtime-scanners
+        with:
+          cluster-name: kind-ci
+          exclude-namespaces: local-path-storage
+          kubescape-values: tests/runtime-scanners/kubescape-ci.yaml
+          timeout: 15m
+
+      - name: Run a workload and wait for relevancy data
+        run: |
+          set -euo pipefail
+          kubectl apply -f tests/runtime-scanners/workload.yaml
+          kubectl -n demo rollout status deployment/web --timeout 5m
+          for i in $(seq 120); do
+            ref="$(kubectl get vulnerabilitymanifestsummaries.spdx.softwarecomposition.kubescape.io -n demo -o json 2>/dev/null \
+              | jq -r '[.items[].spec.vulnerabilitiesRef.relevant.name // ""] | map(select(. != "")) | first // ""')"
+            if [ -n "${ref}" ]; then echo "relevant manifest ${ref} after ${i} polls"; exit 0; fi
+            sleep 15
+          done
+          echo "::error::no relevancy data after 30 minutes"
+          kubectl get pods -A
+          exit 1
+
+      - name: Collect
+        if: always()
+        env:
+          OUT_DIR: ${{ runner.temp }}/runtime-collect
+        run: bash .github/actions/runtime-relevance/collect.sh
+
+      - name: Upload collected objects
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: runtime-collect
+          path: ${{ runner.temp }}/runtime-collect
+          retention-days: 7
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

@@ -1,0 +1,60 @@
+name: "Runtime Scanners"
+description: |
+  Installs or upgrades Trivy Operator (scans running images) and the
+  Kubescape operator with relevancy on (records which packages each container
+  loads) into the current kubectl context (SecOps plan Step 41 Standard,
+  issue #179). Charts come from their GitHub releases, pinned by version and
+  SHA-256. Needs helm and kubectl (preinstalled on GitHub-hosted runners) and
+  a kubeconfig; runtime-scanners-deploy.yml supplies one for EKS.
+inputs:
+  cluster-name:
+    description: "Cluster name reported by Kubescape."
+    required: true
+  namespace:
+    description: "Namespace for both operators."
+    default: "security-scanners"
+  exclude-namespaces:
+    description: "Comma-separated namespaces not scanned (CI runners and the like), on top of the scanners' own and kube-system."
+    default: "actions-runner-system"
+  namespace-labels:
+    description: "Space-separated key=value labels for the namespace (#114 tagging standard)."
+    default: "owner=platform project=security-scanners environment=shared data-class=internal exposure=internal"
+  trivy-operator-chart-version:
+    description: "aquasecurity trivy-operator chart version."
+    default: "0.36.0"
+  trivy-operator-chart-sha256:
+    description: "SHA-256 of that chart's .tgz from its GitHub release."
+    default: "bb0c44bc70e3158cc63ea49d7458ede6db5b6c932f6585a2d787eb9712fd4288"
+  kubescape-chart-version:
+    description: "kubescape-operator chart version."
+    default: "1.40.4"
+  kubescape-chart-sha256:
+    description: "SHA-256 of that chart's .tgz from its GitHub release."
+    default: "9c9dad697b13d085ed1c6cbb166d9ade239305aa2e8b5999840d455fc91a10ea"
+  trivy-operator-values:
+    description: "Optional extra values file for trivy-operator."
+    default: ""
+  kubescape-values:
+    description: "Optional extra values file for kubescape-operator (e.g. nodeAgent.config.maxLearningPeriod)."
+    default: ""
+  timeout:
+    description: "helm --timeout per release."
+    default: "10m"
+runs:
+  using: "composite"
+  steps:
+    - name: Install or upgrade the scanners
+      shell: bash
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
+        NAMESPACE: ${{ inputs.namespace }}
+        EXCLUDE_NAMESPACES: ${{ inputs.exclude-namespaces }}
+        NAMESPACE_LABELS: ${{ inputs.namespace-labels }}
+        TRIVY_VERSION: ${{ inputs.trivy-operator-chart-version }}
+        TRIVY_SHA256: ${{ inputs.trivy-operator-chart-sha256 }}
+        KUBESCAPE_VERSION: ${{ inputs.kubescape-chart-version }}
+        KUBESCAPE_SHA256: ${{ inputs.kubescape-chart-sha256 }}
+        TRIVY_VALUES: ${{ inputs.trivy-operator-values }}
+        KUBESCAPE_VALUES: ${{ inputs.kubescape-values }}
+        TIMEOUT: ${{ inputs.timeout }}
+      run: bash "${GITHUB_ACTION_PATH}/deploy.sh"

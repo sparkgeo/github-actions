@@ -1,0 +1,7 @@
+# CI only: shorten the node agent's learning so relevancy data appears within
+# minutes on a kind cluster (production keeps the chart's 24h maximum).
+nodeAgent:
+  config:
+    learningPeriod: 1m
+    maxLearningPeriod: 3m
+    updatePeriod: 1m
