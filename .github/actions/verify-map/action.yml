@@ -69,9 +69,13 @@ runs:
         if [ -n "${CHANGED}" ]; then
           cp "${CHANGED}" "${OUT}/changed.txt"
         elif [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
-          git fetch -q --depth=1 origin "${PR_BASE_SHA}" 2>/dev/null || true
-          git diff --name-only --diff-filter=ACMR "${PR_BASE_SHA}...${PR_HEAD_SHA}" > "${OUT}/changed.txt" 2>/dev/null \
-            || git diff --name-only --diff-filter=ACMR "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "${OUT}/changed.txt"
+          # a shallow checkout of the merge commit has neither SHA; fetch both,
+          # and when the diff still cannot be computed scan the whole tree
+          git fetch -q --depth=1 origin "${PR_BASE_SHA}" "${PR_HEAD_SHA}" 2>/dev/null || true
+          if ! git diff --name-only --diff-filter=ACMR "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "${OUT}/changed.txt" 2>/dev/null; then
+            echo "::notice title=verify-map::PR base or head not reachable (shallow checkout); mapping the whole tree"
+            git ls-files > "${OUT}/changed.txt"
+          fi
         else
           git ls-files > "${OUT}/changed.txt"
         fi
