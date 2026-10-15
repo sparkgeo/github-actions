@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Verify (Map) | [`verify-map.yml`](.github/workflows/verify-map.yml) | `workflow_call` | Reusable verification path-map check: validates `verify.yml`, resolves changed files to rungs and tools (HIGH_RISK_GLOBS fallback without a map), flags high-risk paths with no rung, requires the PR body's verification table at Standard; writes `verify-map.json` for the `verify-*.yml` workflows (#132) |
+| Verify (Models) | [`verify-models.yml`](.github/workflows/verify-models.yml) | `workflow_call` | Reusable model checking: TLC (optionally Apalache) on every changed `.tla` with a `.cfg` and Alloy on every changed `.als`, plus the specs whose mapped code changed; violations, counterexample instances and vacuous runs block with the trace in the PR comment; a model-drift reminder when covered code changed without its spec (#130) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -43,6 +44,8 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | Verification Map | [`verify-map`](.github/actions/verify-map/action.yml) | Validates `verify.yml` with jsonschema, maps the changed files, checks the PR body table, writes `verify-map.json` | `map-path` (default: `verify.yml`), `high-risk-globs`, `changed-list`, `pr-body-path`, `require-table` (default: `false`), `strict-high-risk` (default: `false`), `output-path` |
+| TLA+ | [`tlaplus`](.github/actions/tlaplus/action.yml) | TLC from a checksum-verified `tla2tools.jar` on a pinned Temurin JDK, optional Apalache; parses violations and traces | `specs-dir` (default: `specs/`), `specs-list`, `workers` (default: `auto`), `timeout-seconds` (default: `480`), `tla-version` (default: `1.7.4`), `tla-sha256`, `java-version` (default: `21`), `use-apalache` (default: `false`), `apalache-version` (default: `0.62.3`), `apalache-length` (default: `10`), `output-dir`, `gate` (default: `true`) |
+| Alloy | [`alloy`](.github/actions/alloy/action.yml) | Alloy 6 CLI from the checksum-verified release; every `check` and `run`, with `expect` | `specs-dir` (default: `specs/`), `specs-list`, `alloy-version` (default: `6.2.0`), `alloy-sha256`, `timeout-seconds` (default: `480`), `output-dir`, `gate` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -136,7 +139,18 @@ jobs:
     with:
       actions-ref: <SHA>   # same SHA as above
       # require-table: true   # Standard tier
+  verify-models:
+    permissions:
+      contents: read
+      pull-requests: write     # the rolling brief comment
+    uses: sparkgeo/github-actions/.github/workflows/verify-models.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      # specs-dir: specs/
+      # use-apalache: true        # symbolic check; specs need @type annotations
 ```
+
+A retry-with-idempotency-key protocol in TLA+ and a tenant-isolation model in Alloy: [`docs/examples/verify/models/`](docs/examples/verify/models/).
 
 ### Storage Optimizer
 

@@ -116,6 +116,69 @@ jobs:
         run: |
           { [ "${FALLBACK}" = "true" ] && [ "${MAPPED}" = "0" ] && [ "${ERRORS}" = "0" ]; } || { echo "::error title=verify-map::expected fallback mode with nothing mapped and no errors; got fallback=${FALLBACK} mapped=${MAPPED} errors=${ERRORS}"; exit 1; }
 
+  verify-models:
+    name: Verify Models
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fixtures (recorded output)
+        run: tests/verify-models/run.sh
+
+      # Live: the examples hold (TLC, Apalache and Alloy); the violated
+      # fixtures give one TLC invariant violation, one Alloy counterexample
+      # and one vacuous run (KnownFlaw's `expect 1` passes).
+      - id: tla-example
+        uses: ./.github/actions/tlaplus
+        with:
+          specs-dir: docs/examples/verify/models/specs
+          use-apalache: 'true'
+          output-dir: ${{ runner.temp }}/models-example-tla
+
+      - id: alloy-example
+        uses: ./.github/actions/alloy
+        with:
+          specs-dir: docs/examples/verify/models/specs
+          output-dir: ${{ runner.temp }}/models-example-alloy
+
+      - name: TLA+ on the violated fixtures
+        uses: ./.github/actions/tlaplus
+        with:
+          specs-dir: tests/verify-models/fixtures/violated
+          output-dir: ${{ runner.temp }}/models-violated
+          gate: 'false'
+
+      - name: Alloy on the violated fixtures
+        uses: ./.github/actions/alloy
+        with:
+          specs-dir: tests/verify-models/fixtures/violated
+          output-dir: ${{ runner.temp }}/models-violated
+          gate: 'false'
+
+      - name: Outcome
+        env:
+          TLA: ${{ steps.tla-example.outputs.tla }}
+          ALLOY: ${{ steps.alloy-example.outputs.alloy }}
+          ART: ${{ runner.temp }}/models-violated
+        run: |
+          set -euo pipefail
+          python3 -I .github/actions/tlaplus/models.py brief --art "${ART}" > "${ART}/brief.txt" || true
+          fails="$(jq -r '.gate.fail | join(" | ")' "${ART}/summary.json")"
+          { [ "${TLA}" = "0" ] && [ "${ALLOY}" = "0" ] && [ "$(jq '.gate.fail | length' "${ART}/summary.json")" = "3" ] \
+            && grep -q 'TLC invariant in tests/verify-models/fixtures/violated/NoDedup.tla: AppliedAtMostOnce' <<< "${fails}" \
+            && grep -q 'Alloy counterexample in tests/verify-models/fixtures/violated/leaky.als: check NoCrossTenantAccess' <<< "${fails}" \
+            && grep -q 'Alloy no instance (vacuous)' <<< "${fails}"; } \
+            || { echo "::error title=verify-models::expected examples to hold and three violations; got tla=${TLA} alloy=${ALLOY} fails=${fails}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

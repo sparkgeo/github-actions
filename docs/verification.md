@@ -58,6 +58,38 @@ The plan keeps two self-contained reference workflows beside each other, uncommi
 **/geometry/** **/geom/** **/crs/** **/projection*/** **/transform*/** **/tiles/** **/tile*/** **/index*/** **/h3/** **/s2/** **/quadkey*
 ```
 
+### 5.6 Models: `verify-models.yml` (#130)
+
+TLA+ with TLC follows the brief: every `.tla` with a sibling `.cfg` (no `.cfg`, skipped), `tlc2.TLC -workers auto -config <cfg>` under `timeout 480`. It differs in two places: the jar is `tla2tools.jar` v1.7.4, checked against a recorded SHA-256 (the brief fetches `releases/latest`), and it runs on a pinned Temurin 21. Apalache v0.62.3 (`use-apalache`) checks the same spec symbolically up to `--length` steps. It needs `\* @type:` annotations on constants and variables, which TLC ignores. Alloy 6.2.0 runs every `check` and `run` in each `.als`:
+
+| Result | Means | Gate |
+|---|---|---|
+| TLC invariant or property violated, deadlock | a reachable behaviour breaks the claim; the trace (state, action, changed variables) is in the comment | blocks |
+| TLC time out | the state space did not fit in 480 s; shrink the constants in the `.cfg` | blocks |
+| Alloy `check` with an instance | a counterexample within the scope; the instance is in the comment | blocks (unless `expect 1`) |
+| Alloy `run` with no instance | the facts admit nothing, so every `check` holds vacuously | blocks (unless `expect 0`) |
+
+Name each action (`Retry == \E k \in Keys : Send(k)`) rather than writing it inline in `Next`, so the trace says which step happened. A protocol that ends needs an explicit terminal step (`Done == ... /\ UNCHANGED vars`), or TLC reports the end as a deadlock.
+
+**Model-to-code mapping.** A spec's `verify.yml` entry names the implementation it describes in `covers`:
+
+```yaml
+- glob: specs/IdempotentRetry.tla
+  risk: high
+  rungs: [tla]
+  covers: [internal/queue/worker.go, internal/queue/dedup.go]
+```
+
+The workflow runs a spec when the spec, its `.cfg` or any covered file changes. When covered code changes and the spec does not, the comment asks the reviewer to confirm the model still matches. Keep specs under `specs/`, one protocol per module, with constants small enough for TLC to finish (two or three keys, three retries).
+
+**Review checklist** (spec PRs and covered-code PRs):
+
+- The invariant states the acceptance criterion in the issue, not a weaker property that happens to hold.
+- Every action in the code has an action in the spec, including failure paths (drop, duplicate, reorder, crash and restart).
+- The `.cfg` constants are large enough to reach the interesting interleavings (at least two clients or keys, at least two retries).
+- Alloy: each `check` has a `run` that shows the facts admit an instance; scopes are stated.
+- A covered-code change that adds a state, message or retry path changes the spec in the same PR.
+
 ## 6. The map: `verify.yml`
 
 Schema: [`policies/verification/verify.schema.json`](../policies/verification/verify.schema.json); example with all three languages and the cross-language tools: [`examples/verify.yml`](examples/verify.yml). One entry per path glob: `risk` (`high`, `medium`, `low`), `rungs` (lowest first), `tool` (inferred from the extension when absent), `targets` for Dafny compile targets, `covers` for the implementation globs a model stands for, `budget` overrides. `verify-map.yml` validates the file, resolves the changed files to their entries (longest glob wins) or to the fallback, and writes `verify-map.json` (`files`, `mapped`, `bare_high_risk`, `by_tool`) for the other workflows. A changed high-risk path with no rung is a warning at Baseline and fails with `strict-high-risk`; an implementation change under a model's `covers` without a change to the model is a warning.

@@ -129,13 +129,13 @@ def main():
     mapped = sorted(f for f, m in files.items() if m["mapped"])
     for f in bare:
         (errors if args.strict_high_risk else warnings).append(f"{f}: high-risk path with no rung in {args.map if not fallback else 'the HIGH_RISK_GLOBS fallback (no verify.yml)'}")
-    covers = []
+    covers, stale = [], []
     for e in entries:
-        for cg in e.get("covers", []) or []:
-            touched = [f for f in changed if glob_match(f, cg)]
-            model_touched = [f for f in changed if glob_match(f, e["glob"])]
-            if touched and not model_touched:
-                covers.append(f"{', '.join(touched[:3])} changed but the model {e['glob']} did not")
+        touched = sorted({f for cg in (e.get("covers", []) or []) for f in changed if glob_match(f, cg)})
+        model_touched = [f for f in changed if glob_match(f, e["glob"])]
+        if touched and not model_touched:
+            covers.append(f"{', '.join(touched[:3])} changed but the model {e['glob']} did not")
+            stale.append({"model": e["glob"], "code": touched})
     warnings += covers
 
     table = None
@@ -178,7 +178,7 @@ def main():
     if args.output:
         with open(args.output, "w") as fh:
             json.dump({"fallback": fallback, "high_risk_globs": high_risk, "files": files, "mapped": mapped, "bare_high_risk": bare,
-                       "table_rows": table, "errors": errors, "warnings": warnings,
+                       "table_rows": table, "errors": errors, "warnings": warnings, "stale_models": stale,
                        "by_tool": {t: sorted(f for f, m in files.items() if m["mapped"] and m["tool"] == t) for t in sorted({m["tool"] for m in files.values() if m["mapped"] and m["tool"]})}},
                       fh, indent=1)
             fh.write("\n")

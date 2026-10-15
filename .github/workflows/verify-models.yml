@@ -1,0 +1,162 @@
+name: Verify (Models)
+
+# Reusable PR check (issue #130, plan Step 39): model checking of stateful
+# protocols (TLA+ with TLC, optionally Apalache) and of the data and
+# authorization model (Alloy). Runs every changed .tla/.cfg/.als plus every
+# spec whose mapped code changed (verify.yml `covers`); a violated invariant,
+# a deadlock, an Alloy counterexample or a vacuous run fails, with the trace
+# or instance rendered in the PR comment. When mapped code changed but its
+# spec did not, the comment asks the reviewer to confirm the model still
+# matches. Tools: checksum-verified tla2tools.jar and Alloy release, pinned
+# Temurin JDK. One rolling comment, artefacts 30 days, gate last.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com (releases), the JDK
+# download, PyPI (the map's jsonschema).
+
+on:
+  workflow_call:
+    inputs:
+      specs-dir:
+        description: 'Directory holding .tla/.cfg and .als specs'
+        default: 'specs/'
+        type: string
+      map-path:
+        description: 'verify.yml in the repository'
+        default: 'verify.yml'
+        type: string
+      tlc-workers:
+        description: 'TLC -workers'
+        default: 'auto'
+        type: string
+      use-apalache:
+        description: 'Also run Apalache (specs need @type annotations)'
+        default: false
+        type: boolean
+      timeout-minutes:
+        description: 'Job time limit; each spec gets 480 s as in verify-brief.yml'
+        default: 30
+        type: number
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned verify-models.yml to, so
+          the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      tla:
+        description: '0 when every TLA+ spec held, 1 otherwise; empty when none ran'
+        value: ${{ jobs.models.outputs.tla }}
+      alloy:
+        description: '0 when every Alloy command met its expectation, 1 otherwise; empty when none ran'
+        value: ${{ jobs.models.outputs.alloy }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants contents: read and pull-requests: write (the
+# rolling comment).
+jobs:
+  models:
+    name: Verify models
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    outputs:
+      tla: ${{ steps.brief.outputs.tla }}
+      alloy: ${{ steps.brief.outputs.alloy }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the base must be reachable for the changed-files diff
+
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout verify composites
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: map
+        uses: ./.sparkgeo-github-actions/.github/actions/verify-map
+        with:
+          map-path: ${{ inputs.map-path }}
+          output-path: ${{ runner.temp }}/verify-map.json
+
+      # Changed specs plus specs whose covered code changed; everything on a
+      # push or schedule (no pull request).
+      - name: Select specs
+        env:
+          EVENT: ${{ github.event_name }}
+          SPECS_DIR: ${{ inputs.specs-dir }}
+          ART: ${{ runner.temp }}/verify-models
+          MAP: ${{ runner.temp }}/verify-map.json
+        run: |
+          set -euo pipefail
+          mkdir -p "${ART}"
+          ARGS=(--specs-dir "${SPECS_DIR}" --map "${MAP}" --output "${ART}/specs.txt" --stale-output "${ART}/stale.json")
+          if [ "${EVENT}" = "pull_request" ]; then
+            jq -r '.files | keys[]' "${MAP}" > "${ART}/changed.txt"
+            ARGS+=(--changed "${ART}/changed.txt")
+          fi
+          python3 -I .sparkgeo-github-actions/.github/actions/tlaplus/models.py select "${ARGS[@]}"
+
+      - name: TLA+
+        uses: ./.sparkgeo-github-actions/.github/actions/tlaplus
+        with:
+          specs-list: ${{ runner.temp }}/verify-models/specs.txt
+          workers: ${{ inputs.tlc-workers }}
+          use-apalache: ${{ inputs.use-apalache }}
+          output-dir: ${{ runner.temp }}/verify-models
+          gate: 'false'
+
+      - name: Alloy
+        uses: ./.sparkgeo-github-actions/.github/actions/alloy
+        with:
+          specs-list: ${{ runner.temp }}/verify-models/specs.txt
+          output-dir: ${{ runner.temp }}/verify-models
+          gate: 'false'
+
+      - id: brief
+        if: always()
+        env:
+          ART: ${{ runner.temp }}/verify-models
+        run: |
+          python3 -I .sparkgeo-github-actions/.github/actions/tlaplus/models.py brief --art "${ART}" || true
+          cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Post the brief
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BRIEF: ${{ runner.temp }}/verify-models/verify-brief.md
+        run: |
+          [ -f "${BRIEF}" ] || exit 0
+          gh pr comment "${PR}" --body-file "${BRIEF}" --edit-last --create-if-none \
+            || gh pr comment "${PR}" --body-file "${BRIEF}" || true
+
+      - name: Keep the raw artefacts (traces and instances included)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: verify-models-${{ github.event.pull_request.number || github.run_id }}
+          path: ${{ runner.temp }}/verify-models
+          retention-days: 30
+
+      # Last, after the brief is posted, so a red build always arrives with its
+      # explanation attached to the PR.
+      - name: Gate
+        if: always()
+        env:
+          SUMMARY: ${{ runner.temp }}/verify-models/summary.json
+        run: |
+          [ -f "${SUMMARY}" ] || { echo "::error title=verify-models::no summary.json; the check steps did not finish"; exit 1; }
+          jq -r '.gate.warn[] | "  warn: " + .' "${SUMMARY}"
+          jq -r '.gate.fail[] | "  FAIL: " + .' "${SUMMARY}"
+          jq -e '.gate.fail | length == 0' "${SUMMARY}" > /dev/null

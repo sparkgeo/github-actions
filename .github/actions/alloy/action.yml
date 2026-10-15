@@ -1,0 +1,106 @@
+name: "Alloy"
+description: |
+  Checks Alloy models (SecOps plan Step 39, issue #130): runs every `check`
+  and `run` command of each .als with the Alloy 6 CLI (`alloy exec`, the
+  checksum-verified Linux release with its bundled Java runtime). A `check`
+  with an instance is a counterexample; a `run` with none is vacuous (the
+  facts admit nothing, so every check holds trivially); an `expect` clause
+  overrides either. The counterexample instance is kept for the PR comment.
+  Writes alloy-*.json; the gate (models.py brief, shared with the tlaplus
+  composite) runs when gate is true.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  specs-dir:
+    description: "Directory searched for .als files when specs-list is empty."
+    default: "specs/"
+  specs-list:
+    description: "File listing the .als (and .tla, ignored here) paths to check; empty checks every .als under specs-dir."
+    default: ""
+  alloy-version:
+    description: "Alloy release; versions other than the default need alloy-sha256."
+    default: "6.2.0"
+  alloy-sha256:
+    description: "SHA-256 of alloy-<version>-linux-amd64.tar.gz; empty uses the recorded checksum for the default version."
+    default: ""
+  timeout-seconds:
+    description: "Wall clock per model."
+    default: "480"
+  output-dir:
+    description: "Where alloy-*.json, the solutions, the brief and summary.json go."
+    default: "verify-models-artifacts"
+  gate:
+    description: "Build the brief and exit 1 on a counterexample or a vacuous run."
+    default: "true"
+outputs:
+  alloy:
+    description: "0 when every command met its expectation, 1 otherwise (set when gate is true)."
+    value: ${{ steps.brief.outputs.alloy }}
+  blocking:
+    description: "Blocking findings (set when gate is true)."
+    value: ${{ steps.brief.outputs.blocking }}
+runs:
+  using: "composite"
+  steps:
+    - id: install
+      shell: bash
+      env:
+        VERSION: ${{ inputs.alloy-version }}
+        SHA: ${{ inputs.alloy-sha256 }}
+        OUT: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        # the release publishes no checksum file; recorded from the download
+        declare -A KNOWN=([6.2.0]=5a5494a4bac6e243e471590bb44a91e25a35794a5af1ae1f332be30b9c54a9e7)
+        SHA="${SHA:-${KNOWN[${VERSION}]:-}}"
+        [ -n "${SHA}" ] || { echo "::error title=alloy::no recorded checksum for Alloy ${VERSION}; set alloy-sha256"; exit 1; }
+        D="${RUNNER_TEMP}/alloy-${VERSION}"
+        if [ ! -x "${D}/alloy-${VERSION}/bin/alloy" ]; then
+          mkdir -p "${D}"
+          curl -fsSL -o "${D}/alloy.tar.gz" "https://github.com/AlloyTools/org.alloytools.alloy/releases/download/v${VERSION}/alloy-${VERSION}-linux-amd64.tar.gz"
+          echo "${SHA}  ${D}/alloy.tar.gz" | sha256sum -c --quiet
+          tar -xzf "${D}/alloy.tar.gz" -C "${D}"
+        fi
+        ART="$(mkdir -p "${OUT}" && cd "${OUT}" && pwd)"
+        { echo "bin=${D}/alloy-${VERSION}/bin/alloy"; echo "art=${ART}"; } >> "${GITHUB_OUTPUT}"
+
+    - id: check
+      shell: bash
+      env:
+        ALLOY: ${{ steps.install.outputs.bin }}
+        ART: ${{ steps.install.outputs.art }}
+        SPECS_DIR: ${{ inputs.specs-dir }}
+        SPECS_LIST: ${{ inputs.specs-list }}
+        TIMEOUT: ${{ inputs.timeout-seconds }}
+        MODELS: ${{ github.action_path }}/../tlaplus/models.py
+      run: |
+        set -euo pipefail
+        if [ -n "${SPECS_LIST}" ]; then grep -E '\.als$' "${SPECS_LIST}" > "${ART}/als-specs.txt" || true
+        else find "${SPECS_DIR}" -name '*.als' | sort > "${ART}/als-specs.txt"
+        fi
+        while IFS= read -r spec; do
+          n="$(echo "${spec%.als}" | tr '/.' '__')"
+          sol="${ART}/alloy/${n}"
+          rc=0
+          timeout "${TIMEOUT}" "${ALLOY}" exec -f -q -o "${sol}" "${spec}" > "${ART}/alloy-${n}.txt" 2>&1 || rc=$?
+          if [ ! -f "${sol}/receipt.json" ]; then
+            echo "::error file=${spec},title=Alloy error::alloy exec exited ${rc} without a receipt (syntax or type error, or time out)"
+            tail -20 "${ART}/alloy-${n}.txt"
+            printf '{"spec": "%s", "commands": [{"name": "(model)", "type": "check", "source": "alloy exec exited %s", "scope": null, "expects": -1, "verdict": "error", "failed": true, "instance": ""}]}\n' "${spec}" "${rc}" > "${ART}/alloy-${n}.json"
+            continue
+          fi
+          python3 -I "${MODELS}" alloy --receipt "${sol}/receipt.json" --spec "${spec}" --solutions "${sol}" --output "${ART}/alloy-${n}.json"
+        done < "${ART}/als-specs.txt"
+
+    - id: brief
+      if: inputs.gate == 'true'
+      shell: bash
+      env:
+        ART: ${{ steps.install.outputs.art }}
+        MODELS: ${{ github.action_path }}/../tlaplus/models.py
+      run: |
+        set -euo pipefail
+        rc=0
+        python3 -I "${MODELS}" brief --art "${ART}" --gate || rc=$?
+        cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+        exit "${rc}"

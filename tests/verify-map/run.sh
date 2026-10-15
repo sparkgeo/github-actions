@@ -47,7 +47,9 @@ grep -q '^## Verification map: 4 changed file(s), 2 on mapped paths, 0 high-risk
 echo "== implementation under a model's covers changed without the model: advisory"
 run covers "${FIX}/changed-mapped.txt" "${FIX}/verify.yml"
 grep -q '^::warning title=verify-map::internal/queue/worker.go changed but the model specs/retry.tla did not' "${TMP}/covers.log" || fail "covers warning: $(grep warning "${TMP}/covers.log")"
+[ "$(j covers '.stale_models | map(.model + "<-" + (.code | join("+"))) | join(",")')" = "specs/retry.tla<-internal/queue/worker.go" ] || fail "stale_models: $(j covers .stale_models)"
 run model "${FIX}/changed-model.txt" "${FIX}/verify.yml"
+[ "$(j model '.stale_models | length')" = "0" ] || fail "no stale model when the model changed too"
 grep -q 'changed but the model' "${TMP}/model.log" && fail "no covers warning when the model changed too"
 
 echo "== no verify.yml: HIGH_RISK_GLOBS fallback; auth path is high with no rung; strict fails"
