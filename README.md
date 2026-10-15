@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| LLM Scan (garak) | [`llm-scan-garak.yml`](.github/workflows/llm-scan-garak.yml) | `workflow_call` (call on a schedule) | Reusable nightly garak scan of a staging LLM endpoint — refuses production hosts, hit rate per probe in the summary, reports kept 90 days, tracking issue when a probe exceeds `max-hit-rate` |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| garak LLM Scan | [`garak`](.github/actions/garak/action.yml) | Runs NVIDIA garak probes against an LLM endpoint after a production-host guard; pinned garak with CPU-only PyTorch; JSONL/HTML reports; outputs the worst hit rate and whether any probe exceeds the threshold (does not fail by itself) | `target-config` (required), `target-type` (default: `rest`), `target-name`, `probes`, `generations`, `max-hit-rate` (default: `0.1`), `production-pattern`, `version` (default: `0.17.0`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,46 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### LLM endpoint scan (garak)
+
+SecOps plan Step 26 Standard (issue #105), for repositories that run an LLM-backed endpoint (chat, RAG, agent API). garak sends prompt-injection, jailbreak, encoding-bypass, data-leakage, package-hallucination and output-XSS probes and reports, per probe and detector, the share of responses that fell for it. Runs take minutes to hours, so call it nightly against staging; the guard refuses any host with a `prod`, `production` or `live` label or a `www.` host (override with `production-pattern`).
+
+```yaml
+# .github/workflows/llm-scan.yml
+name: LLM Scan
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+jobs:
+  garak:
+    uses: sparkgeo/github-actions/.github/workflows/llm-scan-garak.yml@<SHA>
+    permissions:
+      contents: read
+      issues: write      # tracking issue
+    with:
+      actions-ref: <SHA>
+      target-config: .garak/staging-rest.json
+      max-hit-rate: 0.1
+    secrets:
+      TARGET_API_KEY: ${{ secrets.STAGING_LLM_API_KEY }}
+```
+
+`.garak/staging-rest.json` is garak's REST generator config; `$INPUT` is the probe prompt and `$KEY` the API key:
+
+```json
+{"rest": {"RestGenerator": {
+  "uri": "https://chat.staging.example.com/v1/chat",
+  "method": "post",
+  "headers": {"Authorization": "Bearer $KEY", "Content-Type": "application/json"},
+  "req_template_json_object": {"prompt": "$INPUT"},
+  "response_json": true,
+  "response_json_field": "text"
+}}}
+```
+
+A probe above `max-hit-rate` opens one issue per target config (later failing runs comment on it, the first clean run closes it) and fails the job. Triage it like any finding: fix the prompt handling or record a time-boxed exception (#81). The endpoint's host belongs in the job's egress allowlist (#83). CI runs the composite against a stub endpoint that echoes every prompt (100% prompt-injection hits) and one that always refuses (0%).
 
 ## Consuming repo CI setup
 
