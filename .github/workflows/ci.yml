@@ -256,7 +256,9 @@ jobs:
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
           # MPL-2.0 tool run in CI, never redistributed (also used by the
           # terramate-opentofu-setup composite).
-          allow-dependencies-licenses: pkg:githubactions/opentofu/setup-opentofu
+          # tests/cost-diff-cdk/fixtures/app is synthesised in CI and never
+          # shipped; aws-cdk-lib bundles minimatch, which is BlueOak-1.0.0.
+          allow-dependencies-licenses: pkg:githubactions/opentofu/setup-opentofu, pkg:npm/minimatch
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
@@ -297,3 +299,26 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/storage-optimizer
+
+  # Cost diff for CDK (issue #90): synth.sh on tests/cost-diff-cdk/fixtures/app
+  # (a plain stack and a staged one) must produce the <stack>/plan.json layout
+  # mkconfig.sh reads, and unsupported.sh must total the not-estimated types.
+  # Infracost itself needs INFRACOST_API_KEY, which this repo does not hold.
+  # Audit egress: registry.npmjs.org.
+  cost-diff-cdk:
+    name: Cost diff (CDK)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Synth layout and summary fixtures
+        run: tests/cost-diff-cdk/run.sh

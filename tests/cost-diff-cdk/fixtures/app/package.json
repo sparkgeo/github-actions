@@ -1,0 +1,11 @@
+{
+  "name": "cost-diff-cdk-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Fixture CDK app for tests/cost-diff-cdk (issue #90); synthesised in CI, never deployed",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "aws-cdk-lib": "2.273.0",
+    "constructs": "10.8.1"
+  }
+}

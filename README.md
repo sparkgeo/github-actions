@@ -12,6 +12,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
 | Cost Diff (OpenTofu) | [`cost-diff-tofu.yml`](.github/workflows/cost-diff-tofu.yml) | `workflow_call` | Reusable PR cost gate — plans changed Terramate stacks (or one OpenTofu root) on base and head with a read-only OIDC role, prices both with Infracost, keeps one updating PR comment with the diff and the cost gate line, fails above the thresholds |
+| Cost Diff (CDK) | [`cost-diff-cdk.yml`](.github/workflows/cost-diff-cdk.yml) | `workflow_call` | Reusable Infracost diff for AWS CDK apps: synthesises base and head, prices every CloudFormation template, keeps one PR comment updated, gates through the shared threshold, lists resource types Infracost could not estimate (#90) |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -401,6 +402,31 @@ jobs:
 ```
 
 The plan role is documented in [`docs/oidc-trust-policies.md`](docs/oidc-trust-policies.md) (read-only account access plus the state bucket and lock table). `INFRACOST_API_KEY` is an org secret (free Infracost account). Usage-based resources need an `infracost-usage.yml` at the repo root ([starter](docs/examples/infracost-usage.yml)); the comment warns when it is missing. Artefact `infracost` holds both Infracost JSONs and the gate snippet; the plan JSONs are deleted on the runner because `tofu show -json` includes sensitive values. Egress: `pricing.api.infracost.io` and `dashboard.api.infracost.io` (API key validation) besides GitHub and the cloud APIs; update checks and Infracost Cloud uploads are off.
+
+### Cost Diff (CDK)
+
+[`cost-diff-cdk.yml`](.github/workflows/cost-diff-cdk.yml) is the CDK counterpart of the OpenTofu cost diff (issue #90, plan Step 18). Infracost prices CloudFormation templates, and `cdk synth` produces them. The workflow synthesises the app on the PR base and the head. `synth.sh` copies every `*.template.json`, stages' nested assemblies included, to `<stack>/plan.json`, so the same `infracost` composite, config builder and threshold gate (#91) apply unchanged.
+
+```yaml
+jobs:
+  cost-cdk:
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: sparkgeo/github-actions/.github/workflows/cost-diff-cdk.yml@<SHA>
+    with:
+      working-directory: infra
+      runtime: node              # or python
+      synth-args: --all
+      max-monthly-increase: 200  # USD; 0 = comment only
+      actions-ref: <SHA>
+    secrets:
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+```
+
+No AWS credentials are needed unless the app performs context lookups (`Vpc.fromLookup`, hosted zones). In that case pass `role-arn` for a read-only role and grant `id-token: write`; the role setup is the same as for the OpenTofu diff ([`docs/oidc-trust-policies.md`](docs/oidc-trust-policies.md)). When the base ref has no CDK app at `working-directory` (a new app), the head is priced alone and the gate is skipped. Infracost covers fewer CloudFormation resource types than Terraform ones, so the job summary lists every resource type it did not estimate. Synth builds assets (Lambda bundles, Docker images); if that slows the job, use `synth-args` to synthesise only the stacks that matter.
+
+`tests/cost-diff-cdk/run.sh` synthesises `tests/cost-diff-cdk/fixtures/app` (a plain stack and one inside a `Stage`) and checks the template layout, the generated Infracost config and the not-estimated summary. Infracost itself needs an API key, so CI does not run it.
 
 ## Consuming repo CI setup
 
