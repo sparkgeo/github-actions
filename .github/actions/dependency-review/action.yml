@@ -5,8 +5,8 @@ inputs:
     description: "Minimum vulnerability severity to fail: critical|high|moderate|low"
     default: "high"
   allow-licenses:
-    description: "Comma-separated list of SPDX license identifiers that are permitted. Dependencies using any other license will fail the check."
-    default: "MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, CC0-1.0"
+    description: "Comma-separated list of SPDX license identifiers that are permitted (the allowed class of docs/license-policy.md). Dependencies using any other license will fail the check."
+    default: "MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, ISC, Unlicense, CC0-1.0, Zlib, BSL-1.0, PSF-2.0, Python-2.0, PostgreSQL, Unicode-DFS-2016"
   allow-dependencies-licenses:
     description: "Comma-separated purls exempt from the license check (e.g. pkg:githubactions/owner/repo). Use for tools run in CI but not redistributed, where a copyleft licence does not apply."
     default: ""
