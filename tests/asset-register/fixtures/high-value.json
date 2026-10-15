@@ -1,0 +1,19 @@
+{
+ "resources": [
+  {
+   "repo": "sparkgeo/geo-api",
+   "id": "AssetsBucket3C4D"
+  }
+ ],
+ "external": [
+  {
+   "name": "IdP",
+   "kind": "identity-provider",
+   "owner": "team-platform"
+  },
+  {
+   "name": "Billing",
+   "kind": "billing"
+  }
+ ]
+}

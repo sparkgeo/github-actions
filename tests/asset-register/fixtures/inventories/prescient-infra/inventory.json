@@ -26,7 +26,8 @@
     "owner": "team-platform",
     "project": "prescient",
     "environment": "prod",
-    "data-class": "confidential"
+    "data-class": "confidential",
+    "exposure": "internal"
    },
    "tag_violations": [],
    "source": {

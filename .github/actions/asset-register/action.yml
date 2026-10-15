@@ -4,8 +4,10 @@ description: |
   asset-inventory.yml into the org-wide register (issue #116): assets.json,
   owners.md, unowned.md (tag violations or an owner outside
   policies/tags/teams.yml), data-classes.md (confidential and restricted),
-  register.dot and register.svg, summary.md and SHA256SUMS. Flags any
-  inventory older than stale-days. Never fails on findings.
+  high-value.md (derived high-value assets plus policies/tags/high-value.json),
+  kri.json (Section 3 key risk indicators with thresholds), register.dot and
+  register.svg, summary.md and SHA256SUMS. Flags any inventory older than
+  stale-days. Never fails on findings.
 
   Required permissions on the calling job: contents: read.
 inputs:
@@ -14,6 +16,12 @@ inputs:
     required: true
   teams-file:
     description: "Team list (policies/tags/teams.yml). Empty uses the bundled file; an empty list accepts any team-* owner."
+    default: ""
+  high-value-file:
+    description: "High-value list (policies/tags/high-value.json). Empty uses the bundled file."
+    default: ""
+  easm-findings:
+    description: "findings.json from the latest easm-scan.yml run (easm-latest release); empty leaves the unknown-asset KRI unset."
     default: ""
   stale-days:
     description: "An inventory older than this many days is reported as stale."
@@ -31,6 +39,12 @@ outputs:
   stale-count:
     description: "Repositories whose inventory is older than stale-days."
     value: ${{ steps.build.outputs.stale-count }}
+  high-value-count:
+    description: "Assets flagged high_value."
+    value: ${{ steps.build.outputs.high-value-count }}
+  kri-breached:
+    description: "Comma-separated names of breached key risk indicators; empty when none."
+    value: ${{ steps.build.outputs.kri-breached }}
   summary-path:
     description: "Markdown summary for the tracking issue."
     value: ${{ steps.build.outputs.summary-path }}
@@ -54,7 +68,12 @@ runs:
         STALE_DAYS: ${{ inputs.stale-days }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
         BUNDLED_TEAMS: ${{ github.action_path }}/../../../policies/tags/teams.yml
+        HIGH_VALUE: ${{ inputs.high-value-file }}
+        BUNDLED_HIGH_VALUE: ${{ github.action_path }}/../../../policies/tags/high-value.json
+        EASM_FINDINGS: ${{ inputs.easm-findings }}
       run: |
         set -euo pipefail
-        python3 -I "${GITHUB_ACTION_PATH}/rollup.py" --inventories "${INVENTORIES}" --output-dir "${OUTPUT_DIR}" \
-          --teams "${TEAMS:-${BUNDLED_TEAMS}}" --stale-days "${STALE_DAYS}" --svg
+        args=(--inventories "${INVENTORIES}" --output-dir "${OUTPUT_DIR}" --teams "${TEAMS:-${BUNDLED_TEAMS}}" \
+              --high-value "${HIGH_VALUE:-${BUNDLED_HIGH_VALUE}}" --stale-days "${STALE_DAYS}" --svg)
+        [ -n "${EASM_FINDINGS}" ] && args+=(--easm-findings "${EASM_FINDINGS}")
+        python3 -I "${GITHUB_ACTION_PATH}/rollup.py" "${args[@]}"

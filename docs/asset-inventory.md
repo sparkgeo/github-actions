@@ -51,15 +51,17 @@ On a push to the default branch, `asset-inventory.yml` uploads `inventory.json`,
 
 | File | Content |
 |---|---|
-| `assets.json` | `generated_at`, `stale_days`, `repos` (one row per repository: `generated_at`, `stack_kind`, `resources`, `violations`, `age_days`, `stale`), `counts` (`repos`, `assets`, `unowned`, `stale_repos`) and `assets`: every resource record from the inventories with `repo` and `unowned_reason` added |
+| `assets.json` | `generated_at`, `stale_days`, `repos` (one row per repository: `generated_at`, `stack_kind`, `resources`, `violations`, `age_days`, `stale`), `counts` (`repos`, `assets`, `unowned`, `stale_repos`, `high_value`, `unowned_high_value`, `public`), `high_value_external` (the non-IaC entries of [`policies/tags/high-value.json`](../policies/tags/high-value.json)) and `assets`: every resource record from the inventories with `repo`, `unowned_reason`, `exposure` (the tag, default `internal`), `high_value` and `high_value_reason` added. An asset is high-value when it is `prod` with `data-class` confidential or restricted, `prod` and `public` on a client-facing type (API gateway, CDN, load balancer, Cloud Run, App Service), or listed by repo and id in `high-value.json` |
 | `owners.md` | assets per owner, project and environment |
 | `unowned.md` | assets with tag violations or a `team-*` owner that is not in `policies/tags/teams.yml`; `<user>@sparkgeo.com` owners pass |
 | `data-classes.md` | confidential and restricted assets with type, owner, stack and region |
+| `high-value.md` | the high-value assets with exposure, owner and reason, plus the identity provider, CI/CD and billing entries from `high-value.json`: the target set for Step 40 validation and the recovery order for Step 19; every row needs an owner |
+| `kri.json` | the Section 3 key risk indicators the register can count, each with `value`, `threshold`, `breached` and `source`: `unowned_high_value_assets` (threshold 0), `unknown_internet_facing_assets` (from the latest `easm-latest` findings, threshold 3), `unowned_assets` (0), `stale_inventories` (0), `agents_without_owner_or_kill_switch` (unset until the agent registry exists); `breached` lists the names over threshold |
 | `register.dot`, `register.svg` | the org diagram, nodes labelled with their repository |
 | `summary.md` | the text posted to the tracking issue |
 | `SHA256SUMS` | checksums of the files above |
 
-Releases: `asset-register-latest` (rolling) and `asset-register-YYYY-MM-DD` (90 retained). An inventory older than seven days is stale and listed in the summary; a repository whose `SHA256SUMS` does not verify is skipped with a warning. The tracking issue "Asset register: unowned or stale assets" stays open until a run finds nothing.
+Releases: `asset-register-latest` (rolling) and `asset-register-YYYY-MM-DD` (90 retained). An inventory older than seven days is stale and listed in the summary; a repository whose `SHA256SUMS` does not verify is skipped with a warning. The tracking issue "Asset register: unowned or stale assets, or a KRI breached" stays open until a run finds nothing and no KRI is over its threshold.
 
 **Auditors.** A dated snapshot is the evidence for that day:
 

@@ -1,0 +1,9 @@
+{
+  "$comment": "High-value asset list (SecOps plan Step 31 Standard; issue #116). The register derives high_value for IaC resources on its own: environment=prod with data-class confidential or restricted, or environment=prod with exposure=public on a client-facing type. This file adds what the rule cannot see. `resources` forces the flag on a register record by repo and id. `external` lists assets with no IaC record at all (the identity provider, CI/CD, billing) so they appear in high-value.md with an owner. Every entry needs an owner; the list is the target set for Step 40 validation and the recovery order for Step 19.",
+  "resources": [],
+  "external": [
+    {"name": "Google Workspace (identity provider, SSO)", "kind": "identity-provider", "owner": "team-platform"},
+    {"name": "GitHub organisation sparkgeo (source, CI/CD, releases)", "kind": "ci-cd", "owner": "team-platform"},
+    {"name": "AWS management account (billing, organisation root)", "kind": "billing", "owner": "team-platform"}
+  ]
+}
