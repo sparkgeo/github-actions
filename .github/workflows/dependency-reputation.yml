@@ -18,9 +18,13 @@ on:
         default: 0
         type: number
       max-age-days:
-        description: 'Warn when the latest upstream release is older than this'
-        default: 730
+        description: 'A direct dependency with no release in this many days is a Medium finding (plan Step 3: 12 months)'
+        default: 365
         type: number
+      fail-on-unmaintained:
+        description: 'Fail on a Medium abandonware finding instead of reporting it'
+        default: false
+        type: boolean
       fail-on-malicious:
         description: 'Fail when OSV lists a MAL-* advisory for the added version'
         default: true
@@ -51,6 +55,9 @@ on:
       blocking-count:
         description: 'Added packages that failed a gate'
         value: ${{ jobs.reputation.outputs.blocking-count }}
+      medium-count:
+        description: 'Medium abandonware findings on direct dependencies'
+        value: ${{ jobs.reputation.outputs.medium-count }}
 
 # No permissions block: a reusable workflow inherits the caller job's granted
 # permissions. The caller grants `contents: read` (checkout) and adds
@@ -62,6 +69,7 @@ jobs:
     outputs:
       added-count: ${{ steps.rep.outputs.added-count }}
       blocking-count: ${{ steps.rep.outputs.blocking-count }}
+      medium-count: ${{ steps.rep.outputs.medium-count }}
     steps:
       - name: Checkout repository under test
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -88,6 +96,7 @@ jobs:
           min-scorecard: ${{ inputs.min-scorecard }}
           max-age-days: ${{ inputs.max-age-days }}
           fail-on-malicious: ${{ inputs.fail-on-malicious }}
+          fail-on-unmaintained: ${{ inputs.fail-on-unmaintained }}
           exclude: ${{ inputs.exclude }}
           output-dir: ${{ runner.temp }}/dependency-reputation
 

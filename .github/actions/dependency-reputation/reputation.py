@@ -4,6 +4,7 @@
 Usage: reputation.py --base-sha SHA --output findings.json --report report.md
                      [--ecosystems npm,pypi,go,cargo] [--min-scorecard N]
                      [--max-age-days N] [--fail-on-malicious true|false]
+                     [--fail-on-unmaintained true|false]
                      [--exclude GLOBS] [--cache-dir DIR] [--offline] [--now ISO8601]
 
 Diffs every lockfile changed between --base-sha and HEAD (git show for the
@@ -14,8 +15,15 @@ Responses are cached one JSON per package@version under --cache-dir; with
 --offline nothing is fetched and an uncached package is reported as such.
 
 Gates: malicious blocks when --fail-on-malicious; a Scorecard overall score
-below --min-scorecard blocks (0 disables); a latest release older than
---max-age-days, an unknown package and a missing Scorecard only warn.
+below --min-scorecard blocks (0 disables). Abandonware (plan Step 3): a latest
+release older than --max-age-days (default 365, "no release in 12 months") or
+a Scorecard Maintained check of 0 on a *direct* dependency is a Medium finding
+for the Step 25 queue, naming a replacement or an owned fork as the fix; it
+blocks only with --fail-on-unmaintained. The same flags on a transitive
+dependency are informational. Direct means named in the manifest beside the
+lockfile (package.json, pyproject.toml, go.mod without // indirect,
+Cargo.toml; every requirements*.txt entry); with no manifest the package is
+treated as direct. An unknown package and a missing Scorecard only warn.
 
 Exit codes: 0 no blocking package; 1 blocking package; 2 usage error.
 Standard library only (needs 3.11 for tomllib); run with python3 -I.
@@ -163,6 +171,75 @@ def ecosystem_for(basename):
     return None
 
 
+def _pep503(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def direct_names(lockfile, text_at_head):
+    """Names declared directly in the manifest beside lockfile, or None when there is no manifest."""
+    folder = os.path.dirname(lockfile) or "."
+    base = os.path.basename(lockfile)
+    eco = ecosystem_for(base)
+
+    def read(name):
+        p = Path(folder) / name
+        return p.read_text(encoding="utf-8", errors="ignore") if p.is_file() else None
+
+    try:
+        if eco == "npm":
+            text = read("package.json")
+            if text is None:
+                return None
+            data = json.loads(text)
+            return {k for sec in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+                    for k in (data.get(sec) or {})}
+        if eco == "pypi":
+            if base.endswith(".txt"):
+                return set(parse_requirements(text_at_head))  # a requirements file is what someone asked for
+            text = read("pyproject.toml")
+            if text is None:
+                return None
+            data = tomllib.loads(text)
+            proj = data.get("project", {})
+            specs = list(proj.get("dependencies", []))
+            for group in (proj.get("optional-dependencies") or {}).values():
+                specs += group
+            for group in (data.get("dependency-groups") or {}).values():
+                specs += [g for g in group if isinstance(g, str)]
+            names = {_pep503(re.split(r"[\s<>=!~;\[(]", spec.strip(), 1)[0]) for spec in specs if spec.strip()}
+            poetry = data.get("tool", {}).get("poetry", {})
+            names |= {_pep503(n) for n in (poetry.get("dependencies") or {}) if n.lower() != "python"}
+            for group in (poetry.get("group") or {}).values():
+                names |= {_pep503(n) for n in (group.get("dependencies") or {})}
+            return names
+        if eco == "go":
+            text = read("go.mod")
+            if text is None:
+                return None
+            names, block = set(), False
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("require ("):
+                    block = True
+                    continue
+                if block and stripped == ")":
+                    block = False
+                    continue
+                m = re.match(r"^(?:require\s+)?(\S+)\s+v\S+(.*)$", stripped) if (block or stripped.startswith("require ")) else None
+                if m and "// indirect" not in m.group(2):
+                    names.add(m.group(1))
+            return names
+        if eco == "cargo":
+            text = read("Cargo.toml")
+            if text is None:
+                return None
+            data = tomllib.loads(text)
+            return {n for sec in ("dependencies", "dev-dependencies", "build-dependencies") for n in (data.get(sec) or {})}
+    except (ValueError, tomllib.TOMLDecodeError) as exc:
+        warn(f"{folder}: cannot read the manifest ({exc}); treating packages as direct")
+    return None
+
+
 def git(*args):
     return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
 
@@ -173,7 +250,7 @@ def excluded(path, patterns):
 
 
 def added_packages(base_sha, ecosystems, exclude):
-    """[(ecosystem, name, version, file, line)] for packages only on the head side."""
+    """[(ecosystem, name, version, file, line, direct)] for packages only on the head side."""
     changed = git("diff", "--name-only", "--diff-filter=ACMR", base_sha, "HEAD").split()
     out = []
     for path in changed:
@@ -194,11 +271,14 @@ def added_packages(base_sha, ecosystems, exclude):
             warn(f"{path}: cannot parse ({exc})")
             continue
         lines = head_text.splitlines()
+        declared = direct_names(path, head_text)
         for name, version in sorted(head_pkgs.items()):
             if base_pkgs.get(name) == version:
                 continue
             line = next((i for i, l in enumerate(lines, 1) if name in l), 1)
-            out.append((eco, name, version, path, line))
+            key = _pep503(name) if eco == "pypi" else name
+            direct = True if declared is None else key in {(_pep503(d) if eco == "pypi" else d) for d in declared}
+            out.append((eco, name, version, path, line, direct))
     return out
 
 
@@ -280,6 +360,12 @@ def assess(entry, data, args, now):
         last = parse_ts(entry["last_release"])
         if last and (now - last).days > args.max_age_days:
             flags.append("stale")
+        if entry["checks"].get("Maintained") == 0:
+            flags.append("unmaintained")
+        if entry["direct"] and ("stale" in flags or "unmaintained" in flags):
+            entry["severity"] = "medium"
+            entry["finding"] = "abandonware: name a replacement or an owned fork on the ticket (Step 3, Step 25 Medium)"
+            blocking |= args.fail_on_unmaintained
     entry["flags"] = flags
     entry["blocking"] = blocking
 
@@ -290,21 +376,25 @@ def write_report(path, packages, args):
     if not packages:
         lines.append("## Dependency reputation: no dependencies added")
     else:
-        lines.append(f"## Dependency reputation: {len(packages)} added, {blocking} blocking")
+        medium = sum(1 for p in packages if p["severity"] == "medium")
+        lines.append(f"## Dependency reputation: {len(packages)} added, {blocking} blocking, {medium} Medium finding(s)")
         lines.append("")
-        lines.append("| Package | Version | Score | " + " | ".join(CHECKS) + " | Last release | Advisories | Flags | Source |")
-        lines.append("|---|---|---|" + "---|" * len(CHECKS) + "---|---|---|---|")
+        lines.append("| Package | Version | Direct | Score | " + " | ".join(CHECKS) + " | Last release | Advisories | Flags | Finding | Source |")
+        lines.append("|---|---|---|---|" + "---|" * len(CHECKS) + "---|---|---|---|---|")
         for p in packages:
             checks = " | ".join(str(p["checks"].get(c, "")) for c in CHECKS)
             last = (p["last_release"] or "")[:10]
             adv = ", ".join(p["advisories"]) or ""
             flags = ", ".join(("**blocking**: " if p["blocking"] else "") + f for f in p["flags"]) if p["flags"] else "ok"
             repo = p["repository"] or ""
-            lines.append(f"| `{p['name']}` | {p['version']} | {'' if p['score'] is None else p['score']} | {checks} "
-                         f"| {last} | {adv} | {flags} | {repo} |")
+            finding = "Medium: replace or fork" if p["severity"] == "medium" else ""
+            lines.append(f"| `{p['name']}` | {p['version']} | {'yes' if p['direct'] else 'no'} | {'' if p['score'] is None else p['score']} | {checks} "
+                         f"| {last} | {adv} | {flags} | {finding} | {repo} |")
     lines.append("")
     lines.append(f"Gates: fail-on-malicious `{str(args.fail_on_malicious).lower()}`, min-scorecard `{args.min_scorecard}`, "
-                 f"max-age-days `{args.max_age_days}`. Data: deps.dev (OSV advisories, OpenSSF Scorecard).")
+                 f"max-age-days `{args.max_age_days}`, fail-on-unmaintained `{str(args.fail_on_unmaintained).lower()}`. "
+                 "A stale or unmaintained direct dependency is a Medium finding (Step 25): name a replacement or an owned fork. "
+                 "Data: deps.dev (OSV advisories, OpenSSF Scorecard).")
     text = "\n".join(lines) + "\n"
     with open(path, "w") as f:
         f.write(text)
@@ -316,8 +406,9 @@ def main():
     ap.add_argument("--base-sha", default="")
     ap.add_argument("--ecosystems", default="npm,pypi,go,cargo")
     ap.add_argument("--min-scorecard", type=float, default=0)
-    ap.add_argument("--max-age-days", type=int, default=730)
+    ap.add_argument("--max-age-days", type=int, default=365)
     ap.add_argument("--fail-on-malicious", default="true")
+    ap.add_argument("--fail-on-unmaintained", default="false")
     ap.add_argument("--exclude", default="**/tests/**,**/test/**,**/fixtures/**",
                     help="comma-separated globs of lockfile paths to ignore")
     ap.add_argument("--cache-dir", default="deps-dev-cache")
@@ -327,6 +418,7 @@ def main():
     ap.add_argument("--report", required=True)
     args = ap.parse_args()
     args.fail_on_malicious = str(args.fail_on_malicious).lower() == "true"
+    args.fail_on_unmaintained = str(args.fail_on_unmaintained).lower() == "true"
 
     ecosystems = {e.strip().lower() for e in args.ecosystems.split(",") if e.strip()}
     bad = ecosystems - set(SYSTEMS)
@@ -340,9 +432,10 @@ def main():
     else:
         client = DepsDev(args.cache_dir, args.offline)
         exclude = [x.strip() for x in args.exclude.split(",") if x.strip()]
-        for eco, name, version, path, line in added_packages(args.base_sha, ecosystems, exclude):
+        for eco, name, version, path, line, direct in added_packages(args.base_sha, ecosystems, exclude):
             system = SYSTEMS[eco]
             entry = {"system": system, "name": name, "version": version, "file": path, "line": line,
+                     "direct": direct, "severity": None, "finding": None,
                      "repository": None, "score": None, "checks": {}, "advisories": [], "malicious": False,
                      "published_at": None, "last_release": None}
             try:
@@ -356,13 +449,18 @@ def main():
     for p in packages:
         if not p["flags"]:
             continue
-        level = "error" if p["blocking"] else "warning"
-        print(f"::{level} file={p['file']},line={p['line']},title={TITLE}::{p['name']}@{p['version']} "
-              f"{', '.join(p['flags'])}" + (f" (score {p['score']})" if p["score"] is not None else ""))
+        # transitive abandonware is informational; everything else warns or blocks
+        quiet = set(p["flags"]) <= {"stale", "unmaintained"} and not p["direct"]
+        level = "error" if p["blocking"] else "notice" if quiet else "warning"
+        title = TITLE + (" (Medium)" if p["severity"] == "medium" else "")
+        print(f"::{level} file={p['file']},line={p['line']},title={title}::{p['name']}@{p['version']} "
+              f"{', '.join(p['flags'])}" + (f" (score {p['score']})" if p["score"] is not None else "")
+              + (f"; {p['finding']}" if p["finding"] else "") + ("" if p["direct"] else "; transitive"))
 
     blocking = sum(1 for p in packages if p["blocking"])
+    medium = sum(1 for p in packages if p["severity"] == "medium")
     with open(args.output, "w") as f:
-        json.dump({"added_count": len(packages), "blocking_count": blocking, "packages": packages}, f, indent=1)
+        json.dump({"added_count": len(packages), "blocking_count": blocking, "medium_count": medium, "packages": packages}, f, indent=1)
         f.write("\n")
     report = write_report(args.report, packages, args)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -372,8 +470,8 @@ def main():
     out = os.environ.get("GITHUB_OUTPUT")
     if out:
         with open(out, "a") as f:
-            f.write(f"added-count={len(packages)}\nblocking-count={blocking}\nreport-path={args.report}\n")
-    print(f"{TITLE}: {len(packages)} added, {blocking} blocking")
+            f.write(f"added-count={len(packages)}\nblocking-count={blocking}\nmedium-count={medium}\nreport-path={args.report}\n")
+    print(f"{TITLE}: {len(packages)} added, {blocking} blocking, {medium} Medium")
     return 1 if blocking else 0
 
 

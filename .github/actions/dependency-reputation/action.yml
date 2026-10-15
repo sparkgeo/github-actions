@@ -8,8 +8,12 @@ description: |
   date. Responses are cached per package@version across runs.
 
   Gates: malicious blocks (fail-on-malicious), a Scorecard score below
-  min-scorecard blocks (0 disables); a stale latest release, an unknown
-  package and a missing Scorecard only warn.
+  min-scorecard blocks (0 disables). Abandonware (plan Step 3): no release
+  within max-age-days (365) or a Scorecard Maintained score of 0 on a direct
+  dependency is a Medium finding for the Step 25 queue (name a replacement or
+  an owned fork); it blocks only with fail-on-unmaintained. On a transitive
+  dependency it is informational. An unknown package and a missing Scorecard
+  only warn.
 
   Required permissions on the calling job: contents: read.
 inputs:
@@ -23,8 +27,11 @@ inputs:
     description: "Fail when an added dependency's OpenSSF Scorecard score is below this (0 disables)."
     default: "0"
   max-age-days:
-    description: "Warn when the package's latest upstream release is older than this."
-    default: "730"
+    description: "A direct dependency whose latest upstream release is older than this is a Medium finding (plan: no release in 12 months)."
+    default: "365"
+  fail-on-unmaintained:
+    description: "Fail on a Medium abandonware finding (stale or Scorecard Maintained 0 on a direct dependency) instead of reporting it."
+    default: "false"
   fail-on-malicious:
     description: "Fail when OSV lists a MAL-* advisory for the added version."
     default: "true"
@@ -44,6 +51,9 @@ outputs:
   blocking-count:
     description: "Added packages that failed a gate."
     value: ${{ steps.check.outputs.blocking-count }}
+  medium-count:
+    description: "Medium abandonware findings (direct dependencies, stale or unmaintained)."
+    value: ${{ steps.check.outputs.medium-count }}
   report-path:
     description: "Markdown report (starts with the <!-- dependency-reputation --> marker)."
     value: ${{ steps.check.outputs.report-path }}
@@ -73,6 +83,7 @@ runs:
         MIN_SCORECARD: ${{ inputs.min-scorecard }}
         MAX_AGE_DAYS: ${{ inputs.max-age-days }}
         FAIL_ON_MALICIOUS: ${{ inputs.fail-on-malicious }}
+        FAIL_ON_UNMAINTAINED: ${{ inputs.fail-on-unmaintained }}
         EXCLUDE: ${{ inputs.exclude }}
         CACHE_DIR: ${{ inputs.cache-dir }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
@@ -82,6 +93,7 @@ runs:
         python3 -I "${GITHUB_ACTION_PATH}/reputation.py" \
           --base-sha "${BASE_SHA}" --ecosystems "${ECOSYSTEMS}" \
           --min-scorecard "${MIN_SCORECARD}" --max-age-days "${MAX_AGE_DAYS}" \
-          --fail-on-malicious "${FAIL_ON_MALICIOUS}" --exclude "${EXCLUDE}" \
+          --fail-on-malicious "${FAIL_ON_MALICIOUS}" --fail-on-unmaintained "${FAIL_ON_UNMAINTAINED}" \
+          --exclude "${EXCLUDE}" \
           --cache-dir "${CACHE_DIR}" \
           --output "${OUTPUT_DIR}/findings.json" --report "${OUTPUT_DIR}/report.md"
