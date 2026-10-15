@@ -43,8 +43,9 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `fail-on-severity` (default: `high`; see [gate policy](docs/gate-policy.md)), `minimum-failure-severity` (deprecated alias, default: `""`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
-| OSV-Scanner | [`osv-scanner`](.github/actions/osv-scanner/action.yml) | Scans lockfiles against the OSV database; job-level annotations + SARIF; fails at/above the CVSS threshold. Installs a checksum-verified osv-scanner binary | `version` (default: `2.4.0`), `directory` (default: `.`), `fail-on-severity` (default: `critical`), `fail-on-malicious` (default: `true`), `sarif-upload` (default: `true`) |
+| OSV-Scanner | [`osv-scanner`](.github/actions/osv-scanner/action.yml) | Scans lockfiles against the OSV database; job-level annotations + SARIF; fails at/above the CVSS threshold. Installs a checksum-verified osv-scanner binary | `version` (default: `2.4.0`), `directory` (default: `.`), `fail-on-severity` (default: `critical`), `fail-on-malicious` (default: `true`), `sarif-upload` (default: `true`), `gate` (default: `true`; `false` leaves gating to the caller via the `json` output) |
 | Severity Gate | [`severity-gate`](.github/actions/severity-gate/action.yml) | Shared pass/fail gate for scanners without a native threshold: reads a findings file, annotates per package, outputs `max-score`/`max-severity`, fails at/above `fail-on-severity`; for `osv-json`, any OpenSSF malicious-package (`MAL-*`) advisory fails unless `fail-on-malicious` is `false`. Vocabulary in [docs/gate-policy.md](docs/gate-policy.md) | `findings-file` (required), `format` (default: `osv-json`), `fail-on-severity` (default: `critical`), `fail-on-malicious` (default: `true`) |
+| EPSS/KEV Override | [`epss-kev-override`](.github/actions/epss-kev-override/action.yml) | Applies the plan's likelihood override to osv-scanner JSON before `severity-gate`: EPSS ≥ threshold, CISA KEV or NIST LEV ≥ 0.5 raises to critical; optional one-row downgrade (EPSS < 0.01, not on KEV, LEV < 0.1) and runtime-relevance drop (#179 export). Reads a `threat-feeds` snapshot, no network; records scores, snapshot tag and SSVC points per finding | `findings-file` (required), `feeds-dir` (required), `snapshot-tag`, `epss-threshold` (default: `0.10`), `kev` (default: `true`), `lev-threshold` (default: `0.5`), `epss-history`, `downgrade` (default: `false`), `runtime-relevance-file` |
 | Threat Feeds | [`threat-feeds`](.github/actions/threat-feeds/action.yml) | Downloads the daily threat-intelligence snapshot from this repo's releases, verifies `SHA256SUMS`, caches per release; exposes `feeds-dir` with one JSON per feed. GitHub is the only egress | `feeds` (default: `kev,epss,threatfox,feodo,urlhaus`), `ref` (default: `latest`), `repository` (default: `sparkgeo/github-actions`), `token` (default: `github.token`) |
 
 ### GitHub Actionlint
@@ -405,6 +406,15 @@ jobs:
 ```
 
 `fail-on-severity` maps to CVSS: `critical` ≥ 9.0, `high` ≥ 7.0, `medium` ≥ 4.0, `low` ≥ 0.1, `none` never fails. Same vocabulary on every scanner in this repo: [docs/gate-policy.md](docs/gate-policy.md). On a private repo with no GitHub Code Security license, set `sarif-upload: false` (findings still appear as job annotations and in the log).
+
+**EPSS/KEV override (Advanced tier, #80).** With `epss-override: true` the job reads the latest [threat-feeds](#threat-feeds-mirror-and-composite) snapshot and, before the gate, raises any finding whose CVE has EPSS ≥ `epss-threshold` (default `0.10`), is on CISA KEV, or has NIST LEV ≥ 0.5 to critical; `downgrade: true` also drops a high or critical finding one row when EPSS < 0.01, it is not on KEV and LEV < 0.1. The job summary lists every finding that moved and why; the SARIF in the Security tab keeps the tool's own scores. Pass `feeds-ref: <YYYY-MM-DD>` to re-run the gate against an earlier day's scores. Rules: [docs/gate-policy.md](docs/gate-policy.md#likelihood-override-epss-kev-lev).
+
+```yaml
+    with:
+      actions-ref: <SHA>
+      epss-override: true
+      downgrade: true   # optional
+```
 
 ### Threat Feeds (mirror and composite)
 

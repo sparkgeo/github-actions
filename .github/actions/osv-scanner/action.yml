@@ -28,6 +28,13 @@ inputs:
   sarif-upload:
     description: "Upload SARIF results to the GitHub Security tab (needs security-events: write)."
     default: "true"
+  gate:
+    description: "Run the severity gate here. `false` leaves gating to the caller, which reads the `json` output (dep-scan-app.yml does this for the EPSS/KEV override)."
+    default: "true"
+outputs:
+  json:
+    description: "Path of the osv-scanner JSON findings file."
+    value: ${{ steps.scan.outputs.json }}
 runs:
   using: "composite"
   steps:
@@ -89,6 +96,7 @@ runs:
         category: osv-scanner
 
     - name: Annotate and enforce gate
+      if: ${{ inputs.gate != 'false' }}
       shell: bash
       env:
         FINDINGS_FILE: ${{ steps.scan.outputs.json }}

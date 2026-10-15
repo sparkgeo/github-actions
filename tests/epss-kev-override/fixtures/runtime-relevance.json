@@ -1,0 +1,9 @@
+{
+  "generated_at": "2026-10-07T03:00:00Z",
+  "entries": [
+    {"image": "sha256:0000", "workload": "default/app", "cve": "CVE-2020-28500", "package": "lodash", "relevant": false, "last_seen": "2026-10-07T03:00:00Z"},
+    {"image": "sha256:0000", "workload": "default/app", "cve": "CVE-2021-23337", "package": "lodash", "relevant": false, "last_seen": "2026-10-07T03:00:00Z"},
+    {"image": "sha256:0000", "workload": "default/app", "cve": "CVE-2026-4800", "package": "lodash", "relevant": false, "last_seen": "2026-10-07T03:00:00Z"},
+    {"image": "sha256:0000", "workload": "default/app", "cve": "CVE-2020-8203", "package": "lodash", "relevant": "unknown", "last_seen": "2026-10-07T03:00:00Z"}
+  ]
+}

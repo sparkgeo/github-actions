@@ -83,5 +83,40 @@ advisory whatever `fail-on-severity` says; an empty `max_severity` reads as 0.
    and document the mapping in the input description.
 4. Never add a second severity input with a different name.
 
-Advanced-tier overrides (EPSS ≥ 0.10 or CISA KEV uplift to `critical`) are
-tracked in #80 and plug in ahead of `severity-gate`.
+## Likelihood override (EPSS, KEV, LEV)
+
+Advanced tier, opt-in with `epss-override: true` on `dep-scan-app.yml`. The
+`epss-kev-override` composite rewrites the findings file ahead of
+`severity-gate`, so the gate itself is unchanged. CVSS sets the row; these
+move it (plan Step 25, Remediation SLA Table):
+
+| Rule | Condition, per advisory (all its CVE aliases) | Effect |
+|---|---|---|
+| Up | EPSS ≥ `epss-threshold` (default 0.10), or on CISA KEV, or NIST LEV ≥ 0.5 (counts as a KEV hit) | critical (9.0) |
+| Down, `downgrade: true` | CVSS high or critical, and every CVE has EPSS < 0.01, is not on KEV, and has LEV < 0.1 | one row down |
+| Runtime relevance, `runtime-relevance-file` | every CVE is `relevant: false` for that package in the #179 export | one row down, after the others |
+
+A moved finding takes the floor score of its new row (9.0, 7.0, 4.0, 0.1); low
+does not drop further. Modifiers stack, so a KEV-listed CVE in a package the
+workload never loads lands at high. `MAL-*` advisories have no CVE and pass
+through untouched, so `fail-on-malicious` still blocks them.
+
+**Data.** KEV and EPSS come from the #109 mirror (`threat-feeds` composite), so
+the job reaches only GitHub. Each adjusted finding keeps an `override` object:
+the original score, the rules applied, per-CVE EPSS, percentile, KEV
+`dateAdded` and LEV, the snapshot tag, and the SSVC decision points the data
+supports (`exploitation: active` when on KEV; `automatable: yes` when a CVSS
+vector is `AV:N/PR:N/UI:N`) for the DefectDojo import (#185). Re-running with
+`feeds-ref` set to the snapshot date reproduces the row.
+
+**LEV source.** NIST has not published LEV as a feed, so the composite computes
+it from the mirror's dated EPSS snapshots with the CSWP 41 formula:
+`LEV = 1 − ∏ (1 − EPSS(dᵢ) × wᵢ)` over dᵢ every 30 days from the oldest
+snapshot to today, wᵢ = 1 for a full window and (days left)/30 for the last.
+`dep-scan-app.yml` fetches the snapshots 30 and 60 days back. The mirror keeps
+90 days, so LEV here is a lower bound over that window (the paper's LEV is
+also a lower bound). With no older snapshot LEV is unknown: nothing is
+raised on LEV and nothing is downgraded.
+
+The SARIF uploaded to the Security tab keeps the tool's own scores; the job
+summary lists every finding that moved and why.
