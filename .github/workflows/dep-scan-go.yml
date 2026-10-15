@@ -1,0 +1,95 @@
+name: Dependency Scan (Go)
+
+# Reusable PR gate for Go modules: govulncheck reports only the advisories
+# whose vulnerable function the code calls (SecOps plan Step 3 Baseline;
+# Step 25 reachability: a dependency CVE in code the application never calls
+# drops one row). Reachable advisories fail the job; imported-not-called and
+# module-only advisories are informational. govulncheck carries no CVSS, so
+# the CVSS-based gate on go.sum stays with dep-scan-app.yml; Go repos call
+# both. Issue #180.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. The hosts it reaches: proxy.golang.org,
+# sum.golang.org, storage.googleapis.com (module download), vuln.go.dev
+# (vulnerability database), go.dev and github.com (toolchain and checkout).
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory holding go.mod'
+        default: '.'
+        type: string
+      go-version:
+        description: 'Toolchain for actions/setup-go: stable (default), oldstable, or an exact version; govulncheck needs Go 1.26 or newer'
+        default: 'stable'
+        type: string
+      fail-on:
+        description: 'reachable (default) fails on any called vulnerable function; none reports only'
+        default: 'reachable'
+        type: string
+      packages:
+        description: 'Package pattern passed to govulncheck'
+        default: './...'
+        type: string
+      sarif-upload:
+        description: 'Upload govulncheck SARIF to the GitHub Security tab'
+        default: true
+        type: boolean
+      govulncheck-version:
+        description: 'golang.org/x/vuln version to install'
+        default: 'v1.9.0'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the govulncheck
+          composite from. Pin this to the SAME SHA you pinned dep-scan-go.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      reachable-count:
+        description: 'Advisories whose vulnerable function is called'
+        value: ${{ jobs.govulncheck.outputs.reachable-count }}
+      imported-count:
+        description: 'Advisories in imported packages with no vulnerable call'
+        value: ${{ jobs.govulncheck.outputs.imported-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always) and adds
+# `security-events: write` only when it wants SARIF upload. See README.
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    outputs:
+      reachable-count: ${{ steps.scan.outputs.reachable-count }}
+      imported-count: ${{ steps.scan.outputs.imported-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout govulncheck composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: scan
+        uses: ./.sparkgeo-github-actions/.github/actions/govulncheck
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          go-version: ${{ inputs.go-version }}
+          fail-on: ${{ inputs.fail-on }}
+          packages: ${{ inputs.packages }}
+          sarif-upload: ${{ inputs.sarif-upload }}
+          version: ${{ inputs.govulncheck-version }}

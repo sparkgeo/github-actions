@@ -14,6 +14,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
+| Dependency Scan (Go) | [`dep-scan-go.yml`](.github/workflows/dep-scan-go.yml) | `workflow_call` | Reusable govulncheck gate for Go modules: fails only on advisories whose vulnerable function the code calls; imported-not-called and module-only advisories are informational one SLA row down; govulncheck SARIF to the Security tab (#180) |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| govulncheck | [`govulncheck`](.github/actions/govulncheck/action.yml) | Installs the stable Go toolchain and a pinned govulncheck; classifies every advisory as reachable, imported or module-only from the JSON call traces; inline error annotation at the calling line for reachable ones, notice for imported ones; uploads govulncheck SARIF; fails on reachable advisories when `fail-on` is `reachable` | `working-directory` (default: `.`), `go-version` (default: `stable`), `version` (default: `v1.9.0`), `fail-on` (default: `reachable`), `packages` (default: `./...`), `sarif-upload` (default: `true`), `sarif-category` (default: `govulncheck`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,25 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Dependency Scan (Go) — govulncheck reachability gate
+
+`osv-scanner` reports every advisory in `go.sum`, called or not. `govulncheck` builds the call graph and reports which vulnerable functions the binary reaches, so the gate fires on what can be exploited (SecOps plan Step 3 Baseline; Step 25 reachability: a dependency CVE in code the application never calls drops one SLA row). Go repositories call this workflow next to `dep-scan-app.yml`; govulncheck carries no CVSS, so the CVSS posture stays with the OSV gate.
+
+```yaml
+jobs:
+  govulncheck:
+    permissions:
+      contents: read
+      security-events: write  # drop when sarif-upload: false
+    uses: sparkgeo/github-actions/.github/workflows/dep-scan-go.yml@<SHA>
+    with:
+      working-directory: .
+      fail-on: reachable      # or none for an advisory rollout
+      actions-ref: <SHA>      # same SHA as above
+```
+
+Three levels, one per advisory (the deepest level wins): **reachable**, a vulnerable function is called, inline `::error` at the calling line, fails the job; **imported**, the vulnerable package is imported but no vulnerable function is called, `::notice`, informational; **module-only**, the module is required but the package is not imported, summary only. The job summary lists every advisory with its aliases, fixed version and call site. `tests/govulncheck/fixtures/module` is a module with one of each kind (`golang.org/x/text v0.3.6` calling `language.MustParse`); `tests/govulncheck/run.sh` checks the classifier against its recorded output and the `govulncheck` CI job runs the composite on it.
 
 ## Consuming repo CI setup
 
