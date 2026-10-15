@@ -22,7 +22,8 @@ its aliases), using every CVE alias in the group:
             down (applied after the others; low stays low)
 
 A moved row is written as that row's floor score, so severity-gate reads the
-new row. Every group with a CVE gets an `override` object: original score,
+new row, and as each advisory's database_specific.severity label, which
+DefectDojo's OSV parser reads. Every group with a CVE gets an `override` object: original score,
 modifiers applied, per-CVE EPSS/percentile/KEV dateAdded/LEV, the snapshot
 tag, and the SSVC decision points this data can supply (exploitation
 "active" when on KEV; automatable from the CVSS vector AV:N/PR:N/UI:N).
@@ -186,6 +187,12 @@ def main():
                                  "cves": per, "ssvc": ssvc}
                 if applied:
                     g["max_severity"] = f"{new:.1f}"
+                    # Parsers that read the advisory's own label (DefectDojo's OSV
+                    # parser) see the new row too; the original stays in "override".
+                    for v in group_vulns:
+                        ds = v.setdefault("database_specific", {})
+                        g["override"].setdefault("original_labels", {})[v.get("id")] = ds.get("severity")
+                        ds["severity"] = ROWS[row(new)][0].upper()
                     changes.append((name, ",".join(g.get("ids") or []), cves, score, new, applied))
 
     with open(a.output, "w", encoding="utf-8") as f:

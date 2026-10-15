@@ -96,7 +96,9 @@ move it (plan Step 25, Remediation SLA Table):
 | Down, `downgrade: true` | CVSS high or critical, and every CVE has EPSS < 0.01, is not on KEV, and has LEV < 0.1 | one row down |
 | Runtime relevance, `runtime-relevance-file` | every CVE is `relevant: false` for that package in the #179 export | one row down, after the others |
 
-A moved finding takes the floor score of its new row (9.0, 7.0, 4.0, 0.1); low
+A moved finding takes the floor score of its new row (9.0, 7.0, 4.0, 0.1), and
+each of its advisories the matching `database_specific.severity` label, which
+DefectDojo's OSV parser reads (#185); low
 does not drop further. Modifiers stack, so a KEV-listed CVE in a package the
 workload never loads lands at high. `MAL-*` advisories have no CVE and pass
 through untouched, so `fail-on-malicious` still blocks them.

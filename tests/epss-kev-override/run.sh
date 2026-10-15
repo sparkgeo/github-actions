@@ -57,6 +57,11 @@ run "${LODASH}" up --epss-history "${HIST[@]}"
 [ "$(ov up CVE-2020-8203 '.applied | join(",")')" = "up:lev" ] || fail "lev reason"
 [ "$(ov up CVE-2020-8203 '.cves["CVE-2020-8203"].lev')" = "0.620633" ] || fail "LEV value $(ov up CVE-2020-8203 '.cves["CVE-2020-8203"].lev')"
 [ "$(ov up CVE-2020-28500 '.original_max_severity')" = "5.3" ] || fail "original score"
+[ "$(jq -r '.results[].packages[].vulnerabilities[] | select(.id == "GHSA-29mw-wpgm-hmr9") | .database_specific.severity' "${TMP}/up.json")" = "CRITICAL" ] \
+  || fail "advisory label not raised"
+[ "$(ov up CVE-2020-28500 '.original_labels["GHSA-29mw-wpgm-hmr9"]')" = "MODERATE" ] || fail "original label not kept"
+[ "$(jq -r '.results[].packages[].vulnerabilities[] | select(.id == "GHSA-35jh-r3h4-6jhm") | .database_specific.severity' "${TMP}/up.json")" = "HIGH" ] \
+  || fail "unmoved advisory label changed"
 [ "$(ov up CVE-2020-28500 '.snapshot')" = "threat-feeds-2026-10-07" ] || fail "snapshot tag"
 [ "$(ov up CVE-2020-28500 '.cves["CVE-2020-28500"].kev_date_added')" = "2026-09-30" ] || fail "KEV date"
 [ "$(ov up CVE-2020-28500 '.ssvc.exploitation')" = "active" ] || fail "SSVC exploitation"
