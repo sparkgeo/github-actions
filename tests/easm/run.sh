@@ -17,8 +17,9 @@ echo "== check-scope: good scope passes, bad scope lists every problem"
 python3 -I "${REC}" check-scope --scope "${FIX}/scope.json" || fail "good scope rejected"
 set +e; python3 -I "${REC}" check-scope --scope "${FIX}/scope-bad.json" > "${TMP}/scope.log" 2>&1; rc=$?; set -e
 [ "${rc}" -eq 1 ] || fail "bad scope rc ${rc}"
+grep -qF "::error title=easm scope::" "${TMP}/scope.log" || fail "bad scope: no error annotations: $(cat "${TMP}/scope.log")"
 for want in "domain example.com has no authorisation" "is not a hostname" "cidr 203.0.113.0/24 needs owner and authorisation" "known host www.example.com has no owner" "known host www.other.test is outside every scoped domain"; do
-  grep -qF "::error title=easm scope::" "${TMP}/scope.log" && grep -qF "${want}" "${TMP}/scope.log" || fail "bad scope: missing '${want}': $(cat "${TMP}/scope.log")"
+  grep -qF "${want}" "${TMP}/scope.log" || fail "bad scope: missing '${want}': $(cat "${TMP}/scope.log")"
 done
 python3 -I "${REC}" check-scope --scope "${HERE}/../../easm/scope.json" || fail "the committed scope must pass its own check"
 
