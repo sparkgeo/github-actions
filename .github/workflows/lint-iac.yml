@@ -3,7 +3,7 @@ name: Lint IaC
 # Reusable PR lint gate for Infrastructure as Code. Runs tflint recursively;
 # cloud-provider rule sets are activated by a .tflint.hcl in the consuming repo,
 # so this workflow is provider-agnostic. Findings appear as inline PR
-# annotations; the job blocks on any finding at or above minimum-failure-severity.
+# annotations; the job blocks on any finding at or above fail-on-severity.
 #
 # Deliberately does NOT use step-security/harden-runner: this workflow runs in
 # the caller's context and may be consumed by private repos where third-party
@@ -16,9 +16,13 @@ on:
         description: 'Directory to lint from (recursively)'
         default: '.'
         type: string
+      fail-on-severity:
+        description: 'Lowest severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md)'
+        default: 'high'
+        type: string
       minimum-failure-severity:
-        description: 'Lowest severity that fails the build: error, warning, or notice'
-        default: 'error'
+        description: 'Deprecated: use fail-on-severity. tflint-native value; overrides fail-on-severity when set'
+        default: ''
         type: string
       actions-ref:
         description: >-
@@ -68,4 +72,5 @@ jobs:
       - uses: ./.sparkgeo-github-actions/.github/actions/tflint
         with:
           directory: ${{ inputs.directory }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
           minimum-failure-severity: ${{ inputs.minimum-failure-severity }}

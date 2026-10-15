@@ -20,7 +20,7 @@ inputs:
     description: "Directory to scan (recursively)."
     default: "."
   fail-on-severity:
-    description: "Lowest CVSS severity that fails the build: critical, high, medium, or low."
+    description: "Lowest severity that fails the build: critical, high, medium, low, or none (docs/gate-policy.md)."
     default: "critical"
   fail-on-malicious:
     description: "Fail on any MAL-* (OpenSSF malicious-packages) advisory regardless of fail-on-severity."
@@ -91,7 +91,10 @@ runs:
     - name: Annotate and enforce gate
       shell: bash
       env:
-        JSON: ${{ steps.scan.outputs.json }}
+        FINDINGS_FILE: ${{ steps.scan.outputs.json }}
+        FORMAT: osv-json
         FAIL_ON: ${{ inputs.fail-on-severity }}
         FAIL_ON_MALICIOUS: ${{ inputs.fail-on-malicious }}
-      run: bash "${GITHUB_ACTION_PATH}/gate.sh" "${JSON}" "${FAIL_ON}" "${FAIL_ON_MALICIOUS}"
+      # Shared gate (docs/gate-policy.md). Referenced by path rather than
+      # `uses:` so it resolves wherever this repo is checked out.
+      run: bash "${{ github.action_path }}/../severity-gate/gate.sh"

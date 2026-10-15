@@ -28,6 +28,11 @@ Every PR that adds or modifies a workflow or composite action must satisfy all o
 [ ] All `run:` steps declare `shell:` explicitly (shell: bash on Linux/macOS, shell: pwsh on Windows)
 
 [ ] actionlint and zizmor pass locally before pushing (see Local setup below)
+
+[ ] Any scanner that can block a merge exposes `fail-on-severity` with exactly
+    critical | high | medium | low | none — see docs/gate-policy.md. Tools without a
+    native threshold use the shared severity-gate composite; tools with levels map
+    them inside the composite. Never add a second severity input under another name.
 ```
 
 ## Local setup
