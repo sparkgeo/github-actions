@@ -1,0 +1,142 @@
+name: "TLA+"
+description: |
+  Model-checks TLA+ specs (SecOps plan Step 39, issue #130). For every .tla
+  with a sibling .cfg (specs without one are skipped, as in the plan's
+  reference verify-brief.yml) runs `tlc2.TLC -workers <n> -config <cfg>`
+  from a checksum-verified tla2tools.jar under a pinned Temurin JDK and
+  `timeout <seconds>`; a violated invariant or property, a deadlock or an
+  error fails, with the counterexample trace kept for the PR comment.
+  Optionally also runs Apalache (symbolic, bounded by length; needs @type
+  annotations). Writes tla-*.json / apalache-*.json; the gate (models.py
+  brief) runs when gate is true.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  specs-dir:
+    description: "Directory searched for .tla files when specs-list is empty."
+    default: "specs/"
+  specs-list:
+    description: "File listing the .tla (and .als, ignored here) paths to check; empty checks every .tla with a sibling .cfg under specs-dir."
+    default: ""
+  workers:
+    description: "TLC -workers."
+    default: "auto"
+  timeout-seconds:
+    description: "Wall clock per spec (verify-brief.yml: 480)."
+    default: "480"
+  tla-version:
+    description: "tlaplus release of tla2tools.jar; versions other than the default need tla-sha256."
+    default: "1.7.4"
+  tla-sha256:
+    description: "SHA-256 of tla2tools.jar; empty uses the recorded checksum for the default version."
+    default: ""
+  java-version:
+    description: "Temurin JDK (Apalache needs 17 or later)."
+    default: "21"
+  use-apalache:
+    description: "Also run Apalache on each spec."
+    default: "false"
+  apalache-version:
+    description: "Apalache release; checked against the release's sha256sum.txt."
+    default: "0.62.3"
+  apalache-length:
+    description: "Apalache --length (steps explored symbolically)."
+    default: "10"
+  output-dir:
+    description: "Where tla-*.json, the logs, the brief and summary.json go."
+    default: "verify-models-artifacts"
+  gate:
+    description: "Build the brief and exit 1 on a violation, error or time out."
+    default: "true"
+outputs:
+  tla:
+    description: "0 when every spec held, 1 otherwise (set when gate is true)."
+    value: ${{ steps.brief.outputs.tla }}
+  blocking:
+    description: "Blocking findings (set when gate is true)."
+    value: ${{ steps.brief.outputs.blocking }}
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6  # v6.0.1
+      with:
+        distribution: temurin
+        java-version: ${{ inputs.java-version }}
+
+    - id: install
+      shell: bash
+      env:
+        VERSION: ${{ inputs.tla-version }}
+        SHA: ${{ inputs.tla-sha256 }}
+        APALACHE: ${{ inputs.use-apalache }}
+        AP_VERSION: ${{ inputs.apalache-version }}
+        OUT: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        # tlaplus publishes no checksum file; recorded from the download (the brief fetches releases/latest)
+        declare -A KNOWN=([1.7.4]=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88)
+        SHA="${SHA:-${KNOWN[${VERSION}]:-}}"
+        [ -n "${SHA}" ] || { echo "::error title=tlaplus::no recorded checksum for tla2tools ${VERSION}; set tla-sha256"; exit 1; }
+        D="${RUNNER_TEMP}/tlaplus-${VERSION}"; mkdir -p "${D}"
+        [ -f "${D}/tla2tools.jar" ] || curl -fsSL -o "${D}/tla2tools.jar" "https://github.com/tlaplus/tlaplus/releases/download/v${VERSION}/tla2tools.jar"
+        echo "${SHA}  ${D}/tla2tools.jar" | sha256sum -c --quiet
+        AP=""
+        if [ "${APALACHE}" = "true" ]; then
+          A="${RUNNER_TEMP}/apalache-${AP_VERSION}"; mkdir -p "${A}"
+          if [ ! -x "${A}/apalache-${AP_VERSION}/bin/apalache-mc" ]; then
+            base="https://github.com/apalache-mc/apalache/releases/download/v${AP_VERSION}"
+            curl -fsSL -o "${A}/sha256sum.txt" "${base}/sha256sum.txt"
+            curl -fsSL -o "${A}/apalache-${AP_VERSION}.tgz" "${base}/apalache-${AP_VERSION}.tgz"
+            ( cd "${A}" && grep " apalache-${AP_VERSION}.tgz\$" sha256sum.txt | sha256sum -c --quiet )
+            tar -xzf "${A}/apalache-${AP_VERSION}.tgz" -C "${A}"
+          fi
+          AP="${A}/apalache-${AP_VERSION}/bin/apalache-mc"
+        fi
+        ART="$(mkdir -p "${OUT}" && cd "${OUT}" && pwd)"
+        { echo "jar=${D}/tla2tools.jar"; echo "apalache=${AP}"; echo "art=${ART}"; } >> "${GITHUB_OUTPUT}"
+
+    - id: check
+      shell: bash
+      env:
+        JAR: ${{ steps.install.outputs.jar }}
+        AP: ${{ steps.install.outputs.apalache }}
+        ART: ${{ steps.install.outputs.art }}
+        SPECS_DIR: ${{ inputs.specs-dir }}
+        SPECS_LIST: ${{ inputs.specs-list }}
+        WORKERS: ${{ inputs.workers }}
+        TIMEOUT: ${{ inputs.timeout-seconds }}
+        LENGTH: ${{ inputs.apalache-length }}
+      run: |
+        set -euo pipefail
+        if [ -n "${SPECS_LIST}" ]; then grep -E '\.tla$' "${SPECS_LIST}" > "${ART}/tla-specs.txt" || true
+        else python3 -I "${GITHUB_ACTION_PATH}/models.py" select --specs-dir "${SPECS_DIR}" --output "${ART}/all-specs.txt" > /dev/null
+             grep -E '\.tla$' "${ART}/all-specs.txt" > "${ART}/tla-specs.txt" || true
+        fi
+        while IFS= read -r spec; do
+          cfg="${spec%.tla}.cfg"
+          [ -f "${cfg}" ] || { echo "  ${spec}: no sibling .cfg, skipped"; continue; }
+          n="$(echo "${spec%.tla}" | tr '/.' '__')"
+          rc=0
+          ( cd "$(dirname "${spec}")" && timeout "${TIMEOUT}" java -XX:+UseParallelGC -cp "${JAR}" tlc2.TLC -workers "${WORKERS}" \
+              -metadir "${RUNNER_TEMP}/tlc-states/${n}" -config "$(basename "${cfg}")" "$(basename "${spec}")" ) > "${ART}/tlc-${n}.txt" 2>&1 || rc=$?
+          grep -E 'Error|Invariant .* is violated|Model checking completed|states generated' "${ART}/tlc-${n}.txt" | tail -4 || true
+          python3 -I "${GITHUB_ACTION_PATH}/models.py" tlc --log "${ART}/tlc-${n}.txt" --spec "${spec}" --rc "${rc}" --output "${ART}/tla-${n}.json"
+          if [ -n "${AP}" ]; then
+            rc=0
+            ( cd "$(dirname "${spec}")" && timeout "${TIMEOUT}" "${AP}" check --config="$(basename "${cfg}")" --length="${LENGTH}" \
+                --out-dir="${ART}/apalache-out/${n}" "$(basename "${spec}")" ) > "${ART}/apalache-${n}.txt" 2>&1 || rc=$?
+            python3 -I "${GITHUB_ACTION_PATH}/models.py" apalache --log "${ART}/apalache-${n}.txt" --spec "${spec}" --rc "${rc}" --output "${ART}/apalache-${n}.json"
+          fi
+        done < "${ART}/tla-specs.txt"
+
+    - id: brief
+      if: inputs.gate == 'true'
+      shell: bash
+      env:
+        ART: ${{ steps.install.outputs.art }}
+      run: |
+        set -euo pipefail
+        rc=0
+        python3 -I "${GITHUB_ACTION_PATH}/models.py" brief --art "${ART}" --gate || rc=$?
+        cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+        exit "${rc}"
