@@ -1,0 +1,29 @@
+# Files that configure an AI agent, assistant or MCP server (issue #102, plan
+# Step 26 Baseline: "the inventory is the registry; nothing gets a credential
+# until it is on the list"). One glob per line, relative to the repository
+# root, ** allowed; text after # is a comment. Every file matching a pattern
+# needs a row in docs/ai-agents.md whose config path covers it.
+.claude/settings.json              # Claude Code: hooks, permissions, MCP servers
+.claude/settings.local.json
+.claude/agents/**                  # Claude Code sub-agents
+.claude/skills/**                  # Claude Code skills (prompt-bearing)
+.claude/commands/**
+CLAUDE.md                          # Claude Code project instructions
+**/CLAUDE.md
+.mcp.json                          # MCP servers
+mcp.json
+**/mcp-config*.json
+.cursor/**                         # Cursor
+.cursorrules
+.windsurfrules                     # Windsurf
+.github/copilot-instructions.md    # GitHub Copilot
+.github/workflows/*gemini*.yml     # Gemini CLI agents
+.github/commands/*.toml
+.github/workflows/*claude*.yml     # Claude Code Action, claude-code-security-review
+.github/workflows/*copilot*.yml
+.github/workflows/*ai-review*.yml
+.github/workflows/*llm*.yml
+.coderabbit.yaml                   # CodeRabbit
+AGENTS.md                          # Codex, OpenCode and others
+opencode.json
+.aider.conf.yml                    # aider

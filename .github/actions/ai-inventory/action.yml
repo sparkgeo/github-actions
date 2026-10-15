@@ -1,0 +1,50 @@
+name: "AI Agent Inventory Check"
+description: |
+  Fails when a file that configures an AI agent, assistant or MCP server
+  (patterns in policies/ai/agent-config-patterns.txt) has no row in the
+  repository's docs/ai-agents.md, or when a row lacks the registry fields the
+  SecOps plan asks for: owner, class, risk tier, lifecycle state, kill switch
+  (Step 26 Baseline and Standard, issue #102). A retired row must match no
+  file. The job summary lists every matched file, the row that covers it and
+  a template for a missing row.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  inventory-path:
+    description: "Inventory file, relative to the repository root."
+    default: "docs/ai-agents.md"
+  patterns-file:
+    description: "Glob list; empty uses the bundled policies/ai/agent-config-patterns.txt."
+    default: ""
+  extra-patterns:
+    description: "Additional globs, comma-separated."
+    default: ""
+  exclude:
+    description: "Comma-separated directories never matched."
+    default: ".git,node_modules,.sparkgeo-github-actions,.sparkgeo-policies"
+outputs:
+  file-count:
+    description: "Configuration files matched."
+    value: ${{ steps.check.outputs.file-count }}
+  row-count:
+    description: "Inventory rows parsed."
+    value: ${{ steps.check.outputs.row-count }}
+  error-count:
+    description: "Errors found."
+    value: ${{ steps.check.outputs.error-count }}
+runs:
+  using: "composite"
+  steps:
+    - id: check
+      shell: bash
+      env:
+        INVENTORY: ${{ inputs.inventory-path }}
+        PATTERNS: ${{ inputs.patterns-file }}
+        BUNDLED: ${{ github.action_path }}/../../../policies/ai/agent-config-patterns.txt
+        EXTRA: ${{ inputs.extra-patterns }}
+        EXCLUDE: ${{ inputs.exclude }}
+      run: |
+        set -euo pipefail
+        python3 -I "${GITHUB_ACTION_PATH}/check.py" --root . --inventory "${INVENTORY}" \
+          --patterns "${PATTERNS:-${BUNDLED}}" --extra-patterns "${EXTRA}" --exclude "${EXCLUDE}" \
+          --output "${RUNNER_TEMP}/ai-inventory.json"

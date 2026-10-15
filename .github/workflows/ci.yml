@@ -76,6 +76,42 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # AI agent inventory (#102): check.py against the fixture repository, then
+  # the composite on this repository, which carries no agent configuration
+  # and an empty inventory (tests/ excluded so the fixtures are not counted).
+  ai-inventory:
+    name: AI Inventory
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fixture repository
+        run: tests/ai-inventory/run.sh
+
+      - id: self
+        uses: ./.github/actions/ai-inventory
+        with:
+          exclude: .git,node_modules,tests
+
+      - name: Outcome
+        env:
+          FILES: ${{ steps.self.outputs.file-count }}
+          ERRORS: ${{ steps.self.outputs.error-count }}
+        run: |
+          [ "${FILES}" = "0" ] || { echo "::error title=ai-inventory::this repository now carries ${FILES} agent configuration file(s); add rows to docs/ai-agents.md"; exit 1; }
+          [ "${ERRORS}" = "0" ] || exit 1
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are
