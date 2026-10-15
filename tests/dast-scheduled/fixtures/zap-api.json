@@ -1,0 +1,99 @@
+{
+  "@programName": "ZAP",
+  "@version": "2.17.0",
+  "site": [
+    {
+      "@name": "http://127.0.0.1:8080",
+      "alerts": [
+        {
+          "pluginid": "40018",
+          "name": "SQL Injection",
+          "riskcode": "3",
+          "instances": [
+            {
+              "uri": "http://127.0.0.1:8080/api/items?name=%27",
+              "method": "GET"
+            }
+          ]
+        },
+        {
+          "pluginid": "100000",
+          "name": "A Server Error response code was returned by the server",
+          "riskcode": "1",
+          "instances": [
+            {
+              "uri": "http://127.0.0.1:8080/api/items?name=5%3BURL%3D%27https%3A%2F%2F8707207141036084614.owasp.org%27",
+              "method": "GET"
+            }
+          ]
+        },
+        {
+          "pluginid": "90004",
+          "name": "Cross-Origin-Resource-Policy Header Missing or Invalid",
+          "riskcode": "1",
+          "instances": [
+            {
+              "uri": "http://127.0.0.1:8080/api/items?name=ZAP",
+              "method": "GET"
+            }
+          ]
+        },
+        {
+          "pluginid": "10036",
+          "name": "Server Leaks Version Information via \"Server\" HTTP Response Header Field",
+          "riskcode": "1",
+          "instances": [
+            {
+              "uri": "http://127.0.0.1:8080/api/items?name=ZAP",
+              "method": "GET"
+            }
+          ]
+        },
+        {
+          "pluginid": "100001",
+          "name": "Unexpected Content-Type was returned",
+          "riskcode": "1",
+          "instances": [
+            {
+              "uri": "http://127.0.0.1:8080/api/items?name=5%3BURL%3D%27https%3A%2F%2F8707207141036084614.owasp.org%27",
+              "method": "GET"
+            }
+          ]
+        },
+        {
+          "pluginid": "10021",
+          "name": "X-Content-Type-Options Header Missing",
+          "riskcode": "1",
+          "instances": [
+            {
+              "uri": "http://127.0.0.1:8080/api/items?name=ZAP",
+              "method": "GET"
+            }
+          ]
+        },
+        {
+          "pluginid": "100000",
+          "name": "A Client Error response code was returned by the server",
+          "riskcode": "0",
+          "instances": [
+            {
+              "uri": "http://127.0.0.1:8080",
+              "method": "GET"
+            }
+          ]
+        },
+        {
+          "pluginid": "10049",
+          "name": "Storable and Cacheable Content",
+          "riskcode": "0",
+          "instances": [
+            {
+              "uri": "http://127.0.0.1:8080/api/items?name=ZAP",
+              "method": "GET"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -10,7 +10,8 @@ description: |
   reachable. Writes zap.json, zap.html and zap.md to report-dir. gate.py
   annotates each alert and fails at or above fail-on. The rules file is
   ZAP's own baseline config: IGNORE drops a rule, INFO or WARN reports it
-  without blocking, and FAIL blocks it whatever its risk.
+  without blocking, and FAIL blocks it whatever its risk. scan: full runs
+  zap-full-scan.py instead (active rules too), for the scheduled scan (#68).
 
   Required permissions on the calling job: contents: read.
 inputs:
@@ -24,8 +25,11 @@ inputs:
     description: "Lowest ZAP risk that fails the job: high, medium, low, or none."
     default: "high"
   spider-minutes:
-    description: "Minutes the spider runs (zap-baseline.py -m)."
+    description: "Minutes the spider runs (-m)."
     default: "1"
+  scan:
+    description: "baseline (passive rules, zap-baseline.py) or full (passive and active rules, zap-full-scan.py; attack payloads, non-production only)."
+    default: "baseline"
   report-dir:
     description: "Directory the reports are written to."
     default: "zap-report"
@@ -57,11 +61,17 @@ runs:
         TARGET: ${{ inputs.target-url }}
         RULES: ${{ inputs.rules-file }}
         MINUTES: ${{ inputs.spider-minutes }}
+        SCAN: ${{ inputs.scan }}
         OUT: ${{ inputs.report-dir }}
         IMAGE: ${{ inputs.image }}
       run: |
         set -euo pipefail
         case "${TARGET}" in http://*|https://*) ;; *) echo "::error title=zap-baseline::target-url must start with http:// or https://"; exit 1 ;; esac
+        case "${SCAN}" in
+          baseline) SCRIPT=zap-baseline.py ;;
+          full) SCRIPT=zap-full-scan.py ;;
+          *) echo "::error title=zap-baseline::scan must be baseline or full"; exit 1 ;;
+        esac
         mkdir -p "${OUT}"
         # The image runs as the zap user, not the runner's; it must be able to write the reports.
         chmod 777 "${OUT}"
@@ -72,7 +82,7 @@ runs:
           args+=(-c rules.tsv)
         fi
         status=0
-        docker run --rm --network host -v "$(realpath "${OUT}"):/zap/wrk:rw" "${IMAGE}" zap-baseline.py "${args[@]}" \
+        docker run --rm --network host -v "$(realpath "${OUT}"):/zap/wrk:rw" "${IMAGE}" "${SCRIPT}" "${args[@]}" \
           > "${OUT}/zap-output.txt" 2>&1 || status=$?
         # 0 pass, 1 a FAIL rule matched, 2 warnings (not with -I); anything else is a ZAP error.
         if [ "${status}" -gt 2 ] || [ ! -s "${OUT}/zap.json" ]; then
@@ -89,6 +99,9 @@ runs:
         OUT: ${{ inputs.report-dir }}
         RULES: ${{ inputs.rules-file }}
         FAIL_ON: ${{ inputs.fail-on }}
+        SCAN: ${{ inputs.scan }}
       run: |
         set -euo pipefail
-        python3 -I "${GITHUB_ACTION_PATH}/gate.py" --report "${OUT}/zap.json" --fail-on "${FAIL_ON}" --rules "${RULES}" >> "${GITHUB_OUTPUT}"
+        title="ZAP baseline"; [ "${SCAN}" != "full" ] || title="ZAP full scan"
+        python3 -I "${GITHUB_ACTION_PATH}/gate.py" --report "${OUT}/zap.json" --fail-on "${FAIL_ON}" --rules "${RULES}" \
+          --title "${title}" >> "${GITHUB_OUTPUT}"

@@ -20,6 +20,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | DAST Baseline | [`dast-baseline.yml`](.github/workflows/dast-baseline.yml) | `workflow_call` | Reusable passive DAST gate: ZAP baseline scan of a running preview or staging URL; fails at or above `fail-on`; per-repo ZAP rules file; HTML/JSON/Markdown reports as an artefact (#65) |
 | DAST API | [`dast-api.yml`](.github/workflows/dast-api.yml) | `workflow_call` | Reusable API DAST gate: ZAP API scan driven by an OpenAPI, SOAP or GraphQL definition, with an optional `AUTH_HEADER` secret for authenticated operations; active rules, so non-production only; fails at or above `fail-on`; reports as an artefact (#67) |
 | DAST Nuclei | [`dast-nuclei.yml`](.github/workflows/dast-nuclei.yml) | `workflow_call` | Reusable nuclei gate: pinned templates (CVEs, misconfigurations, exposures by default) against a running preview or staging URL; rate-limited; SARIF to the Security tab; fails at or above `fail-on-severity` (#66) |
+| DAST Scheduled | [`dast-scheduled.yml`](.github/workflows/dast-scheduled.yml) | `workflow_call` (from `schedule`) | Reusable weekly active DAST of staging: production guard, ZAP full scan, ZAP API scan (with `spec-url`) and nuclei; one tracking issue per target for High and Critical findings; reports kept 90 days (#68) |
 
 ## Composite Actions
 
@@ -44,9 +45,10 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
-| ZAP Baseline | [`zap-baseline`](.github/actions/zap-baseline/action.yml) | Runs the digest-pinned ZAP image's `zap-baseline.py` with `--network host` (localhost targets work); annotates every alert; gates on ZAP risk; the rules file IGNOREs, downgrades (INFO/WARN) or forces (FAIL) single rules | `target-url` (required), `rules-file` (default: `""`), `fail-on` (default: `high`), `spider-minutes` (default: `1`), `report-dir` (default: `zap-report`), `image` (default: ZAP 2.17.0 by digest) |
+| ZAP Baseline | [`zap-baseline`](.github/actions/zap-baseline/action.yml) | Runs the digest-pinned ZAP image's `zap-baseline.py` with `--network host` (localhost targets work); annotates every alert; gates on ZAP risk; the rules file IGNOREs, downgrades (INFO/WARN) or forces (FAIL) single rules | `target-url` (required), `rules-file` (default: `""`), `fail-on` (default: `high`), `spider-minutes` (default: `1`), `report-dir` (default: `zap-report`), `scan` (default: `baseline`; `full` adds active rules), `image` (default: ZAP 2.17.0 by digest) |
 | ZAP API | [`zap-api`](.github/actions/zap-api/action.yml) | Runs `zap-api-scan.py` from the same pinned ZAP image against a definition (URL or repo path) with the server overridden to `target-url`; auth header passed by environment variable and scoped to the target host; reuses the baseline gate and rules-file semantics | `target-url` (required), `spec-url`, `spec-format` (default: `openapi`), `fail-on` (default: `high`), `rules-file`, `auth-header`, `safe-mode` (default: `false`), `report-dir` (default: `zap-api-report`), `image` |
 | Nuclei | [`nuclei`](.github/actions/nuclei/action.yml) | Installs checksum-verified nuclei and a pinned, checksum-verified nuclei-templates release (cached by version); scans with rate limiting and interactsh off by default; SARIF upload; annotates and gates on severity | `target-url` (required), `templates` (default: `cves,misconfiguration,exposures`), `tags` (default: `""`), `fail-on-severity` (default: `high`), `rate-limit` (default: `50`), `concurrency` (default: `10`), `interactsh` (default: `false`), `headers` (default: `""`), `version` (default: `3.11.1`), `templates-version` (default: `10.5.0`), `sarif-upload` (default: `true`) |
+| DAST Report | [`dast-report`](.github/actions/dast-report/action.yml) | Combines ZAP and nuclei results onto one severity scale, gates on `fail-on`, and opens or updates the target's tracking issue (comments when a new High or Critical appears); `guard.py` refuses production targets | `target-url` (required), `zap-reports`, `nuclei-results`, `fail-on` (default: `high`), `open-issues` (default: `true`), `github-token` |
 
 ### GitHub Actionlint
 
@@ -501,6 +503,49 @@ jobs:
 A full run of the default directories sends several thousand requests, so lower `rate-limit` for a fragile environment. Run only against environments you own; the weekly active scan (#68) is the place for heavier settings.
 
 `tests/dast-nuclei/run.sh` checks the gate against a recorded export. The `dast-nuclei` CI job serves `tests/dast-nuclei/fixtures/site`, which deliberately exposes a `.gitmodules` file, and asserts that the high-severity `exposed-gitmodules` template finds it and fails the gate.
+
+### DAST Scheduled (weekly active scan)
+
+PR-time scans test the code being changed. New ZAP rules and nuclei templates land every week, and a deployed service drifts (configuration, host packages). A weekly active scan of staging catches both without a new commit (SecOps plan Step 5 Advanced). The ZAP full scan sends attack payloads, so it must only ever target non-production environments.
+
+```yaml
+# .github/workflows/dast-weekly.yml
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+jobs:
+  dast:
+    permissions:
+      contents: read
+      issues: write            # tracking issue; drop with open-issues: false
+      security-events: write   # nuclei SARIF
+    uses: sparkgeo/github-actions/.github/workflows/dast-scheduled.yml@<SHA>
+    with:
+      target-url: https://staging.example.com
+      spec-url: https://staging.example.com/openapi.json   # optional: adds the ZAP API scan
+      production-pattern: '(^|[.-])(prod|production|live)([.-]|$)|^www\.|^api\.example\.com$'
+      actions-ref: <SHA>
+    secrets:
+      AUTH_HEADER: ${{ secrets.STAGING_SCAN_AUTH_HEADER }}
+```
+
+**Production guard.** A `guard` job runs before any scan and refuses a target whose host matches `production-pattern`, a case-insensitive regular expression. The default refuses hosts with a `prod`, `production` or `live` label and hosts starting with `www.`. Extend it with your real production hostnames; the scans never start when it matches.
+
+**Jobs.** After the guard, three jobs run in parallel, all report-only:
+
+- the ZAP full scan (spider for up to 5 minutes, then active rules);
+- the ZAP API scan, only when `spec-url` is set;
+- nuclei with the pinned templates.
+
+A `report` job then combines them onto one severity scale (ZAP High is `high`) and fails the run at or above `fail-on`.
+
+**Tracking issue.** With `open-issues: true`, High and Critical findings open one issue per target host, titled `DAST scheduled scan: <host>` and labelled `dast-scheduled`, `security-finding` and `sla:high`. Each run rewrites its body with the current list. When a finding appears that the issue has not listed before, the run also comments, so watchers are notified. Close the issue once nothing remains.
+
+**Evidence.** Every report (ZAP full, ZAP API, nuclei and the combined High and Critical list) is uploaded with `retention-days: 90`.
+
+`tests/dast-scheduled/run.sh` checks the guard, the combined report and the issue logic (open once, update quietly, comment on a new finding) against recorded results and a fake `gh`. The `dast-scheduled` CI job runs a live ZAP full scan of the baseline fixture site through the report composite.
 
 ## Consuming repo CI setup
 
