@@ -53,7 +53,17 @@ PY
       --wait --timeout "${TIMEOUT:-10m}"
     # The operator registers the TracingPolicy CRDs once it is up.
     kubectl wait --for condition=established --timeout 120s crd/tracingpolicies.cilium.io crd/tracingpoliciesnamespaced.cilium.io
-    [ "${#files[@]}" -eq 0 ] || kubectl apply -f "${RULES_DIR}"
+    if [ "${#files[@]}" -gt 0 ]; then
+      kubectl apply -f "${RULES_DIR}"
+      # The API server accepts a policy the agent cannot load; the agent logs it.
+      sleep 15
+      rejected="$(kubectl -n "${NAMESPACE}" logs -l app.kubernetes.io/name=tetragon -c tetragon --tail=-1 \
+        | grep 'adding tracing policy failed' || true)"
+      if [ -n "${rejected}" ]; then
+        echo "::error title=runtime-sensor::Tetragon rejected a TracingPolicy: $(head -1 <<< "${rejected}")"
+        exit 1
+      fi
+    fi
     chart="tetragon ${TETRAGON_VERSION}"
     ;;
   *)
