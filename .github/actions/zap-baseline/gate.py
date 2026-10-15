@@ -41,6 +41,7 @@ def main():
     ap.add_argument("--report", required=True)
     ap.add_argument("--fail-on", default="high", choices=sorted(THRESHOLD))
     ap.add_argument("--rules", default="")
+    ap.add_argument("--title", default="ZAP baseline")
     args = ap.parse_args()
 
     rules = load_rules(args.rules)
@@ -62,15 +63,15 @@ def main():
             msg = (f"{name} ({RISK.get(risk, risk)}, plugin {plugin}) on {len(uris)} URL(s), "
                    f"e.g. {uris[0] if uris else site.get('@name', '')}")
             if blocks:
-                print(f"::error title=ZAP baseline::{msg}", file=sys.stderr)
+                print(f"::error title={args.title}::{msg}", file=sys.stderr)
             elif risk >= 1:
-                print(f"::warning title=ZAP baseline::{msg}", file=sys.stderr)
+                print(f"::warning title={args.title}::{msg}", file=sys.stderr)
             status = "blocks" if blocks else (rule or "reported")
             rows.append((-risk, f"| {RISK.get(risk, risk)} | {name} | {plugin} | {len(uris)} | {status} |"))
 
     totals = (f"High {counts['high']}, Medium {counts['medium']}, Low {counts['low']}, "
               f"Informational {counts['info']}; {counts['blocking']} blocking.")
-    summary = [f"### ZAP baseline (fail-on: {args.fail_on})", "", totals, ""]
+    summary = [f"### {args.title} (fail-on: {args.fail_on})", "", totals, ""]
     if rows:
         summary += ["| Risk | Alert | Plugin | URLs | Status |", "|---|---|---|---|---|",
                     *(line for _, line in sorted(rows))]

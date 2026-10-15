@@ -308,3 +308,50 @@ jobs:
           [ "${BLOCKING}" = "1" ] || { echo "::error title=dast-baseline::expected 1 blocking alert (10021), got ${BLOCKING}"; exit 1; }
           [ "${MEDIUM}" -ge 2 ] || { echo "::error title=dast-baseline::expected the fixture's missing CSP and anti-clickjacking alerts, got ${MEDIUM} Medium"; exit 1; }
           grep -q 'IGNORE: 1' "${OUT}/zap-output.txt" || { echo "::error title=dast-baseline::ZAP did not apply the rules file"; exit 1; }
+
+  # ZAP API scan (issue #67): tests/dast-api/fixtures/app.py serves an
+  # OpenAPI definition and one operation that answers a quote with a MySQL
+  # syntax error, but only when X-Fixture-Token is sent. The live scan sends
+  # the header through auth-header and must report SQL Injection (High) and
+  # fail the gate. Audit egress: ghcr.io (ZAP image).
+  dast-api:
+    name: DAST API
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Start the fixture API
+        env:
+          FIXTURE_TOKEN: ci-fixture-token
+        run: |
+          python3 tests/dast-api/fixtures/app.py 8082 > /dev/null 2>&1 &
+          for _ in $(seq 30); do curl -sf http://127.0.0.1:8082/openapi.json > /dev/null && exit 0; sleep 1; done
+          echo "::error title=dast-api::fixture API did not start"; exit 1
+
+      - id: live
+        uses: ./.github/actions/zap-api
+        continue-on-error: true
+        with:
+          target-url: http://127.0.0.1:8082
+          spec-url: tests/dast-api/fixtures/openapi.json
+          auth-header: "X-Fixture-Token: ci-fixture-token"
+          report-dir: ${{ runner.temp }}/zap-api-report
+
+      - name: Assert the live scan
+        env:
+          OUTCOME: ${{ steps.live.outcome }}
+          OUT: ${{ runner.temp }}/zap-api-report
+        run: |
+          set -euo pipefail
+          [ "${OUTCOME}" = "failure" ] || { echo "::error title=dast-api::the SQL injection did not fail the gate (${OUTCOME})"; exit 1; }
+          jq -e '[.site[].alerts[] | select(.pluginid == "40018" and .riskcode == "3")] | length > 0' "${OUT}/zap.json" > /dev/null \
+            || { echo "::error title=dast-api::SQL Injection not reported; was the auth header sent?"; exit 1; }

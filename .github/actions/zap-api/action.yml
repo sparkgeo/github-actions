@@ -1,0 +1,136 @@
+name: "zap-api"
+description: |
+  DAST of an API with the ZAP API scan (SecOps plan Step 5 Standard; issue
+  #67). ZAP imports the OpenAPI or SOAP definition (or a GraphQL endpoint and
+  schema) and runs passive and active rules against every documented
+  operation. The active rules send attack payloads (SQL injection,
+  command injection, path traversal and more), so point it only at preview,
+  ephemeral or staging environments, never production. safe-mode skips the
+  active rules.
+
+  Runs the same digest-pinned ZAP image as zap-baseline (#65) with
+  --network host, and reuses its gate: alerts are annotated and fail at or
+  above fail-on, and a ZAP rules file can IGNORE, downgrade or FAIL single
+  rules. auth-header ("Header-Name: value") reaches ZAP through environment
+  variables, never the command line, and is sent only to the target's host.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  target-url:
+    description: "Base URL of the running API (overrides the server in an OpenAPI or SOAP definition; the endpoint for GraphQL)."
+    required: true
+  spec-url:
+    description: "OpenAPI or SOAP definition (URL, or a path in the repository); for GraphQL, an optional schema URL or path."
+    default: ""
+  spec-format:
+    description: "openapi, soap, or graphql."
+    default: "openapi"
+  fail-on:
+    description: "Lowest ZAP risk that fails the job: high, medium, low, or none."
+    default: "high"
+  rules-file:
+    description: "Path to a ZAP rules file (<plugin id>\\t<IGNORE|INFO|WARN|FAIL>\\t(name)) in the repository."
+    default: ""
+  auth-header:
+    description: "Optional 'Header-Name: value' sent with every request to the target; pass a secret, never a literal."
+    default: ""
+  safe-mode:
+    description: "true runs passive rules only (zap-api-scan.py -S)."
+    default: "false"
+  report-dir:
+    description: "Directory the reports are written to."
+    default: "zap-api-report"
+  image:
+    description: "ZAP image, pinned by digest."
+    default: "ghcr.io/zaproxy/zaproxy@sha256:7aaa659b0d43078febd82e29bad112285c370727e86ab8340444220e17d9f0d2"
+outputs:
+  high-count:
+    description: "High-risk alerts (after IGNORE rules)."
+    value: ${{ steps.gate.outputs.high-count }}
+  medium-count:
+    description: "Medium-risk alerts."
+    value: ${{ steps.gate.outputs.medium-count }}
+  blocking-count:
+    description: "Alerts that fail the job."
+    value: ${{ steps.gate.outputs.blocking-count }}
+  report-dir:
+    description: "Directory holding zap.json, zap.html and zap.md."
+    value: ${{ inputs.report-dir }}
+runs:
+  using: "composite"
+  steps:
+    - name: Run the ZAP API scan
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target-url }}
+        SPEC: ${{ inputs.spec-url }}
+        FORMAT: ${{ inputs.spec-format }}
+        RULES: ${{ inputs.rules-file }}
+        AUTH: ${{ inputs.auth-header }}
+        SAFE: ${{ inputs.safe-mode }}
+        OUT: ${{ inputs.report-dir }}
+        IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+        case "${TARGET}" in http://*|https://*) ;; *) echo "::error title=zap-api::target-url must start with http:// or https://"; exit 1 ;; esac
+        mkdir -p "${OUT}"
+        # The image runs as the zap user, not the runner's; it must be able to write the reports.
+        chmod 777 "${OUT}"
+        # A repository path is copied into the mounted directory; a URL is passed through.
+        spec_ref() {
+          case "$1" in
+            http://*|https://*) echo "$1" ;;
+            *) [ -f "$1" ] || { echo "::error title=zap-api::spec-url is neither a URL nor a file: $1" >&2; return 1; }
+               cp "$1" "${OUT}/$(basename "$1")"; echo "/zap/wrk/$(basename "$1")" ;;
+          esac
+        }
+        case "${FORMAT}" in
+          openapi|soap)
+            [ -n "${SPEC}" ] || { echo "::error title=zap-api::spec-url is required for ${FORMAT}"; exit 1; }
+            ref="$(spec_ref "${SPEC}")"
+            args=(-t "${ref}" -f "${FORMAT}" -O "${TARGET}") ;;
+          graphql)
+            args=(-t "${TARGET}" -f graphql)
+            if [ -n "${SPEC}" ]; then ref="$(spec_ref "${SPEC}")"; args+=(--schema "${ref}"); fi ;;
+          *) echo "::error title=zap-api::spec-format must be openapi, soap or graphql"; exit 1 ;;
+        esac
+        args+=(-J zap.json -r zap.html -w zap.md -I)
+        [ "${SAFE}" != "true" ] || args+=(-S)
+        if [ -n "${RULES}" ]; then
+          [ -f "${RULES}" ] || { echo "::error title=zap-api::rules-file not found: ${RULES}"; exit 1; }
+          cp "${RULES}" "${OUT}/rules.tsv"; args+=(-c rules.tsv)
+        fi
+        envs=()
+        if [ -n "${AUTH}" ]; then
+          case "${AUTH}" in *:*) ;; *) echo "::error title=zap-api::auth-header must look like 'Header-Name: value'"; exit 1 ;; esac
+          # Passed by name (-e VAR), so the value never appears in the process list.
+          ZAP_AUTH_HEADER="${AUTH%%:*}"
+          ZAP_AUTH_HEADER_VALUE="$(echo "${AUTH#*:}" | sed 's/^ *//')"
+          ZAP_AUTH_HEADER_SITE="$(echo "${TARGET}" | sed -E 's#^https?://([^/:]+).*#\1#')"
+          export ZAP_AUTH_HEADER ZAP_AUTH_HEADER_VALUE ZAP_AUTH_HEADER_SITE
+          echo "::add-mask::${ZAP_AUTH_HEADER_VALUE}"
+          envs=(-e ZAP_AUTH_HEADER -e ZAP_AUTH_HEADER_VALUE -e ZAP_AUTH_HEADER_SITE)
+        fi
+        status=0
+        docker run --rm --network host "${envs[@]}" -v "$(realpath "${OUT}"):/zap/wrk:rw" "${IMAGE}" zap-api-scan.py "${args[@]}" \
+          > "${OUT}/zap-output.txt" 2>&1 || status=$?
+        # 0 pass, 1 a FAIL rule matched, 2 warnings (not with -I); anything else is a ZAP error.
+        if [ "${status}" -gt 2 ] || [ ! -s "${OUT}/zap.json" ]; then
+          cat "${OUT}/zap-output.txt"
+          echo "::error title=zap-api::ZAP did not complete (exit ${status}); are ${TARGET} and the definition reachable from the runner?"
+          exit 1
+        fi
+        tail -n 3 "${OUT}/zap-output.txt"
+
+    - name: Annotate and gate
+      id: gate
+      shell: bash
+      env:
+        OUT: ${{ inputs.report-dir }}
+        RULES: ${{ inputs.rules-file }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        set -euo pipefail
+        # Same report format and rules semantics as the baseline scan (#65).
+        python3 -I "${GITHUB_ACTION_PATH}/../zap-baseline/gate.py" --report "${OUT}/zap.json" --fail-on "${FAIL_ON}" \
+          --rules "${RULES}" --title "ZAP API scan" >> "${GITHUB_OUTPUT}"
