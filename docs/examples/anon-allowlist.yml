@@ -1,0 +1,9 @@
+# presidio allowlist for the anonymised dump (docs/anonymisation.md): the
+# masking functions emit reserved placeholders, which are not findings.
+---
+version: 1
+regexes:
+  - pattern: '@example\.(com|net|org)$'
+    reason: anon.fake_email() uses the reserved example domains
+  - pattern: '^\+1 604 555 01\d{2}$'
+    reason: anon.random_phone_with_format('+1 604 555 01##') is a reserved fictional range

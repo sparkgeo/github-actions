@@ -1,0 +1,131 @@
+name: Anonymise Fixtures
+
+# Reusable workflow (issue #123, plan Step 36 Standard): turns a production
+# dump into anonymised fixtures. Restores the dump into a throwaway
+# postgresql_anonymizer container with PostGIS, applies the repository's anon
+# rules (names, emails, phones, free text, identifiers, geometry truncated to
+# a geohash cell), dumps the result, scans the dump with presidio with the
+# structured entities blocking, and publishes the artefact only when the scan
+# is clean. The job runs in a protected environment (required reviewers, #35)
+# because the input is production data; the output artefact is the only thing
+# that leaves. Nothing is sent anywhere.
+#
+# Caller permissions: contents: read, actions: read (source artefact).
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com, registry.gitlab.com (the
+# image), apt.postgresql.org (PostGIS package), PyPI (presidio).
+
+on:
+  workflow_call:
+    inputs:
+      source-dump-artifact:
+        description: 'Artefact containing a schema-plus-data dump produced in a trusted environment (plain SQL or pg_dump custom format; the first .sql or .dump file is used)'
+        required: true
+        type: string
+      masking-rules:
+        description: 'SQL file with anon SECURITY LABEL rules'
+        default: 'db/anon-rules.sql'
+        type: string
+      geohash-precision:
+        description: 'Precision for truncating point geometries (5 is about 5 km)'
+        default: 5
+        type: number
+      output-artifact:
+        description: 'Artefact name for the anonymised dump'
+        default: 'fixtures-anonymised'
+        type: string
+      environment:
+        description: 'Deployment environment whose required reviewers gate the run'
+        default: 'anonymise'
+        type: string
+      allowlist-path:
+        description: 'presidio allowlist for the dump; empty uses the bundled docs/examples/anon-allowlist.yml'
+        default: ''
+        type: string
+      postgis-package:
+        description: 'PGDG apt package adding PostGIS to the anonymizer image (match its PostgreSQL major)'
+        default: 'postgresql-18-postgis-3'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned anonymise-fixtures.yml to,
+          so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions.
+jobs:
+  anonymise:
+    name: Anonymise fixtures
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout sparkgeo composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Download the source dump
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: ${{ inputs.source-dump-artifact }}
+          path: ${{ runner.temp }}/source
+
+      - name: Locate the dump
+        id: dump
+        env:
+          SRC: ${{ runner.temp }}/source
+        run: |
+          set -euo pipefail
+          FILE="$(find "${SRC}" -type f \( -name '*.sql' -o -name '*.dump' -o -name '*.pgdump' \) | head -1)"
+          [ -n "${FILE}" ] || { echo "::error title=anonymise::no .sql or .dump file in the artefact"; exit 1; }
+          echo "path=${FILE}" >> "${GITHUB_OUTPUT}"
+
+      - id: anonymise
+        uses: ./.sparkgeo-github-actions/.github/actions/anonymise
+        with:
+          dump-path: ${{ steps.dump.outputs.path }}
+          masking-rules: ${{ inputs.masking-rules }}
+          geohash-precision: ${{ inputs.geohash-precision }}
+          output-dir: ${{ runner.temp }}/anonymised
+          postgis-package: ${{ inputs.postgis-package }}
+
+      # The independent check: presidio over the dump, structured entities and
+      # contact details blocking. A finding stops the publish.
+      - name: List the dump for the scan
+        env:
+          OUT: ${{ runner.temp }}/anonymised
+        run: printf '%s\n' "${OUT}/anonymised.sql" > "${OUT}/files.txt"
+
+      - id: verify
+        uses: ./.sparkgeo-github-actions/.github/actions/presidio
+        with:
+          files-list: ${{ runner.temp }}/anonymised/files.txt
+          include-globs: '**/*.sql'
+          entities: CREDIT_CARD,US_SSN,CA_SIN,IBAN_CODE,EMAIL_ADDRESS,PHONE_NUMBER,IP_ADDRESS
+          block-entities: CREDIT_CARD,US_SSN,CA_SIN,IBAN_CODE,EMAIL_ADDRESS,PHONE_NUMBER
+          allowlist-path: ${{ inputs.allowlist-path != '' && inputs.allowlist-path || '.sparkgeo-github-actions/docs/examples/anon-allowlist.yml' }}
+          sarif-path: ${{ runner.temp }}/anonymised/verify.sarif
+
+      - name: Publish the anonymised fixtures
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ inputs.output-artifact }}
+          path: |
+            ${{ runner.temp }}/anonymised/anonymised.sql
+            ${{ runner.temp }}/anonymised/masking.json
+          if-no-files-found: error

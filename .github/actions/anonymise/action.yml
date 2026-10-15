@@ -1,0 +1,54 @@
+name: "Anonymise Fixtures"
+description: |
+  Masks a database dump with postgresql_anonymizer (SecOps plan Step 36
+  Standard, issue #123): restores the dump into a throwaway container from
+  the digest-pinned anonymizer image with PostGIS installed, applies the
+  SECURITY LABEL rules (names, emails, phones, free text, identifiers,
+  geometry truncated to a geohash cell), runs static masking and dumps the
+  result without owners, privileges or labels. The caller verifies the dump
+  with the presidio composite before publishing it (anonymise-fixtures.yml
+  does). Nothing leaves the runner. Needs Docker.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  dump-path:
+    description: "Source dump: plain SQL or pg_dump custom format."
+    required: true
+  masking-rules:
+    description: "SQL file with anon SECURITY LABEL rules; may use :precision."
+    default: "db/anon-rules.sql"
+  geohash-precision:
+    description: "Geohash characters for truncating point geometries (5 is about 4.9 km)."
+    default: "5"
+  output-dir:
+    description: "Where anonymised.sql and masking.json are written."
+    default: "fixtures-anonymised"
+  database:
+    description: "Database name inside the container."
+    default: "fixtures"
+  image:
+    description: "postgresql_anonymizer image, pinned by digest (PostgreSQL 18, anon 3.2)."
+    default: "registry.gitlab.com/dalibo/postgresql_anonymizer@sha256:cedfa32f762df460091ae5b0f71a96cf21ea6300c51ff1390ea020dded778d8a"
+  postgis-package:
+    description: "PGDG apt package that adds PostGIS to the image; match the image's PostgreSQL major."
+    default: "postgresql-18-postgis-3"
+outputs:
+  dump-path:
+    description: "Anonymised dump."
+    value: ${{ inputs.output-dir }}/anonymised.sql
+  masking-report:
+    description: "JSON with the masked columns and row counts."
+    value: ${{ inputs.output-dir }}/masking.json
+runs:
+  using: "composite"
+  steps:
+    - shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        DUMP: ${{ inputs.dump-path }}
+        RULES: ${{ inputs.masking-rules }}
+        PRECISION: ${{ inputs.geohash-precision }}
+        OUT: ${{ inputs.output-dir }}
+        DB: ${{ inputs.database }}
+        POSTGIS_PKG: ${{ inputs.postgis-package }}
+      run: bash "${GITHUB_ACTION_PATH}/anonymise.sh"
