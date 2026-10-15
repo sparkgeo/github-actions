@@ -1,4 +1,8 @@
-# Every DR control satisfied: zero findings from policies/dr.
+# Reference OpenTofu for the DR check (docs/dr-checklist.md). Every control in
+# policies/dr passes here; tests/dr-check/run.sh scans this directory and fails
+# on any finding, so it stays correct as the pack changes. Tier A as written;
+# a Tier B stack can drop the replication, Multi-AZ and copy_action parts.
+# CKV_AWS_21 versioning (Tier B) and CKV_AWS_144 cross-region replication (Tier A).
 resource "aws_s3_bucket" "data" {
   bucket = "app-data"
 }
@@ -47,6 +51,7 @@ resource "aws_s3_bucket_replication_configuration" "replica" {
   }
 }
 
+# CKV_AWS_133 retention (Tier B), CKV_AWS_157 Multi-AZ (Tier A), SPK_DR_1 in a backup selection (Tier B).
 resource "aws_db_instance" "main" {
   identifier              = "app"
   engine                  = "postgres"
@@ -56,6 +61,7 @@ resource "aws_db_instance" "main" {
   backup_retention_period = 7
 }
 
+# CKV_AWS_28 and SPK_DR_3 point-in-time recovery (Tier B).
 resource "aws_dynamodb_table" "sessions" {
   name         = "sessions"
   billing_mode = "PAY_PER_REQUEST"
@@ -69,6 +75,7 @@ resource "aws_dynamodb_table" "sessions" {
   }
 }
 
+# CKV_AWS_134 automatic snapshots (Tier B).
 resource "aws_elasticache_cluster" "cache" {
   cluster_id               = "app"
   engine                   = "redis"
@@ -77,15 +84,18 @@ resource "aws_elasticache_cluster" "cache" {
   snapshot_retention_limit = 7
 }
 
+# SPK_DR_2 in a backup selection (Tier B).
 resource "aws_efs_file_system" "shared" {
   creation_token = "app-shared"
 }
 
+# CKV_AWS_166 vault encrypted with a customer KMS key (Tier B).
 resource "aws_backup_vault" "main" {
   name        = "app"
   kms_key_arn = "arn:aws:kms:us-west-2:123456789012:key/abc"
 }
 
+# SPK_DR_4 lifecycle.delete_after and a copy_action to a vault in another region (Tier A).
 resource "aws_backup_plan" "main" {
   name = "app"
   rule {

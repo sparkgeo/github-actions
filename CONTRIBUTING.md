@@ -112,6 +112,17 @@ jobs:
 The composite actions are individually callable and require explicit job shells with
 correct permissions (see README for full usage examples).
 
+## Writing IaC that passes the DR check
+
+Repositories that call `dr-check-tofu.yml` pick a tier in
+[`docs/dr-checklist.md`](docs/dr-checklist.md) and set `strict-checks` from it. The
+checklist gives every check a control and a tier, the two reasons a finding may be
+suppressed (`# checkov:skip=<ID>:Tier C, ...` or `...:exception #<issue>, ...`), and
+the manual controls to record in the repository README. A compliant stack to copy
+from is in [`docs/examples/dr/`](docs/examples/dr). When you add a check to
+`policies/dr/`, add its row to the checklist: `tests/dr-check/run.sh` fails when the
+two lists differ.
+
 ## Security pillars reference
 
 | Pillar | Issue | Summary |

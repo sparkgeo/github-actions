@@ -119,11 +119,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install checkov through the composite (pass fixture, zero findings)
+      - name: Install checkov through the composite (compliant example, zero findings)
         id: pass
         uses: ./.github/actions/checkov
         with:
-          directory: tests/dr-check/fixtures/pass
+          directory: docs/examples/dr/aws
           frameworks: terraform
           checks: CKV_AWS_21,CKV_AWS_144,CKV_AWS_133,CKV_AWS_157,CKV_AWS_28,CKV_AWS_134,CKV_AWS_166,SPK_DR_1,SPK_DR_2,SPK_DR_3,SPK_DR_4
           external-checks-dir: policies/dr
@@ -153,7 +153,7 @@ jobs:
           FAIL_FAILED: ${{ steps.failing.outputs.failed-count }}
           RESULTS: ${{ steps.failing.outputs.results-json }}
         run: |
-          [ "${PASS_FAILED}" = "0" ] || { echo "::error title=dr-check::pass fixture had ${PASS_FAILED} findings"; exit 1; }
+          [ "${PASS_FAILED}" = "0" ] || { echo "::error title=dr-check::docs/examples/dr/aws had ${PASS_FAILED} findings"; exit 1; }
           [ "${FAIL_FAILED}" = "11" ] || { echo "::error title=dr-check::expected 11 findings on the fail fixture, got ${FAIL_FAILED}"; exit 1; }
           python3 -I .github/actions/checkov/dr-report.py --json "${RESULTS}" --report "${RUNNER_TEMP}/dr-report.md" --directory tests/dr-check/fixtures/fail > /dev/null
 
