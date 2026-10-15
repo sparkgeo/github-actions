@@ -72,7 +72,16 @@ A finding may be suppressed for two reasons only, and the reason goes in the com
    # checkov:skip=CKV_AWS_157:exception #123, single-AZ until the client approves the Multi-AZ cost
    ```
 
-For CDK stacks the equivalent is `NagSuppressions.addResourceSuppressions(...)` with the same reason text; the CDK rule ids and the `dr-check-cdk.yml` workflow arrive with issue #94.
+For CDK stacks, `dr-check-cdk.yml` (issue #94) reports the cdk-nag NIST 800-53 rev 5 rules in `policies/dr/cdk-nag-rules.txt`. cdk-nag 3 replaced `NagSuppressions` with CDK's own acknowledgements; use the same reason text:
+
+```ts
+Validations.of(cacheBucket).acknowledge({
+  id: 'NIST.800.53.R5::NIST.800.53.R5-S3BucketVersioningEnabled',
+  reason: 'Tier C: cache objects are rebuilt from the source bucket on a miss',
+});
+```
+
+An acknowledgement whose reason is under 20 characters is reported in the PR comment. On a rule in `strict-rules`, it does not count. Starter apps for TypeScript and Python are in [`docs/examples/dr/cdk`](examples/dr/cdk).
 
 ## Manual controls
 

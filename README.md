@@ -12,6 +12,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
 | DR Check (OpenTofu) | [`dr-check-tofu.yml`](.github/workflows/dr-check-tofu.yml) | `workflow_call` | Reusable DR-readiness check — curated checkov backup and DR checks plus the `SPK_DR_*` graph policies; one updating PR comment grouped by resource with remediation; `strict-checks` subset fails the job |
+| DR Check (CDK) | [`dr-check-cdk.yml`](.github/workflows/dr-check-cdk.yml) | `workflow_call` | Reusable DR-readiness check for AWS CDK apps: `cdk synth` with cdk-nag's NIST 800-53 rev 5 pack, filtered to the backup and recovery rules in `policies/dr/cdk-nag-rules.txt`; annotations at the construct's line; one updating PR comment; `strict-rules` fail the job (#94) |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -44,6 +45,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Checkov | [`checkov`](.github/actions/checkov/action.yml) | IaC misconfiguration scan (Terraform, OpenTofu, CloudFormation, Kubernetes, Helm, …); PR annotations + SARIF; gate per `fail-on-severity`. Installs the pinned checkov release binary verified against a recorded sha256 | `version` (default: `3.3.25`), `version-sha256`, `directory` (default: `.`), `frameworks` (default: `terraform,terraform_json,cloudformation`), `fail-on-severity` (default: `high`), `skip-checks` (default: `""`), `download-external-modules` (default: `false`), `sarif-upload` (default: `true`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| cdk-nag | [`cdk-nag`](.github/actions/cdk-nag/action.yml) | Installs the app's dependencies (node or python), synthesises with `CDK_NAG=1` through a pinned `aws-cdk` CLI, reads `cdk.out/validation-report.json`, reports resilience violations and acknowledgements (flagging reasons under `min-reason-length`), updates one PR comment, gates on `strict-rules` | `working-directory` (default: `.`), `runtime` (default: `node`), `rules` (default: the policy file), `strict-rules` (default: `""`), `min-reason-length` (default: `20`), `cdk-version` (default: `2.1145.0`), `install` (default: `true`), `comment` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -430,6 +432,30 @@ jobs:
 ```
 
 `plan-json` scans a plan file with the `terraform_plan` framework instead of the directory, so `count` and `for_each` are resolved. `policies-ref` loads `policies/dr` from another ref of this repo when the pack must move ahead of the composite. Suppress a finding with `# checkov:skip=CKV_AWS_144:<tier or exception issue>` inside the resource; a skip without text is reported. The tiers, the full id-to-control table, the `strict-checks` list per tier and the manual controls are in [`docs/dr-checklist.md`](docs/dr-checklist.md); [`docs/examples/dr/`](docs/examples/dr) holds a compliant stack.
+
+### DR Check (CDK, cdk-nag)
+
+[`dr-check-cdk.yml`](.github/workflows/dr-check-cdk.yml) asks the DR question of AWS CDK apps (issue #94, plan Steps 8 and 19). [cdk-nag](https://github.com/cdklabs/cdk-nag) 3 runs as a CDK policy-validation plugin during `cdk synth`, so each finding points at the construct and the line that created it, not at a flattened template. The app registers the NIST 800-53 rev 5 pack only when `CDK_NAG=1`, so local synth stays quiet; see the TypeScript and Python starters in [`docs/examples/dr/cdk`](docs/examples/dr/cdk).
+
+```yaml
+jobs:
+  dr-cdk:
+    permissions:
+      contents: read
+      pull-requests: write   # the updating PR comment
+    uses: sparkgeo/github-actions/.github/workflows/dr-check-cdk.yml@<SHA>
+    with:
+      working-directory: infra
+      runtime: node                       # or python
+      strict-rules: RDSMultiAZSupport,DynamoDBPITREnabled
+      actions-ref: <SHA>
+```
+
+The report keeps the rules listed in [`policies/dr/cdk-nag-rules.txt`](policies/dr/cdk-nag-rules.txt): RDS, DynamoDB, EFS and EBS in a backup plan; RDS backups and Multi-AZ; DynamoDB point-in-time recovery; S3 versioning and replication; ElastiCache and Redshift backups. Other NIST findings are left out. Findings are advisory unless their rule is in `strict-rules`.
+
+An acknowledgement (`Validations.of(construct).acknowledge({ id, reason })`, which replaced `NagSuppressions` in cdk-nag 3) is listed with its reason. A reason under 20 characters is reported, and on a strict rule it does not count. Use the same reason conventions as the OpenTofu check: the tier, or the `security-exception` issue number ([`docs/dr-checklist.md`](docs/dr-checklist.md)).
+
+`cdk synth` exits non-zero whenever cdk-nag reports an error. The composite expects that and reads `cdk.out/validation-report.json`; a missing report fails the job, because it means the app never registered cdk-nag. `tests/dr-check-cdk/fixtures/app` is a small CDK app with deliberate gaps. The `dr-check-cdk` CI job synthesises it and checks the counts.
 
 ## Consuming repo CI setup
 
