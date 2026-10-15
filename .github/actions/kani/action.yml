@@ -1,0 +1,98 @@
+name: "Kani"
+description: |
+  Rust bounded model checking with Kani (SecOps plan Step 39, issue #131),
+  as verify-brief.yml does it: runs only when a tracked .rs file contains
+  `kani::proof`, then `cargo kani` in each crate holding one; a reachable
+  panic, overflow or failed assertion fails. kani-verifier is installed from
+  crates.io at a pinned version with --locked (`cargo kani setup` fetches its
+  matching CBMC bundle and nightly toolchain); shell rather than
+  model-checking/kani-github-action, which the org allowlist does not list.
+  Writes kani-<crate>.json and, with gate, the brief and summary.json.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  working-directory:
+    description: "Searched for tracked .rs files containing kani::proof."
+    default: "."
+  kani-version:
+    description: "kani-verifier crate version."
+    default: "0.68.0"
+  output-dir:
+    description: "Where kani-*.json, the logs, the brief and summary.json go."
+    default: "verify-lean-artifacts"
+  gate:
+    description: "Build the brief and exit 1 on a failed harness."
+    default: "true"
+outputs:
+  found:
+    description: "true when a kani::proof harness exists."
+    value: ${{ steps.detect.outputs.found }}
+  kani:
+    description: "success or failure; empty when no harness exists."
+    value: ${{ steps.run.outputs.outcome }}
+  blocking:
+    description: "Blocking findings (set when gate is true)."
+    value: ${{ steps.brief.outputs.blocking }}
+runs:
+  using: "composite"
+  steps:
+    - id: detect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        OUT: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        ART="$(mkdir -p "${OUT}" && cd "${OUT}" && pwd)"
+        # the crate of each harness file: the nearest directory up with a Cargo.toml
+        git ls-files '*.rs' | xargs -r grep -l 'kani::proof' 2>/dev/null | while IFS= read -r f; do
+          d="$(dirname "${f}")"
+          while [ "${d}" != "." ] && [ ! -f "${d}/Cargo.toml" ]; do d="$(dirname "${d}")"; done
+          echo "${d}"
+        done | sort -u > "${ART}/kani-crates.txt" || true
+        found=false; [ -s "${ART}/kani-crates.txt" ] && found=true
+        echo "  kani::proof found: ${found} ($(wc -l < "${ART}/kani-crates.txt") crate(s))"
+        { echo "found=${found}"; echo "art=${ART}"; } >> "${GITHUB_OUTPUT}"
+
+    - id: install
+      if: steps.detect.outputs.found == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.kani-version }}
+      run: |
+        set -euo pipefail
+        cargo install --locked kani-verifier --version "${VERSION}" --quiet
+        cargo kani setup > /dev/null
+
+    - id: run
+      if: steps.detect.outputs.found == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ART: ${{ steps.detect.outputs.art }}
+      run: |
+        set -euo pipefail
+        PREFIX="$(git rev-parse --show-prefix 2>/dev/null || true)"
+        outcome=success
+        while IFS= read -r crate; do
+          n="$(echo "${crate}" | tr '/.' '__')"
+          rc=0
+          ( cd "${crate}" && cargo kani ) > "${ART}/kani-${n}.txt" 2>&1 || rc=$?
+          grep -E '^Complete - ' "${ART}/kani-${n}.txt" || tail -5 "${ART}/kani-${n}.txt"
+          [ "${rc}" -eq 0 ] || outcome=failure
+          python3 -I "${GITHUB_ACTION_PATH}/../lean/lean.py" kani --log "${ART}/kani-${n}.txt" --rc "${rc}" \
+            --crate "${PREFIX}${crate}" --output "${ART}/kani-${n}.json"
+        done < "${ART}/kani-crates.txt"
+        echo "outcome=${outcome}" >> "${GITHUB_OUTPUT}"
+
+    - id: brief
+      if: inputs.gate == 'true'
+      shell: bash
+      env:
+        ART: ${{ steps.detect.outputs.art }}
+      run: |
+        set -euo pipefail
+        rc=0
+        python3 -I "${GITHUB_ACTION_PATH}/../lean/lean.py" brief --art "${ART}" --gate || rc=$?
+        cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+        exit "${rc}"

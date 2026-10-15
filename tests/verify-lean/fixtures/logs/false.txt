@@ -1,0 +1,12 @@
+info: fixture: no previous manifest, creating one from scratch
+info: toolchain not updated; already up-to-date
+✖ [2/3] Building Fixture (213ms)
+trace: .> LEAN_PATH=/runner/_temp/wt-131/tests/verify-lean/fixtures/false/.lake/build/lib/lean /runner/_temp/lean-dl/elan-home/toolchains/leanprover--lean4---v4.35.0/bin/lean /runner/_temp/wt-131/tests/verify-lean/fixtures/false/Fixture.lean -o /runner/_temp/wt-131/tests/verify-lean/fixtures/false/.lake/build/lib/lean/Fixture.olean -i /runner/_temp/wt-131/tests/verify-lean/fixtures/false/.lake/build/lib/lean/Fixture.ilean -c /runner/_temp/wt-131/tests/verify-lean/fixtures/false/.lake/build/ir/Fixture.c --setup /runner/_temp/wt-131/tests/verify-lean/fixtures/false/.lake/build/ir/Fixture.setup.json --json
+error: Fixture.lean:3:2: omega could not prove the goal:
+a possible counterexample may satisfy the constraints
+  a ≥ 0
+where
+ a := ↑n
+Some required targets logged failures:
+- Fixture
+error: build failed

@@ -1,0 +1,207 @@
+name: Verify (Lean)
+
+# Reusable PR check (issue #131, plan Step 39, Advanced tier): machine-checked
+# proofs. `lake build --wfail` on the Lean 4 project (any `sorry` fails), the
+# Mathlib build cache restored, and the .olean tree plus build log kept as
+# design-assurance evidence (400 days by default). A `kani` job runs
+# `cargo kani` when a tracked .rs file contains `kani::proof` (verify-brief.yml
+# steps "Lean 4", "Detect Kani proofs", "Kani"). Both run in shell, not
+# through leanprover/lean-action or model-checking/kani-github-action: the
+# org allowlist admits no unlisted third-party action, and an unlisted one
+# fails the whole run at startup. One rolling PR comment, gate last.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com (elan, toolchains, Kani
+# bundle), the Mathlib cache host, crates.io and static.rust-lang.org (Kani).
+
+on:
+  workflow_call:
+    inputs:
+      project-dir:
+        description: 'Lake project (lakefile.lean or lakefile.toml)'
+        default: 'proofs/'
+        type: string
+      lean-toolchain:
+        description: 'Empty reads lean-toolchain file'
+        default: ''
+        type: string
+      use-mathlib-cache:
+        description: 'Fetch the Mathlib build cache (lake exe cache get)'
+        default: true
+        type: boolean
+      retain-artifacts-days:
+        description: 'Retention of the proof evidence (repository and org limits apply)'
+        default: 400
+        type: number
+      kani-version:
+        description: 'kani-verifier crate version for the kani job'
+        default: '0.68.0'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned verify-lean.yml to, so the
+          whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      lean:
+        description: 'success or failure; empty when there is no Lean project'
+        value: ${{ jobs.lean.outputs.lean }}
+      kani:
+        description: 'success or failure; empty when there is no kani::proof'
+        value: ${{ jobs.kani.outputs.kani }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants contents: read and pull-requests: write (the
+# rolling comment).
+jobs:
+  lean:
+    name: Lean 4
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      lean: ${{ steps.lean.outputs.lean }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout verify composites
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      # Toolchains and the Mathlib cache, keyed on the manifest and toolchain.
+      - name: Restore Lean cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.elan
+            ~/.cache/mathlib
+            ${{ inputs.project-dir }}/.lake
+          key: lean-${{ hashFiles(format('{0}/lean-toolchain', inputs.project-dir), format('{0}/lake-manifest.json', inputs.project-dir)) }}-${{ github.sha }}
+          restore-keys: lean-${{ hashFiles(format('{0}/lean-toolchain', inputs.project-dir), format('{0}/lake-manifest.json', inputs.project-dir)) }}-
+
+      - id: lean
+        uses: ./.sparkgeo-github-actions/.github/actions/lean
+        with:
+          project-dir: ${{ inputs.project-dir }}
+          lean-toolchain: ${{ inputs.lean-toolchain }}
+          use-mathlib-cache: ${{ inputs.use-mathlib-cache }}
+          output-dir: ${{ runner.temp }}/verify-lean
+          gate: 'false'
+
+      - name: Keep the proof evidence (.olean tree, build log)
+        if: always() && steps.lean.outputs.lean != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: lean-evidence-${{ github.event.pull_request.number || github.run_id }}
+          path: |
+            ${{ runner.temp }}/verify-lean
+            ${{ inputs.project-dir }}/.lake/build
+            ${{ inputs.project-dir }}/lean-toolchain
+            ${{ inputs.project-dir }}/lake-manifest.json
+          retention-days: ${{ inputs.retain-artifacts-days }}
+
+  kani:
+    name: Kani
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      kani: ${{ steps.kani.outputs.kani }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout verify composites
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: kani
+        uses: ./.sparkgeo-github-actions/.github/actions/kani
+        with:
+          kani-version: ${{ inputs.kani-version }}
+          output-dir: ${{ runner.temp }}/verify-kani
+          gate: 'false'
+
+      - name: Keep the Kani results
+        if: always() && steps.kani.outputs.found == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: kani-${{ github.event.pull_request.number || github.run_id }}
+          path: ${{ runner.temp }}/verify-kani
+          retention-days: 30
+
+  # One comment and one gate over both jobs, last, so a red build always
+  # arrives with its explanation attached to the PR.
+  report:
+    name: Report
+    needs: [lean, kani]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout verify composites
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Collect results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: '{lean-evidence,kani}-${{ github.event.pull_request.number || github.run_id }}'
+          path: ${{ runner.temp }}/results
+
+      - name: Brief
+        env:
+          RESULTS: ${{ runner.temp }}/results
+          ART: ${{ runner.temp }}/verify-lean-report
+          LEAN_RESULT: ${{ needs.lean.result }}
+          KANI_RESULT: ${{ needs.kani.result }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${ART}"
+          find "${RESULTS}" \( -name 'lean.json' -o -name 'kani-*.json' \) -exec cp {} "${ART}/" \; 2>/dev/null || true
+          python3 -I .sparkgeo-github-actions/.github/actions/lean/lean.py brief --art "${ART}" || true
+          # a job that crashed before writing its JSON still fails the gate
+          for r in "lean:${LEAN_RESULT}" "kani:${KANI_RESULT}"; do
+            case "${r#*:}" in success|skipped) continue ;; esac
+            jq --arg j "${r%%:*}" '.gate.fail += ["the " + $j + " job did not finish"]' "${ART}/summary.json" > "${ART}/s"
+            mv "${ART}/s" "${ART}/summary.json"
+          done
+          cat "${ART}/verify-brief.md" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Post the brief
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BRIEF: ${{ runner.temp }}/verify-lean-report/verify-brief.md
+        run: |
+          gh pr comment "${PR}" --body-file "${BRIEF}" --edit-last --create-if-none \
+            || gh pr comment "${PR}" --body-file "${BRIEF}" || true
+
+      - name: Gate
+        env:
+          SUMMARY: ${{ runner.temp }}/verify-lean-report/summary.json
+        run: |
+          jq -r '.gate.fail[] | "  FAIL: " + .' "${SUMMARY}"
+          jq -e '.gate.fail | length == 0' "${SUMMARY}" > /dev/null

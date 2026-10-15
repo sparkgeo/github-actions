@@ -1,0 +1,206 @@
+Kani Rust Verifier 0.68.0 (cargo plugin)
+CBMC 6.11.0
+   Compiling kani-fixture v0.1.0 (/runner/_temp/wt-131/tests/verify-lean/fixtures/kani)
+warning: use of an unstable feature
+ --> <crate attribute>:1:12
+  |
+1 | #![feature(register_tool)]
+  |            ^^^^^^^^^^^^^
+  |
+  = note: requested on the command line with `--force-warn unstable-features`
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s
+Checking harness proofs::tile_index_no_overflow...
+CBMC 6.11.0 (cbmc-6.11.0)
+CBMC version 6.11.0 (cbmc-6.11.0) 64-bit x86_64 linux
+Reading GOTO program from file /runner/_temp/kani-target/kani/x86_64-unknown-linux-gnu/debug/build/kani-fixture/a9a2fdb0047c0d08/out/kani_fixture-a9a2fdb0047c0d08__RNvNtCsiHQyEY3MPeN_12kani_fixture6proofs22tile_index_no_overflow.out
+Generating GOTO Program
+Adding CPROVER library (x86_64)
+Removal of function pointers and virtual functions
+Generic Property Instrumentation
+Running with 16 object bits, 48 offset bits (user-specified)
+Starting Bounded Model Checking
+Runtime Symex: 0.0061481s
+size of program expression: 159 steps
+slicing removed 59 assignments
+Generated 10 VCC(s), 10 remaining after simplification
+Runtime Postprocess Equation: 6.4169e-05s
+Passing problem to propositional reduction
+converting SSA
+Runtime Convert SSA: 0.0108659s
+Running propositional reduction
+Post-processing
+Runtime Post-process: 0.000123733s
+Solving with CaDiCaL 3.0.0
+3640 variables, 18662 clauses
+SAT checker: instance is SATISFIABLE
+Runtime Solver: 0.000517866s
+Runtime decision procedure: 0.0115964s
+Running propositional reduction
+Solving with CaDiCaL 3.0.0
+3641 variables, 18663 clauses
+SAT checker: instance is SATISFIABLE
+Runtime Solver: 0.000188853s
+Runtime decision procedure: 0.000339134s
+Running propositional reduction
+Solving with CaDiCaL 3.0.0
+3642 variables, 18664 clauses
+SAT checker: instance is SATISFIABLE
+Runtime Solver: 0.00258195s
+Runtime decision procedure: 0.00263909s
+Running propositional reduction
+Solving with CaDiCaL 3.0.0
+3643 variables, 18665 clauses
+SAT checker: instance is UNSATISFIABLE
+Runtime Solver: 0.00310061s
+Runtime decision procedure: 0.00317744s
+
+RESULTS:
+Check 1: proofs::tile_index_no_overflow.assertion.1
+	 - Status: SUCCESS
+	 - Description: "attempt to shift left with overflow"
+	 - Location: src/lib.rs:34:26 in function proofs::tile_index_no_overflow
+
+Check 2: proofs::tile_index_no_overflow.assertion.2
+	 - Status: SUCCESS
+	 - Description: "attempt to shift left with overflow"
+	 - Location: src/lib.rs:34:48 in function proofs::tile_index_no_overflow
+
+Check 3: tile_index.assertion.1
+	 - Status: SUCCESS
+	 - Description: "attempt to shift left with overflow"
+	 - Location: src/lib.rs:13:9 in function tile_index
+
+Check 4: tile_index.assertion.2
+	 - Status: FAILURE
+	 - Description: "attempt to multiply with overflow"
+	 - Location: src/lib.rs:13:5 in function tile_index
+
+Check 5: tile_index.assertion.3
+	 - Status: SUCCESS
+	 - Description: "attempt to add with overflow"
+	 - Location: src/lib.rs:13:5 in function tile_index
+
+
+SUMMARY:
+ ** 1 of 5 failed
+Failed Checks: attempt to multiply with overflow
+ File: "src/lib.rs", line 13, in tile_index
+
+VERIFICATION:- FAILED
+Verification Time: 0.07428413s
+
+Checking harness proofs::quadkey_len_bounded...
+CBMC 6.11.0 (cbmc-6.11.0)
+CBMC version 6.11.0 (cbmc-6.11.0) 64-bit x86_64 linux
+Reading GOTO program from file /runner/_temp/kani-target/kani/x86_64-unknown-linux-gnu/debug/build/kani-fixture/a9a2fdb0047c0d08/out/kani_fixture-a9a2fdb0047c0d08__RNvNtCsiHQyEY3MPeN_12kani_fixture6proofs19quadkey_len_bounded.out
+Generating GOTO Program
+Adding CPROVER library (x86_64)
+Removal of function pointers and virtual functions
+Generic Property Instrumentation
+Running with 16 object bits, 48 offset bits (user-specified)
+Starting Bounded Model Checking
+Runtime Symex: 0.00437793s
+size of program expression: 298 steps
+slicing removed 138 assignments
+Generated 16 VCC(s), 4 remaining after simplification
+Runtime Postprocess Equation: 6.061e-05s
+Passing problem to propositional reduction
+converting SSA
+Runtime Convert SSA: 0.000500463s
+Running propositional reduction
+Post-processing
+Runtime Post-process: 6.179e-06s
+Solving with CaDiCaL 3.0.0
+244 variables, 359 clauses
+SAT checker: instance is SATISFIABLE
+Runtime Solver: 5.9873e-05s
+Runtime decision procedure: 0.000611935s
+Running propositional reduction
+Solving with CaDiCaL 3.0.0
+245 variables, 360 clauses
+SAT checker: instance is UNSATISFIABLE
+Runtime Solver: 0.000350091s
+Runtime decision procedure: 0.000376167s
+
+RESULTS:
+Check 1: proofs::quadkey_len_bounded.assertion.1
+	 - Status: SUCCESS
+	 - Description: "assertion failed: n <= 30"
+	 - Location: src/lib.rs:24:9 in function proofs::quadkey_len_bounded
+
+Check 2: proofs::quadkey_len_bounded.assertion.2
+	 - Status: SUCCESS
+	 - Description: "assertion failed: zoom > 30 || n == usize::from(zoom)"
+	 - Location: src/lib.rs:25:9 in function proofs::quadkey_len_bounded
+
+Check 3: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.1
+	 - Status: SUCCESS
+	 - Description: "dereference failure: pointer NULL"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:50 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 4: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.2
+	 - Status: SUCCESS
+	 - Description: "dereference failure: pointer invalid"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:50 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 5: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.3
+	 - Status: SUCCESS
+	 - Description: "dereference failure: deallocated dynamic object"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:50 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 6: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.4
+	 - Status: SUCCESS
+	 - Description: "dereference failure: dead object"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:50 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 7: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.5
+	 - Status: SUCCESS
+	 - Description: "dereference failure: pointer outside object bounds"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:50 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 8: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.6
+	 - Status: SUCCESS
+	 - Description: "dereference failure: invalid integer address"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:50 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 9: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.7
+	 - Status: SUCCESS
+	 - Description: "dereference failure: pointer NULL"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:59 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 10: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.8
+	 - Status: SUCCESS
+	 - Description: "dereference failure: pointer invalid"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:59 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 11: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.9
+	 - Status: SUCCESS
+	 - Description: "dereference failure: deallocated dynamic object"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:59 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 12: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.10
+	 - Status: SUCCESS
+	 - Description: "dereference failure: dead object"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:59 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 13: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.11
+	 - Status: SUCCESS
+	 - Description: "dereference failure: pointer outside object bounds"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:59 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+Check 14: std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt.pointer_dereference.12
+	 - Status: SUCCESS
+	 - Description: "dereference failure: invalid integer address"
+	 - Location: ../../../../../../../../../../home/runner/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cmp.rs:2192:59 in function std::cmp::impls::<impl std::cmp::PartialOrd for u8>::lt
+
+
+SUMMARY:
+ ** 0 of 14 failed
+
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.045844857s
+
+Manual Harness Summary:
+Verification failed for - proofs::tile_index_no_overflow
+Complete - 1 successfully verified harnesses, 1 failures, 2 total.
