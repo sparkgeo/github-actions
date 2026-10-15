@@ -119,6 +119,6 @@ grep -q 'activity Bad Id: purpose is empty or a placeholder' "${TMP}/bad.log" ||
 
 echo "== missing ropa.yml"
 run nofile "${TMP}/nope.yml"
-[ "${rc}" -eq 1 ] && grep -q 'does not exist; copy docs/examples/ropa.yml' "${TMP}/nofile.log" || fail "missing file"
+{ [ "${rc}" -eq 1 ] && grep -q 'does not exist; copy docs/examples/ropa.yml' "${TMP}/nofile.log"; } || fail "missing file"
 
 echo "all ropa checks passed"
