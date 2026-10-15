@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| Anonymise Fixtures | [`anonymise-fixtures.yml`](.github/workflows/anonymise-fixtures.yml) | `workflow_call` | Reusable, environment-gated: masks a production dump with postgresql_anonymizer in a throwaway PostGIS container (names, emails, phones, free text, identifiers, geometry snapped to a geohash cell), verifies the dump with presidio, publishes only a clean artefact (#123) |
 | PII Scan | [`pii-scan.yml`](.github/workflows/pii-scan.yml) | `workflow_call` | Reusable presidio gate over the text and data files a PR changes: structured entities block, free-text entities advise, `.pii-allowlist.yml` for placeholders, SARIF to the Security tab; values never shown (#97) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
@@ -42,6 +43,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Anonymise Fixtures | [`anonymise`](.github/actions/anonymise/action.yml) | Restores a dump into the digest-pinned anonymizer image with PostGIS, applies the anon rules with the geohash precision, runs static masking, dumps without owners, privileges or labels; `masking.json` lists the masked columns | `dump-path`, `masking-rules` (default: `db/anon-rules.sql`), `geohash-precision` (default: `5`), `output-dir`, `database`, `image`, `postgis-package` (default: `postgresql-18-postgis-3`) |
 | PII Scan | [`presidio`](.github/actions/presidio/action.yml) | Installs presidio-analyzer and the spaCy model into a cached virtualenv, scans the changed (or all) files matching `include-globs` with the predefined and bundled custom recognizers, applies the allowlist, writes SARIF, annotations and a per-entity summary, fails on `block-entities` | `include-globs`, `entities`, `block-entities` (default: `CREDIT_CARD,US_SSN,CA_SIN,IBAN_CODE`), `score-threshold` (default: `0.7`), `model` (default: `en_core_web_sm`), `allowlist-path` (default: `.pii-allowlist.yml`), `recognizers-path`, `scope` (default: `changed`), `sarif-path`, `presidio-version` (default: `2.2.364`), `spacy-version` (default: `3.8.16`), `model-version` (default: `3.8.0`) |
 
 ### GitHub Actionlint
@@ -146,6 +148,23 @@ jobs:
 ```
 
 Egress for the install step: PyPI and `github.com/explosion/spacy-models` releases (the model wheel). The virtualenv is cached on the presidio, spaCy and model versions.
+
+### Anonymise Fixtures (postgresql_anonymizer)
+
+SecOps plan Step 36 Standard (issue #123): no production personal data in lower environments needs a supply of realistic test data. The workflow masks a production dump in place with postgresql_anonymizer (declarative `SECURITY LABEL` rules; a geohash truncation for geometry so location trails cannot be re-identified), then presidio scans the dump as the independent check and only a clean dump is published. It runs in a protected environment because the input is production data. Rule authoring, geohash precision guidance, when ARX is the better tool and the documented re-identification spot check: [`docs/anonymisation.md`](docs/anonymisation.md); starter rules: [`docs/examples/anon-rules.sql`](docs/examples/anon-rules.sql).
+
+```yaml
+jobs:
+  anonymise:
+    permissions:
+      contents: read
+      actions: read
+    uses: sparkgeo/github-actions/.github/workflows/anonymise-fixtures.yml@<SHA>
+    with:
+      actions-ref: <SHA>   # same SHA as above
+      source-dump-artifact: prod-dump
+      environment: anonymise
+```
 
 ### Storage Optimizer
 

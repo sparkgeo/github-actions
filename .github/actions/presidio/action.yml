@@ -41,6 +41,9 @@ inputs:
   scope:
     description: "changed (PR diff when on a pull_request, else the tree) or all."
     default: "changed"
+  files-list:
+    description: "A file listing paths to scan (one per line, relative to the workspace); replaces the git-derived list, e.g. for an artefact that is not in the tree."
+    default: ""
   sarif-path:
     description: "SARIF output file."
     default: "pii-scan.sarif"
@@ -94,12 +97,16 @@ runs:
       shell: bash
       env:
         SCOPE: ${{ inputs.scope }}
+        FILES_LIST: ${{ inputs.files-list }}
         PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
         PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
       run: |
         set -euo pipefail
         LIST="${RUNNER_TEMP}/pii-files.txt"
-        if [ "${SCOPE}" = "changed" ] && [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
+        if [ -n "${FILES_LIST}" ]; then
+          cp "${FILES_LIST}" "${LIST}"
+          echo "Scope: given list ($(wc -l < "${LIST}") candidate(s))"
+        elif [ "${SCOPE}" = "changed" ] && [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
           git fetch -q --depth=1 origin "${PR_BASE_SHA}" 2>/dev/null || true
           git diff --name-only --diff-filter=ACMR "${PR_BASE_SHA}...${PR_HEAD_SHA}" > "${LIST}" 2>/dev/null \
             || git diff --name-only --diff-filter=ACMR "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "${LIST}"
