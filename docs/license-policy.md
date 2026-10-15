@@ -14,7 +14,7 @@ GPL and AGPL **tools** that run in CI or on a developer machine and are not ship
 
 ## Exceptions
 
-A dependency outside the classes above needs a [security exception](../.github/ISSUE_TEMPLATE/security-exception.yml) naming the package, the licence, where it ships, and the Legal reviewer; the exception is the purl added to `allow-dependencies-licenses`. Review it with the other exceptions.
+A dependency outside the classes above needs a security exception issue (the `security-exception` template from #81) naming the package, the licence, where it ships, and the Legal reviewer; the exception is the purl added to `allow-dependencies-licenses`. Review it with the other exceptions.
 
 ## Gate in CI
 
