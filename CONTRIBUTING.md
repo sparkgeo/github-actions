@@ -112,6 +112,10 @@ jobs:
 The composite actions are individually callable and require explicit job shells with
 correct permissions (see README for full usage examples).
 
+## Verification
+
+Changes on paths listed in the repository's `verify.yml` (or matching the high-risk fallback globs) carry the rungs the map names: a contract, a property, a fuzz target, a Dafny lemma, a TLA+ invariant or a Lean theorem. The PR body's `## Verification` table cites which covers each acceptance criterion. Verdict wording, budgets and what blocks at each tier: [`docs/verification.md`](docs/verification.md).
+
 ## Security pillars reference
 
 | Pillar | Issue | Summary |

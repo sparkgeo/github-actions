@@ -1,0 +1,102 @@
+name: "Verification Map"
+description: |
+  Reads verify.yml (SecOps plan Step 39, issue #132), validates it against
+  policies/verification/verify.schema.json, resolves the files a PR changed
+  to their risk, rungs and tool (HIGH_RISK_GLOBS fallback when the map is
+  absent), reports high-risk paths with no rung and implementation changes
+  whose model did not change, and checks the PR body's "## Verification"
+  table when mapped paths changed. Writes map.json for the verify-*.yml
+  workflows to read.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  map-path:
+    description: "verify.yml in the repository."
+    default: "verify.yml"
+  high-risk-globs:
+    description: "Space-separated fallback globs; empty uses the HIGH_RISK_GLOBS list from verify-brief.yml."
+    default: ""
+  changed-list:
+    description: "File listing changed paths; empty derives it from the pull request (base...head) or lists the whole tree."
+    default: ""
+  pr-body-path:
+    description: "File holding the PR body; empty reads it from the pull_request event."
+    default: ""
+  require-table:
+    description: "Fail when mapped paths changed and the PR body's verification table is missing or empty (Standard tier)."
+    default: "false"
+  strict-high-risk:
+    description: "Fail on a changed high-risk path with no rung."
+    default: "false"
+  output-path:
+    description: "map.json path."
+    default: "verify-map.json"
+outputs:
+  mapped-count:
+    description: "Changed files on mapped paths."
+    value: ${{ steps.check.outputs.mapped-count }}
+  bare-high-risk-count:
+    description: "Changed high-risk files with no rung."
+    value: ${{ steps.check.outputs.bare-high-risk-count }}
+  error-count:
+    description: "Errors."
+    value: ${{ steps.check.outputs.error-count }}
+  fallback:
+    description: "true when no verify.yml was found."
+    value: ${{ steps.check.outputs.fallback }}
+runs:
+  using: "composite"
+  steps:
+    - id: env
+      shell: bash
+      run: |
+        set -euo pipefail
+        ENV="${RUNNER_TEMP}/verify-map-env"
+        [ -x "${ENV}/bin/python" ] || { python3 -m venv "${ENV}"; "${ENV}/bin/python" -m pip install --quiet --disable-pip-version-check "pyyaml==6.0.3" "jsonschema==4.26.0"; }
+        echo "python=${ENV}/bin/python" >> "${GITHUB_OUTPUT}"
+
+    - id: inputs
+      shell: bash
+      env:
+        CHANGED: ${{ inputs.changed-list }}
+        BODY: ${{ inputs.pr-body-path }}
+        PR_BODY: ${{ github.event.pull_request.body }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/verify-map"; mkdir -p "${OUT}"
+        if [ -n "${CHANGED}" ]; then
+          cp "${CHANGED}" "${OUT}/changed.txt"
+        elif [ -n "${PR_BASE_SHA}" ] && [ -n "${PR_HEAD_SHA}" ]; then
+          git fetch -q --depth=1 origin "${PR_BASE_SHA}" 2>/dev/null || true
+          git diff --name-only --diff-filter=ACMR "${PR_BASE_SHA}...${PR_HEAD_SHA}" > "${OUT}/changed.txt" 2>/dev/null \
+            || git diff --name-only --diff-filter=ACMR "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "${OUT}/changed.txt"
+        else
+          git ls-files > "${OUT}/changed.txt"
+        fi
+        if [ -n "${BODY}" ]; then
+          cp "${BODY}" "${OUT}/body.md"
+        elif [ -n "${PR_BODY}" ]; then
+          printf '%s\n' "${PR_BODY}" > "${OUT}/body.md"
+        fi
+        echo "dir=${OUT}" >> "${GITHUB_OUTPUT}"
+
+    - id: check
+      shell: bash
+      env:
+        PY: ${{ steps.env.outputs.python }}
+        OUT: ${{ steps.inputs.outputs.dir }}
+        MAP: ${{ inputs.map-path }}
+        SCHEMA: ${{ github.action_path }}/../../../policies/verification/verify.schema.json
+        GLOBS: ${{ inputs.high-risk-globs }}
+        REQUIRE: ${{ inputs.require-table }}
+        STRICT: ${{ inputs.strict-high-risk }}
+        OUTPUT: ${{ inputs.output-path }}
+      run: |
+        set -euo pipefail
+        ARGS=(--changed "${OUT}/changed.txt" --map "${MAP}" --schema "${SCHEMA}" --high-risk-globs "${GLOBS}" --output "${OUTPUT}")
+        [ -f "${OUT}/body.md" ] && ARGS+=(--pr-body "${OUT}/body.md")
+        [ "${REQUIRE}" = "true" ] && ARGS+=(--require-table)
+        [ "${STRICT}" = "true" ] && ARGS+=(--strict-high-risk)
+        "${PY}" -I "${GITHUB_ACTION_PATH}/check.py" "${ARGS[@]}"

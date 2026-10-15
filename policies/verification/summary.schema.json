@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sparkgeo/github-actions/policies/verification/summary.schema.json",
+  "title": "artifacts/summary.json of a verification run",
+  "description": "The counters verify-brief.yml writes after a run and gates on. Each verify-*.yml emits the fields it owns (others null) so a combined brief can be rebuilt from several runs by taking, per field, the non-null value. Gate rules: counterexamples, dafny, tla, lean == failure, kani == failure, go_vet, go_crashers always fail; ts_errors_changed and bare_high_risk fail when strict is true, otherwise warn; unverified and diff_differs warn.",
+  "type": "object",
+  "required": ["counterexamples", "unverified", "bare_high_risk", "strict"],
+  "additionalProperties": true,
+  "properties": {
+    "changed_public": {"type": ["integer", "null"], "description": "Changed public Python functions in non-test files (contract census)."},
+    "contracted": {"type": ["integer", "null"], "description": "Of those, functions carrying a contract (icontract, deal, PEP 316 docstring, trailing assert)."},
+    "bare_high_risk": {"type": "integer", "description": "Changed public functions on high-risk paths with no contract. Blocks when strict."},
+    "counterexamples": {"type": "integer", "description": "CrossHair counterexamples: a stated contract is false. Always blocks."},
+    "unverified": {"type": "integer", "description": "Contracts CrossHair reported as Not confirmed (budget or opaque call). Advisory; blocks on high-risk paths at Standard."},
+    "exhausted": {"type": ["integer", "null"], "description": "Contracts Confirmed over all paths."},
+    "diff_differs": {"type": ["integer", "null"], "description": "crosshair diffbehavior: refactored functions that differ from base on some input (refactor label only). Advisory."},
+    "go_vet": {"type": ["integer", "null"], "description": "go vet exit code on changed packages; non-zero blocks."},
+    "go_crashers": {"type": ["integer", "null"], "description": "New files under testdata/fuzz after the per-PR fuzz. Any blocks."},
+    "go_fuzz_targets": {"type": ["integer", "null"], "description": "Fuzz* targets run."},
+    "ts_errors_changed": {"type": ["integer", "null"], "description": "tsc errors under the strictest flags in files this PR changed. Blocks when strict."},
+    "ts_property_files": {"type": ["integer", "null"], "description": "Changed test files using fast-check."},
+    "dafny": {"type": ["integer", "null"], "description": "dafny verify exit code; non-zero blocks."},
+    "tla": {"type": ["integer", "null"], "description": "TLC exit code over specs with a sibling .cfg; non-zero blocks."},
+    "lean": {"type": ["string", "null"], "enum": ["success", "failure", "skipped", "cancelled", null], "description": "lean-action outcome with --wfail; failure blocks."},
+    "kani": {"type": ["string", "null"], "enum": ["success", "failure", "skipped", "cancelled", null], "description": "Kani outcome when a kani::proof exists; failure blocks."},
+    "gobra": {"type": ["integer", "null"], "description": "Gobra exit code (#129, not in the brief); non-zero blocks at Standard."},
+    "alloy": {"type": ["integer", "null"], "description": "Alloy analyzer exit code (#130); an instance of a counterexample assertion blocks."},
+    "mutation_score": {"type": ["number", "null"], "description": "Killed mutants / total on mapped modules (#125, #126, #127); advisory until the threshold is set."},
+    "strict": {"type": "boolean", "description": "STRICT_HIGH_RISK: uncontracted high-risk functions and TypeScript errors block instead of warn."},
+    "tool": {"type": ["string", "null"], "description": "Which verify-*.yml wrote this partial summary."}
+  }
+}
