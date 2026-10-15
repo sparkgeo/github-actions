@@ -366,6 +366,10 @@ jobs:
         with:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
+          # tests/serverless-scan/fixtures/package/requirements.txt pins
+          # requests 2.19.1 on purpose so the package scan has a finding
+          # (GHSA-x84v-xcm2-53pg). Nothing in this repo installs it.
+          allow-ghsas: GHSA-x84v-xcm2-53pg
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
