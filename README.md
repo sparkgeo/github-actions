@@ -11,6 +11,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
+| Renovate | [`renovate.yml`](.github/workflows/renovate.yml) | `schedule` (every 4 h), `workflow_dispatch` | Central self-hosted Renovate runner for every ecosystem except `github-actions`; repositories opt in with a `renovate.json` extending the shared preset [`default.json`](default.json) (5-day release cooldown, security fixes exempt, docker digests pinned); `dry-run` input (#86) |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -120,6 +121,10 @@ jobs:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}  # leave empty on pull_request
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}           # leave empty on pull_request
 ```
+
+### Renovate (dependency updates, release cooldown)
+
+SecOps plan Steps 3 and 7 (issue #86): Dependabot owns the `github-actions` ecosystem (#87) and Renovate owns everything else from one central runner, so every repository gets the same policy from one `renovate.json` line: `{"extends": ["github>sparkgeo/github-actions"]}`. The shared preset waits five days before pulling a new release (the compromised-package window), lets security fixes through at once, pins Docker digests, groups minor and patch updates and runs lock-file maintenance weekly. The same cooldown at install time for pnpm, npm and uv, the manager split and the one-time App setup: [`docs/dependency-management.md`](docs/dependency-management.md).
 
 ### Storage Optimizer
 

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Self-hosted (global) settings for the central runner in renovate.yml (issue #86). Repository-level policy lives in default.json, which each repository extends from its own renovate.json.",
+  "platform": "github",
+  "autodiscover": true,
+  "autodiscoverFilter": [
+    "sparkgeo/*"
+  ],
+  "onboarding": false,
+  "requireConfig": "required",
+  "gitAuthor": "sparkgeo-renovate[bot] <sparkgeo-renovate[bot]@users.noreply.github.com>",
+  "repositoryCache": "enabled",
+  "persistRepoData": true,
+  "binarySource": "install"
+}

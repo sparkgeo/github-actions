@@ -28,6 +28,8 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress monitor — audits outbound network calls; baseline for enforce mode | 2026-06-01 |
 | `aws-actions/configure-aws-credentials` | AWS (Amazon) | `99214aa6` (v6.1.3) | `aws-oidc-auth` | Assume IAM role via GitHub OIDC; exchanges OIDC token for short-lived AWS credentials | 2026-06-09 |
 | `ghcr.io/oxsecurity/megalinter[-<flavor>]` (Docker image, not an action) | OX Security | tag `v9.6.0` (`MEGALINTER_VERSION` in `lint-app.yml`) | `lint-app.yml` | All-language lint/format gate; auto-detects languages, emits SARIF. Run with `docker run` so the `flavor` input selects the image and only one image is pulled; not in the dependency graph, so no licence exemption needed (AGPL-3.0, run in CI only, never redistributed) | 2026-06-10 |
+| `actions/create-github-app-token` | GitHub (org-owned) | `64ab729a` (v3.3.0) | `renovate.yml` | Mint a short-lived installation token from the sparkgeo-renovate App | 2026-10-15 |
+| `renovatebot/github-action` | Renovate (Mend) | `f0f41e5f` (v46.3.8), renovate `44.161.1` | `renovate.yml` | Run self-hosted Renovate in the `ghcr.io/renovatebot/renovate` image | 2026-10-15 |
 
 ## Data handling and third-party telemetry
 
@@ -115,7 +117,7 @@ Before approving a new action, verify all of the following:
 
 ## Renovate SHA update policy
 
-Renovate (issue #8) is configured with `pinDigests: true` for the `github-actions` manager. When a new version of an approved action is released, Renovate opens a PR that updates both the SHA and the inline version comment. Do not update SHAs manually — let Renovate handle it. The only exception is an emergency security patch: update immediately, then update this table's review date.
+Dependabot (issue #87) owns the `github-actions` ecosystem; Renovate (issue #86) owns the other managers and pins Docker digests. When a new version of an approved action is released, Renovate opens a PR that updates both the SHA and the inline version comment. Do not update SHAs manually — let Renovate handle it. The only exception is an emergency security patch: update immediately, then update this table's review date.
 
 ## Org allowlist patterns (current)
 
@@ -130,6 +132,7 @@ aws-actions/*
 google-github-actions/*
 pnpm/*
 oxsecurity/*
+renovatebot/*
 ```
 
 GitHub-owned actions (`actions/*`, `github/*`) are covered by `github_owned_allowed: true` and do not need explicit patterns.

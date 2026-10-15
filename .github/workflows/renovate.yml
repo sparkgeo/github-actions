@@ -1,0 +1,91 @@
+name: Renovate
+
+# Central self-hosted Renovate runner (issue #86, plan Steps 3 and 7). Owns
+# every ecosystem except github-actions (Dependabot, #87). Repositories opt in
+# with a renovate.json extending github>sparkgeo/github-actions (default.json
+# in this repository: 5-day release cooldown, security fixes exempt, docker
+# digests pinned, grouped minor/patch, weekly lock-file maintenance). Global
+# runner settings are in .github/renovate-global.json: autodiscover over the
+# org, no onboarding PRs, a repository without renovate.json is skipped.
+#
+# Needs the sparkgeo-renovate GitHub App installed on the org's repositories
+# (Contents R/W, Pull requests R/W, Issues R/W, Workflows R/W, Metadata R) with
+# RENOVATE_APP_ID as an org variable and RENOVATE_APP_PRIVATE_KEY as an org
+# secret, and renovatebot/* on the org actions allowlist
+# (docs/approved-actions.md).
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # every four hours; the preset's schedule limits when PRs open
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Dry run: extract (parse only), lookup (also resolve updates), full (everything but writes)'
+        type: choice
+        default: 'off'
+        options:
+          - 'off'
+          - extract
+          - lookup
+          - full
+      repositories:
+        description: 'Comma-separated repositories to run on instead of autodiscovery (owner/name)'
+        default: ''
+        type: string
+      log-level:
+        description: 'Renovate log level'
+        type: choice
+        default: info
+        options:
+          - info
+          - debug
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    name: Renovate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The App token is what Renovate pushes branches and opens PRs with; the
+      # workflow's own GITHUB_TOKEN stays read-only.
+      - name: Mint a GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        with:
+          app-id: ${{ vars.RENOVATE_APP_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          # autodiscovery needs every repository the App is installed on; the
+          # permission-* inputs below are the whole grant, nothing inherited
+          owner: ${{ github.repository_owner }}  # zizmor: ignore[github-app]
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+          permission-workflows: write
+          permission-metadata: read
+
+      - name: Run Renovate
+        uses: renovatebot/github-action@f0f41e5f2e706165f6814b1d0f0d0e319de7d1d9  # v46.3.8
+        with:
+          configurationFile: .github/renovate-global.json
+          token: ${{ steps.app-token.outputs.token }}
+          renovate-version: 44.161.1
+        env:
+          LOG_LEVEL: ${{ inputs.log-level || 'info' }}
+          RENOVATE_DRY_RUN: ${{ inputs.dry-run != 'off' && inputs.dry-run || '' }}
+          RENOVATE_AUTODISCOVER: ${{ inputs.repositories == '' && 'true' || 'false' }}
+          RENOVATE_REPOSITORIES: ${{ inputs.repositories }}
