@@ -1,0 +1,86 @@
+name: "eol-check"
+description: |
+  Checks the runtimes a repository runs on against endoflife.date (SecOps
+  plan Step 3 Standard; issue #230). Detects versions from .python-version,
+  pyproject.toml requires-python, .nvmrc, package.json engines.node, go.mod
+  `go`, Dockerfile FROM tags and .tool-versions; explicit products win.
+
+  A runtime past its end of life is a finding (High when production is true,
+  Medium otherwise, Step 25): an error annotation, a row in the job summary,
+  and one issue per finding labelled security-finding + sla:<severity> +
+  end-of-life, updated in place on later runs. A runtime within warn-days is
+  a warning only. The job does not fail on findings; the issues carry them.
+
+  The endoflife.date API is in beta, so each response is cached with
+  actions/cache and read back when the API is unreachable; with nothing
+  cached the product is reported unknown and the check fails open.
+
+  Required permissions on the calling job: contents: read, plus issues: write
+  when open-issues is true.
+inputs:
+  working-directory:
+    description: "Directory searched for version files."
+    default: "."
+  products:
+    description: "Explicit product:version pairs (endoflife.date product names), e.g. python:3.10,nodejs:20,postgresql:14,django:4.2. A product named here replaces detection for it."
+    default: ""
+  warn-days:
+    description: "Warn when end of life is this many days away or closer."
+    default: "90"
+  production:
+    description: "true marks an end-of-life runtime High, false Medium."
+    default: "true"
+  open-issues:
+    description: "Open or update one issue per end-of-life finding."
+    default: "true"
+  github-token:
+    description: "Token for the issue step."
+    default: ${{ github.token }}
+outputs:
+  eol-count:
+    description: "Runtimes past end of life."
+    value: ${{ steps.check.outputs.eol-count }}
+  warn-count:
+    description: "Runtimes within warn-days of end of life."
+    value: ${{ steps.check.outputs.warn-count }}
+  unknown-count:
+    description: "Versions with no matching endoflife.date product or cycle, or no response."
+    value: ${{ steps.check.outputs.unknown-count }}
+  report:
+    description: "Path of the JSON report (one row per detected version)."
+    value: ${{ steps.check.outputs.report }}
+runs:
+  using: "composite"
+  steps:
+    # Saved under a new key each run; restore-keys brings back the newest one.
+    - name: Restore cached endoflife.date responses
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ${{ runner.temp }}/eol-cache
+        key: eol-check-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: eol-check-
+
+    - name: Check end-of-life dates
+      id: check
+      shell: bash
+      env:
+        WORKDIR: ${{ inputs.working-directory }}
+        PRODUCTS: ${{ inputs.products }}
+        WARN_DAYS: ${{ inputs.warn-days }}
+        PRODUCTION: ${{ inputs.production }}
+      run: |
+        set -euo pipefail
+        REPORT="${RUNNER_TEMP}/eol-report.json"
+        python3 -I "${GITHUB_ACTION_PATH}/eol.py" --root "${WORKDIR}" --out "${REPORT}" --products "${PRODUCTS}" \
+          --warn-days "${WARN_DAYS}" --production "${PRODUCTION}" --cache "${RUNNER_TEMP}/eol-cache" >> "${GITHUB_OUTPUT}"
+        echo "report=${REPORT}" >> "${GITHUB_OUTPUT}"
+
+    - name: Open or update end-of-life issues
+      if: inputs.open-issues == 'true' && steps.check.outputs.eol-count != '0'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        REPORT: ${{ steps.check.outputs.report }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: bash "${GITHUB_ACTION_PATH}/issues.sh"

@@ -17,6 +17,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| End-of-Life Check | [`eol-check.yml`](.github/workflows/eol-check.yml) | `workflow_call` | Reusable endoflife.date check (meant for a quarterly schedule): detects Python, Node.js, Go, Dockerfile base-image and `.tool-versions` versions; a runtime past end of life opens or updates one issue (`security-finding`, `sla:high` in production, `end-of-life`), one within `warn-days` is a warning (#230) |
 
 ## Composite Actions
 
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| End-of-Life Check | [`eol-check`](.github/actions/eol-check/action.yml) | Detects runtime versions from `.python-version`, `pyproject.toml` `requires-python`, `.nvmrc`, `package.json` `engines.node`, `go.mod` `go`, Dockerfile `FROM` tags and `.tool-versions`; compares each with its endoflife.date cycle; caches responses and fails open when the API is unreachable; opens or updates one issue per end-of-life cycle | `working-directory` (default: `.`), `products` (default: `""`), `warn-days` (default: `90`), `production` (default: `true`), `open-issues` (default: `true`), `github-token` (default: `github.token`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,40 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### End-of-Life Check (endoflife.date)
+
+Renovate and Dependabot move package versions; nothing tells a team that the Python, Node.js, Go or PostgreSQL line under them stopped receiving security fixes. This check compares each detected runtime with its [endoflife.date](https://endoflife.date) cycle (SecOps plan Step 3 Standard; a production runtime past end of life is a High finding under Step 25).
+
+```yaml
+# .github/workflows/eol.yml
+on:
+  schedule:
+    - cron: '0 7 1 1,4,7,10 *'  # quarterly
+  workflow_dispatch:
+
+jobs:
+  eol:
+    permissions:
+      contents: read
+      issues: write  # drop with open-issues: false
+    uses: sparkgeo/github-actions/.github/workflows/eol-check.yml@<SHA>
+    with:
+      production: true           # false makes an end-of-life runtime Medium
+      products: django:4.2       # optional; frameworks are not detected
+      actions-ref: <SHA>         # same SHA as above
+```
+
+| Source | Read as |
+|---|---|
+| `.python-version` | `python` |
+| `pyproject.toml` `requires-python` | `python`, lowest allowed version |
+| `.nvmrc`, `package.json` `engines.node` | `nodejs` (aliases such as `lts/iron` are skipped) |
+| `go.mod` `go` | `go` |
+| Dockerfile `FROM` | `python`, `node`, `golang`, `postgres`, `redis`, `nginx`, `alpine`, `ubuntu`, `debian`, `ruby`, `php`, `mysql`, `mariadb`, `mongo`, `eclipse-temurin`, `rabbitmq`, `elasticsearch` images with a numeric tag |
+| `.tool-versions` | each tool, by its endoflife.date name (`golang` and `node` are mapped) |
+
+A version past its cycle's end-of-life date is an error annotation and one issue per product cycle, titled `End of life: <product> <cycle>`; later runs update that issue instead of opening another. A version within `warn-days` is a warning annotation only. The job does not fail; the issue carries the finding to its SLA. Each endoflife.date response is cached; when the API (in beta) is unreachable the cached response is used, and with nothing cached the version is reported `unknown`. `products` entries replace detection for the product they name. `tests/eol-check/run.sh` checks detection, classification, the cache fallback and the issue upsert against recorded responses and a fake `gh`.
 
 ## Consuming repo CI setup
 

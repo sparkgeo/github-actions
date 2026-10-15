@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Stand-in for the gh CLI in tests/eol-check/run.sh: keeps open issues in
+# ${FAKE_GH_STATE} (a JSON list of {number, title, labels}) and logs each
+# write to ${FAKE_GH_LOG}.
+set -euo pipefail
+case "$1 $2" in
+  "label create") echo "label $3" >> "${FAKE_GH_LOG}" ;;
+  "issue list")
+    expr=""; while [ $# -gt 0 ]; do [ "$1" = "--jq" ] && expr="$2"; shift; done
+    jq -r "${expr}" "${FAKE_GH_STATE}" ;;
+  "issue create")
+    title=""; labels=""; while [ $# -gt 0 ]; do case "$1" in --title) title="$2" ;; --label) labels="$2" ;; esac; shift; done
+    n=$(( $(jq length "${FAKE_GH_STATE}") + 1 ))
+    jq --arg t "${title}" --argjson n "${n}" '. + [{number: $n, title: $t}]' "${FAKE_GH_STATE}" > "${FAKE_GH_STATE}.tmp"
+    mv "${FAKE_GH_STATE}.tmp" "${FAKE_GH_STATE}"
+    echo "create ${title} [${labels}]" >> "${FAKE_GH_LOG}" ;;
+  "issue edit") echo "edit $3" >> "${FAKE_GH_LOG}" ;;
+  *) echo "fake gh: unexpected $*" >&2; exit 1 ;;
+esac
