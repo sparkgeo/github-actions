@@ -11,7 +11,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
-| Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
+| Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI; `pii-rules: true` adds the shared structured-PII rules (#98) |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
@@ -36,7 +36,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Storage Optimizer | [`storage-optimizer`](.github/actions/storage-optimizer/action.yml) | Frees disk space on GitHub-hosted runners by removing unused toolchains (JDK, .NET, Swift, Android SDK, etc.) and pruning Docker | None |
 | Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
 | AWS OIDC Auth | [`aws-oidc-auth`](.github/actions/aws-oidc-auth/action.yml) | Assumes an IAM role via GitHub OIDC — no static credentials stored; enforces traceable session name `{repo}-{run_id}` | `role-arn` (required), `aws-region` (required), `role-session-name` (default: `{repo}-{run_id}`) |
-| Gitleaks Secret Scan | [`gitleaks`](.github/actions/gitleaks/action.yml) | Pattern-based secret detection; hard-fails on any match. Scans the PR commit range on `pull_request`, else the full git history. Installs a checksum-verified Gitleaks binary (no paid license) | `version` (default: `8.30.1`), `config-path` (default: `.gitleaks.toml`), `fail-on-finding` (default: `true`) |
+| Gitleaks Secret Scan | [`gitleaks`](.github/actions/gitleaks/action.yml) | Pattern-based secret detection; hard-fails on any match. Scans the PR commit range on `pull_request`, else the full git history. Installs a checksum-verified Gitleaks binary (no paid license) | `version` (default: `8.30.1`), `config-path` (default: `.gitleaks.toml`), `extra-config` (default: `""`; extra rule file merged on top, e.g. the bundled `policies/pii/gitleaks-pii.toml`), `fail-on-finding` (default: `true`) |
 | TruffleHog Verified Scan | [`trufflehog`](.github/actions/trufflehog/action.yml) | Verified active-secret detection; hard-fails on verified secrets, unverified matches are warnings. Converts findings to SARIF and uploads to the Security tab. Installs a checksum-verified TruffleHog binary | `version` (default: `3.95.5`), `only-verified` (default: `true`), `sarif-upload` (default: `true`) |
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
@@ -219,6 +219,24 @@ Or drop the composite action straight into an existing job:
     '''EXAMPLE_KEY_[A-Z0-9]{20}''',  # synthetic example keys in docs
   ]
 ```
+
+**Structured PII rules (#98)** — [`policies/pii/gitleaks-pii.toml`](policies/pii/gitleaks-pii.toml) adds `PII-CREDIT_CARD`, `PII-US_SSN`, `PII-CA_SIN`, `PII-IBAN_CODE` and `PII-E164_PHONE` on top of the secret rules, with the published test numbers and reserved fictional ranges allowlisted. Which of them block depends on the repository's data tier ([`docs/data-classification.md`](docs/data-classification.md) section 4); the Baseline tier runs them wherever gitleaks already runs. In CI, set `pii-rules: true` on `secrets-precommit.yml` (or `extra-config` on the composite); the rules are merged on top of the repo's own `.gitleaks.toml`, so its allowlists still apply. For the pre-commit hook, vendor the file at the pinned SHA and point the repo config at it so the hook and CI use the same rules:
+
+```bash
+curl -sSfL -o .gitleaks-pii.toml https://raw.githubusercontent.com/sparkgeo/github-actions/<SHA>/policies/pii/gitleaks-pii.toml
+```
+
+```toml
+# .gitleaks.toml
+[extend]
+path = ".gitleaks-pii.toml"   # the PII file itself extends the default secret rules
+
+[[allowlists]]
+description = "synthetic fixtures (#123)"
+paths = ['''tests/fixtures/''']
+```
+
+Findings carry the `PII-` prefix and the `pii` tag in the report, so they are told apart from secrets; values are redacted in logs and reports. True-positive samples are generated at test time and never committed ([`tests/gitleaks-pii/run.sh`](tests/gitleaks-pii/run.sh)).
 
 ### TruffleHog Verified Scan
 
