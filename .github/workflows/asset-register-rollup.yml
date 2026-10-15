@@ -96,11 +96,27 @@ jobs:
           echo "found=${found}" >> "${GITHUB_OUTPUT}"
           echo "${found} inventories collected"
 
+      - name: Download the latest EASM findings, when published
+        id: easm
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          DIR="${RUNNER_TEMP}/easm"; mkdir -p "${DIR}"
+          if gh release download easm-latest -R "${REPO}" -D "${DIR}" --clobber -p findings.json 2>/dev/null; then
+            echo "path=${DIR}/findings.json" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::notice title=asset-register::no easm-latest release; the unknown-asset KRI stays unset"
+            echo "path=" >> "${GITHUB_OUTPUT}"
+          fi
+
       - id: register
         uses: ./.github/actions/asset-register
         with:
           inventories-dir: ${{ runner.temp }}/inventories
           output-dir: ${{ runner.temp }}/register
+          easm-findings: ${{ steps.easm.outputs.path }}
 
       - name: Publish dated and latest releases
         env:
@@ -117,7 +133,7 @@ jobs:
             echo
             cat "${SUMMARY}"
             echo
-            echo "Verify with \`sha256sum -c SHA256SUMS\`. Format: docs/asset-inventory.md."
+            echo "Verify with \`sha256sum -c SHA256SUMS\`. Format: docs/asset-inventory.md. high-value.md is the Step 40 target set; kri.json carries the Section 3 indicators."
           } > "${RUNNER_TEMP}/release-notes.md"
           publish() {  # <tag> <title>; recreate so a rerun on the same day, or the rolling tag, is replaced
             gh release delete "${1}" -R "${REPO}" --cleanup-tag --yes 2>/dev/null || true
@@ -147,20 +163,21 @@ jobs:
           REPO: ${{ github.repository }}
           UNOWNED: ${{ steps.register.outputs.unowned-count }}
           STALE: ${{ steps.register.outputs.stale-count }}
+          KRI: ${{ steps.register.outputs.kri-breached }}
           SUMMARY: ${{ steps.register.outputs.summary-path }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          TITLE="Asset register: unowned or stale assets"
+          TITLE="Asset register: unowned or stale assets, or a KRI breached"
           existing="$(gh issue list -R "${REPO}" --state open --search "\"${TITLE}\" in:title" --json number --jq '.[0].number // empty')"
-          if [ "${UNOWNED}" = "0" ] && [ "${STALE}" = "0" ]; then
+          if [ "${UNOWNED}" = "0" ] && [ "${STALE}" = "0" ] && [ -z "${KRI}" ]; then
             if [ -n "${existing}" ]; then
-              gh issue close "${existing}" -R "${REPO}" --comment "Clean run on $(date -u +%F): every asset has an owner and every inventory is fresh. ${RUN_URL}"
+              gh issue close "${existing}" -R "${REPO}" --comment "Clean run on $(date -u +%F): every asset has an owner, every inventory is fresh and no KRI is breached. ${RUN_URL}"
             fi
             exit 0
           fi
           {
-            echo "Run of $(date -u +%F): ${RUN_URL}. Full register: release \`asset-register-latest\` (\`unowned.md\`, \`owners.md\`, \`data-classes.md\`)."
+            echo "Run of $(date -u +%F): ${RUN_URL}. Full register: release \`asset-register-latest\` (\`unowned.md\`, \`owners.md\`, \`data-classes.md\`, \`high-value.md\`, \`kri.json\`). Breached KRIs: ${KRI:-none}."
             echo
             cat "${SUMMARY}"
           } > "${RUNNER_TEMP}/issue-body.md"

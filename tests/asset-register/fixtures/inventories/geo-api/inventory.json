@@ -26,7 +26,8 @@
     "owner": "team-unknown",
     "project": "geo-api",
     "environment": "dev",
-    "data-class": "internal"
+    "data-class": "internal",
+    "exposure": "public"
    },
    "tag_violations": [],
    "source": {

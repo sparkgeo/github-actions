@@ -1,0 +1,12 @@
+{
+ "generated_at": "2026-10-11T03:30:00Z",
+ "counts": {
+  "unknown-asset": 5,
+  "takeover-candidate": 0,
+  "nuclei": 1,
+  "lookalike-domain": 0,
+  "retired-candidate": 0
+ },
+ "inventory_review": true,
+ "findings": []
+}
