@@ -391,7 +391,7 @@ jobs:
       extra-patterns: bots/*.yaml   # repo-specific agent configuration, optional
 ```
 
-The check fails on: a matched file with no row whose `Config path` glob covers it; a file covered only by a `retired` row; a row with an empty `Owner`, `Class`, `Risk tier`, `Lifecycle state` or `Kill switch`; a value outside the enums (`class`, `risk tier`, `lifecycle state`, the two yes/no columns). A row whose path matches no file is a warning. The job summary lists every matched file with the row that covers it and prints a row template. The security-agent rule (#186) says what goes in each column for reviewers, testers and pentest agents.
+The check fails on: a matched file with no row whose `Config path` glob covers it; a file covered only by a `retired` row; a row with an empty `Owner`, `Class`, `Risk tier`, `Lifecycle state` or `Kill switch`; a value outside the enums (`class`, `risk tier`, `lifecycle state`, the two yes/no columns). A row whose path matches no file is a warning. The job summary lists every matched file with the row that covers it and prints a row template. The [security-agent rule](docs/ai-security-agent-rule.md) (#186) is the ten-row checklist every CI-hosted reviewer, tester, scanner or pentest agent satisfies before it gets a credential, with the workflow input that satisfies each row.
 
 ## Consuming repo CI setup
 
