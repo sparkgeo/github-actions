@@ -219,4 +219,4 @@ jobs:
           FAIL: ${{ inputs.fail-on-crash }}
         run: |
           [ "${OUTCOME}" != "failure" ] || [ "${FAIL}" != "true" ] || { echo "::error title=fuzz::${CRASHES:-?} crash input(s) or a target that did not run; see the summary"; exit 1; }
-          [ "${OUTCOME}" = "failure" ] && echo "fail-on-crash is off: ${CRASHES:-?} crash input(s) reported without failing the job" || true
+          if [ "${OUTCOME}" = "failure" ]; then echo "fail-on-crash is off: ${CRASHES:-?} crash input(s) reported without failing the job"; fi
