@@ -1,0 +1,50 @@
+# Custom presidio recognizers shipped with the PII scan (issue #97). Pattern
+# recognizers only; the Luhn check for CA_SIN runs in scan.py after matching.
+# Loaded with RecognizerRegistry.add_recognizers_from_yaml on top of the
+# predefined recognizers. Which entities block per data tier:
+# docs/data-classification.md section 4.
+recognizers:
+  - name: "Canadian SIN"
+    supported_entity: "CA_SIN"
+    supported_language: "en"
+    patterns:
+      - name: "sin 3-3-3"
+        regex: '\b[1-79]\d{2}[ -]\d{3}[ -]\d{3}\b'
+        score: 0.5
+      - name: "sin compact"
+        regex: '\b[1-79]\d{8}\b'
+        score: 0.2
+    context:
+      - sin
+      - social insurance
+      - nas
+      - assurance sociale
+
+  - name: "Canadian postal code next to a name or address"
+    supported_entity: "CA_POSTAL_CODE"
+    supported_language: "en"
+    patterns:
+      - name: "postal code"
+        regex: '\b[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]?\d[ABCEGHJ-NPRSTV-Z]\d\b'
+        score: 0.3
+    context:
+      - postal
+      - address
+      - street
+      - avenue
+      - name
+      - attn
+
+# Placeholder for a client-specific identifier: copy this file, uncomment and
+# rename the entity, set the pattern, and point the composite's
+# recognizers-path at your copy (the entity must also be in `entities`).
+#  - name: "Client identifier"
+#    supported_entity: "CLIENT_ID"
+#    supported_language: "en"
+#    patterns:
+#      - name: "client id"
+#        regex: '\bCLIENT-\d{6}-[A-Z]{2}\b'
+#        score: 0.6
+#    context:
+#      - client id
+#      - customer number

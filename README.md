@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| PII Scan | [`pii-scan.yml`](.github/workflows/pii-scan.yml) | `workflow_call` | Reusable presidio gate over the text and data files a PR changes: structured entities block, free-text entities advise, `.pii-allowlist.yml` for placeholders, SARIF to the Security tab; values never shown (#97) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| PII Scan | [`presidio`](.github/actions/presidio/action.yml) | Installs presidio-analyzer and the spaCy model into a cached virtualenv, scans the changed (or all) files matching `include-globs` with the predefined and bundled custom recognizers, applies the allowlist, writes SARIF, annotations and a per-entity summary, fails on `block-entities` | `include-globs`, `entities`, `block-entities` (default: `CREDIT_CARD,US_SSN,CA_SIN,IBAN_CODE`), `score-threshold` (default: `0.7`), `model` (default: `en_core_web_sm`), `allowlist-path` (default: `.pii-allowlist.yml`), `recognizers-path`, `scope` (default: `changed`), `sarif-path`, `presidio-version` (default: `2.2.364`), `spacy-version` (default: `3.8.16`), `model-version` (default: `3.8.0`) |
 
 ### GitHub Actionlint
 
@@ -120,6 +122,30 @@ jobs:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}  # leave empty on pull_request
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}           # leave empty on pull_request
 ```
+
+### PII Scan (presidio)
+
+SecOps plan Step 23 Standard (issue #97): secrets detection catches credentials, this gate catches the data those credentials protect. presidio analyses the text and data files a PR changes (`**/*.md`, `*.txt`, `*.rst`, `*.csv`, `*.json`, `*.yaml`, `*.ipynb`, `*.sql`, `**/fixtures/**` by default) with its predefined recognizers plus [`policies/pii/recognizers.yml`](policies/pii/recognizers.yml) (Canadian SIN with a Luhn check, Canadian postal code next to a name, a client-identifier placeholder). Structured entities (`CREDIT_CARD`, `US_SSN`, `CA_SIN`, `IBAN_CODE`) block; `EMAIL_ADDRESS`, `PHONE_NUMBER`, `IP_ADDRESS`, `PERSON`, `LOCATION` advise, since product names, changelog authors and place names in a geospatial repository fire them. The repository's data tier ([`docs/data-classification.md`](docs/data-classification.md) section 4) says which list and threshold to pass. Placeholders go in `.pii-allowlist.yml` (literals, regexes, paths, each with a reason; a change needs a second reviewer). Findings carry entity, file, line and column only: a matched value is never printed, logged or written to the SARIF.
+
+```yaml
+# .github/workflows/pii.yml
+name: PII Scan
+on: [pull_request]
+jobs:
+  pii:
+    permissions:
+      contents: read
+      security-events: write   # SARIF; drop with sarif-upload: false
+    uses: sparkgeo/github-actions/.github/workflows/pii-scan.yml@<SHA>
+    with:
+      actions-ref: <SHA>       # same SHA as above
+      # Confidential tier (docs/data-classification.md section 4):
+      # block-entities: CREDIT_CARD,US_SSN,CA_SIN,IBAN_CODE,PHONE_NUMBER,EMAIL_ADDRESS
+      # score-threshold: 0.85
+      # model: en_core_web_lg   # better NER, ~400 MB download, cached by version
+```
+
+Egress for the install step: PyPI and `github.com/explosion/spacy-models` releases (the model wheel). The virtualenv is cached on the presidio, spaCy and model versions.
 
 ### Storage Optimizer
 

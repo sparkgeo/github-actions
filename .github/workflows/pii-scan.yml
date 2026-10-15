@@ -1,0 +1,114 @@
+name: PII Scan
+
+# Reusable PR gate (issue #97, plan Step 23 Standard): presidio over the text
+# and data files a PR changes, with the repository's .pii-allowlist.yml.
+# Structured entities block, free-text entities advise; the lists come from
+# the repository's data tier (docs/data-classification.md section 4). SARIF
+# goes to the Security tab when sarif-upload is true. Values are never shown.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com (checkout, model wheel)
+# and PyPI.
+
+on:
+  workflow_call:
+    inputs:
+      include-globs:
+        description: 'Comma-separated globs of files to scan'
+        default: '**/*.md,**/*.txt,**/*.rst,**/*.csv,**/*.json,**/*.yaml,**/*.yml,**/*.ipynb,**/*.sql,**/fixtures/**'
+        type: string
+      entities:
+        description: 'Entities to report'
+        default: 'CREDIT_CARD,US_SSN,CA_SIN,IBAN_CODE,EMAIL_ADDRESS,PHONE_NUMBER,IP_ADDRESS,PERSON,LOCATION'
+        type: string
+      block-entities:
+        description: 'Subset that fails the job'
+        default: 'CREDIT_CARD,US_SSN,CA_SIN,IBAN_CODE'
+        type: string
+      score-threshold:
+        description: 'Minimum presidio confidence'
+        default: 0.7
+        type: number
+      model:
+        description: 'spaCy model: en_core_web_sm or en_core_web_lg'
+        default: 'en_core_web_sm'
+        type: string
+      allowlist-path:
+        description: 'Allowlist file in the repository'
+        default: '.pii-allowlist.yml'
+        type: string
+      scope:
+        description: 'changed (PR diff) or all'
+        default: 'changed'
+        type: string
+      sarif-upload:
+        description: 'Upload SARIF to the Security tab (needs security-events: write)'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          and the recognizers from. Pin this to the SAME SHA you pinned
+          pii-scan.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      finding-count:
+        description: 'Findings at or above the threshold'
+        value: ${{ jobs.pii.outputs.finding-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants contents: read, plus security-events: write
+# for the SARIF upload.
+jobs:
+  pii:
+    name: PII scan
+    runs-on: ubuntu-latest
+    outputs:
+      finding-count: ${{ steps.scan.outputs.finding-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the PR base must be reachable for the changed-files diff
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout presidio composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: scan
+        continue-on-error: true
+        uses: ./.sparkgeo-github-actions/.github/actions/presidio
+        with:
+          include-globs: ${{ inputs.include-globs }}
+          entities: ${{ inputs.entities }}
+          block-entities: ${{ inputs.block-entities }}
+          score-threshold: ${{ inputs.score-threshold }}
+          model: ${{ inputs.model }}
+          allowlist-path: ${{ inputs.allowlist-path }}
+          scope: ${{ inputs.scope }}
+          sarif-path: ${{ runner.temp }}/pii-scan.sarif
+
+      - name: Upload SARIF
+        if: ${{ inputs.sarif-upload && always() }}
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+        with:
+          sarif_file: ${{ runner.temp }}/pii-scan.sarif
+          category: pii-scan
+
+      - name: Outcome
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+          BLOCKING: ${{ steps.scan.outputs.blocking-count }}
+        run: |
+          [ "${OUTCOME}" != "failure" ] || { echo "::error title=pii::${BLOCKING:-?} blocking finding(s); see the summary and the Security tab"; exit 1; }

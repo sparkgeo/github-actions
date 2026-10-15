@@ -1,0 +1,5 @@
+README.md
+data/customers.csv
+notebook.ipynb
+vendor/NOTICE.txt
+image.png
