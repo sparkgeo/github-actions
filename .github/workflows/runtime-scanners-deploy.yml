@@ -1,0 +1,92 @@
+name: Runtime Scanners Deploy
+
+# Reusable deploy of Trivy Operator and the Kubescape operator (relevancy on)
+# to an EKS cluster (SecOps plan Step 41 Standard, issue #179). Call it on
+# push to the platform repo's default branch. Authenticates with OIDC (#27);
+# the role needs eks:DescribeCluster and a cluster access entry that may
+# install cluster-scoped resources (CRDs, ClusterRoles).
+#
+# Egress from the runner: github.com and release-assets.githubusercontent.com
+# (pinned chart .tgz files), sts and eks endpoints, and the cluster endpoint.
+
+on:
+  workflow_call:
+    inputs:
+      cluster-name:
+        description: 'EKS cluster name'
+        required: true
+        type: string
+      aws-role-arn:
+        description: 'IAM role to assume via OIDC'
+        required: true
+        type: string
+      aws-region:
+        description: 'Region of the cluster'
+        required: true
+        type: string
+      namespace:
+        default: 'security-scanners'
+        type: string
+      trivy-operator-chart-version:
+        default: '0.36.0'
+        type: string
+      trivy-operator-chart-sha256:
+        default: 'bb0c44bc70e3158cc63ea49d7458ede6db5b6c932f6585a2d787eb9712fd4288'
+        type: string
+      kubescape-chart-version:
+        default: '1.40.4'
+        type: string
+      kubescape-chart-sha256:
+        default: '9c9dad697b13d085ed1c6cbb166d9ade239305aa2e8b5999840d455fc91a10ea'
+        type: string
+      exclude-namespaces:
+        description: 'Namespaces excluded from scanning, e.g. CI runners'
+        default: 'actions-runner-system'
+        type: string
+      namespace-labels:
+        description: 'Space-separated key=value labels for the scanners namespace (#114)'
+        default: 'owner=platform project=security-scanners environment=shared data-class=internal exposure=internal'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned this workflow to.
+        default: 'main'
+        type: string
+
+# Caller grants: id-token: write (OIDC), contents: read.
+
+jobs:
+  deploy:
+    name: Deploy runtime scanners
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/aws-oidc-auth
+        with:
+          role-arn: ${{ inputs.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Kubeconfig for the cluster
+        env:
+          CLUSTER: ${{ inputs.cluster-name }}
+          REGION: ${{ inputs.aws-region }}
+        run: aws eks update-kubeconfig --name "${CLUSTER}" --region "${REGION}"
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/runtime-scanners
+        with:
+          cluster-name: ${{ inputs.cluster-name }}
+          namespace: ${{ inputs.namespace }}
+          exclude-namespaces: ${{ inputs.exclude-namespaces }}
+          namespace-labels: ${{ inputs.namespace-labels }}
+          trivy-operator-chart-version: ${{ inputs.trivy-operator-chart-version }}
+          trivy-operator-chart-sha256: ${{ inputs.trivy-operator-chart-sha256 }}
+          kubescape-chart-version: ${{ inputs.kubescape-chart-version }}
+          kubescape-chart-sha256: ${{ inputs.kubescape-chart-sha256 }}

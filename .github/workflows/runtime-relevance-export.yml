@@ -1,0 +1,95 @@
+name: Runtime Relevance Export
+
+# Reusable daily export of which CVEs sit in packages the running workloads
+# actually load (Kubescape relevancy) plus Trivy Operator findings for images
+# Kubescape has not covered, as runtime-relevance.json (issue #179). Uploaded
+# as an artifact and, by default, published on a rolling
+# `runtime-relevance-latest` release in the calling repository, which the
+# runtime-relevance composite and the #80 EPSS/KEV override read.
+
+on:
+  workflow_call:
+    inputs:
+      cluster-name:
+        description: 'EKS cluster name'
+        required: true
+        type: string
+      aws-role-arn:
+        description: 'IAM role to assume via OIDC (read access to the Kubescape and Trivy Operator CRDs)'
+        required: true
+        type: string
+      aws-region:
+        description: 'Region of the cluster'
+        required: true
+        type: string
+      publish-release:
+        description: 'Publish the export on the runtime-relevance-latest release of the calling repository'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned this workflow to.
+        default: 'main'
+        type: string
+
+# Caller grants: id-token: write (OIDC), contents: write (release; read is
+# enough with publish-release: false).
+
+jobs:
+  export:
+    name: Export runtime relevance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/aws-oidc-auth
+        with:
+          role-arn: ${{ inputs.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Kubeconfig for the cluster
+        env:
+          CLUSTER: ${{ inputs.cluster-name }}
+          REGION: ${{ inputs.aws-region }}
+        run: aws eks update-kubeconfig --name "${CLUSTER}" --region "${REGION}"
+
+      - name: Collect and export
+        env:
+          OUT_DIR: ${{ runner.temp }}/runtime-collect
+          CLUSTER: ${{ inputs.cluster-name }}
+        run: |
+          set -euo pipefail
+          D=.sparkgeo-github-actions/.github/actions/runtime-relevance
+          bash "${D}/collect.sh"
+          mkdir -p "${RUNNER_TEMP}/runtime-relevance"
+          python3 -I "${D}/export.py" --input "${OUT_DIR}" --cluster "${CLUSTER}" \
+            --output "${RUNNER_TEMP}/runtime-relevance/runtime-relevance.json"
+          jq -r '"### Runtime relevance on `\(.cluster)`\n\n| Entries | Loaded | Not loaded | Unknown |\n|---|---|---|---|\n| \(.counts.entries) | \(.counts.true) | \(.counts.false) | \(.counts.unknown) |"' \
+            "${RUNNER_TEMP}/runtime-relevance/runtime-relevance.json" >> "${GITHUB_STEP_SUMMARY}"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: runtime-relevance
+          path: ${{ runner.temp }}/runtime-relevance/runtime-relevance.json
+          retention-days: 30
+
+      - name: Publish runtime-relevance-latest
+        if: inputs.publish-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          F="${RUNNER_TEMP}/runtime-relevance/runtime-relevance.json"
+          # Recreated each run so the rolling tag always points at today's export.
+          gh release delete runtime-relevance-latest -R "${REPO}" --cleanup-tag --yes 2>/dev/null || true
+          gh release create runtime-relevance-latest -R "${REPO}" --latest=false \
+            --title "Runtime relevance (latest)" \
+            --notes "$(jq -r '"\(.cluster), generated \(.generated_at): \(.counts)"' "${F}")" "${F}"

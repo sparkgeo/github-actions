@@ -112,9 +112,9 @@ jobs:
           kubectl apply -f tests/runtime-scanners/workload.yaml
           kubectl -n demo rollout status deployment/web --timeout 5m
           for i in $(seq 120); do
-            ref="$(kubectl get vulnerabilitymanifestsummaries.spdx.softwarecomposition.kubescape.io -n demo -o json 2>/dev/null \
-              | jq -r '[.items[].spec.vulnerabilitiesRef.relevant.name // ""] | map(select(. != "")) | first // ""')"
-            if [ -n "${ref}" ]; then echo "relevant manifest ${ref} after ${i} polls"; exit 0; fi
+            n="$(kubectl get vulnerabilitymanifests.spdx.softwarecomposition.kubescape.io -n demo \
+              -l kubescape.io/context=filtered -o name 2>/dev/null | wc -l)"
+            if [ "${n}" -gt 0 ]; then echo "filtered manifest after ${i} polls"; exit 0; fi
             sleep 15
           done
           echo "::error::no relevancy data after 30 minutes"

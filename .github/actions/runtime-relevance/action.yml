@@ -1,0 +1,72 @@
+name: "Runtime Relevance"
+description: |
+  Marks container-image findings (SARIF from Trivy or Grype) with whether the
+  running workload loads the vulnerable package, from the runtime-relevance
+  export (runtime-relevance-export.yml, issue #179). Sets
+  properties["runtime-relevant"] to true, false or "unknown" and tags
+  not-loaded findings "runtime:not-loaded". Also exposes the export file,
+  which the epss-kev-override composite (#80) reads through its
+  runtime-relevance-file input to drop those findings one SLA row.
+
+  Required permissions on calling job: contents: read (on the repository
+  that publishes the export).
+inputs:
+  findings-file:
+    description: "SARIF findings file to annotate. Empty: only fetch the export."
+    default: ""
+  image-digest:
+    description: "sha256:… digest of the scanned image; limits matching to that image. Empty: any image."
+    default: ""
+  export-file:
+    description: "Local runtime-relevance.json. Empty: download it from `repository`."
+    default: ""
+  repository:
+    description: "Repository whose `runtime-relevance-latest` release carries the export."
+    default: ${{ github.repository }}
+  token:
+    description: "Token for the release download."
+    default: ${{ github.token }}
+outputs:
+  findings-file:
+    description: "Annotated SARIF path (empty when no findings-file was given)."
+    value: ${{ steps.annotate.outputs.findings-file }}
+  export-file:
+    description: "Path of the export used."
+    value: ${{ steps.fetch.outputs.export-file }}
+  not-loaded:
+    description: "Number of findings marked not loaded."
+    value: ${{ steps.annotate.outputs.not-loaded }}
+runs:
+  using: "composite"
+  steps:
+    - name: Fetch export
+      id: fetch
+      shell: bash
+      env:
+        EXPORT_FILE: ${{ inputs.export-file }}
+        REPO: ${{ inputs.repository }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        if [ -z "${EXPORT_FILE}" ]; then
+          EXPORT_FILE="${RUNNER_TEMP}/runtime-relevance/runtime-relevance.json"
+          gh release download runtime-relevance-latest -R "${REPO}" -p runtime-relevance.json \
+            -D "$(dirname "${EXPORT_FILE}")" --clobber
+        fi
+        jq -r '"export of \(.cluster) generated \(.generated_at): \(.counts)"' "${EXPORT_FILE}"
+        echo "export-file=${EXPORT_FILE}" >> "${GITHUB_OUTPUT}"
+
+    - name: Annotate findings
+      id: annotate
+      if: inputs.findings-file != ''
+      shell: bash
+      env:
+        SARIF: ${{ inputs.findings-file }}
+        IMAGE: ${{ inputs.image-digest }}
+        EXPORT_FILE: ${{ steps.fetch.outputs.export-file }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/runtime-relevance.sarif"
+        python3 -I "${GITHUB_ACTION_PATH}/annotate.py" --sarif "${SARIF}" --export "${EXPORT_FILE}" \
+          --output "${OUT}" --image "${IMAGE}"
+        echo "findings-file=${OUT}" >> "${GITHUB_OUTPUT}"
