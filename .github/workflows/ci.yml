@@ -262,6 +262,10 @@ jobs:
           # advisory and GO-2022-1059 (GHSA-69ch-w2m2-3vjp) the imported one
           # that the govulncheck job asserts on. Nothing in this repo runs it.
           allow-ghsas: GHSA-ppp9-7jff-5vj2, GHSA-69ch-w2m2-3vjp
+          # The same fixture dependency carries the Go patent licence tag
+          # (BSD-3-Clause AND LicenseRef-scancode-google-patent-license-golang)
+          # that every golang.org/x module has; it is not redistributed.
+          allow-dependencies-licenses: pkg:golang/golang.org/x/text
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
