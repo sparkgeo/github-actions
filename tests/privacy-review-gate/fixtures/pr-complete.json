@@ -1,0 +1,2 @@
+{"number": 42, "head": {"sha": "abc123"}, "labels": [{"name": "privacy-review"}, {"name": "enhancement"}],
+ "body": "## Summary\n\nStore the user's last known location for alerts.\n\n## Privacy impact\n\nAdds a location column to users; retained 90 days per retention.yml; shared with no one new.\n\nPIA: docs/pia/user-locations.md\n"}
