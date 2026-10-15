@@ -19,6 +19,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 | DAST Baseline | [`dast-baseline.yml`](.github/workflows/dast-baseline.yml) | `workflow_call` | Reusable passive DAST gate: ZAP baseline scan of a running preview or staging URL; fails at or above `fail-on`; per-repo ZAP rules file; HTML/JSON/Markdown reports as an artefact (#65) |
 | DAST API | [`dast-api.yml`](.github/workflows/dast-api.yml) | `workflow_call` | Reusable API DAST gate: ZAP API scan driven by an OpenAPI, SOAP or GraphQL definition, with an optional `AUTH_HEADER` secret for authenticated operations; active rules, so non-production only; fails at or above `fail-on`; reports as an artefact (#67) |
+| DAST Nuclei | [`dast-nuclei.yml`](.github/workflows/dast-nuclei.yml) | `workflow_call` | Reusable nuclei gate: pinned templates (CVEs, misconfigurations, exposures by default) against a running preview or staging URL; rate-limited; SARIF to the Security tab; fails at or above `fail-on-severity` (#66) |
 
 ## Composite Actions
 
@@ -45,6 +46,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | ZAP Baseline | [`zap-baseline`](.github/actions/zap-baseline/action.yml) | Runs the digest-pinned ZAP image's `zap-baseline.py` with `--network host` (localhost targets work); annotates every alert; gates on ZAP risk; the rules file IGNOREs, downgrades (INFO/WARN) or forces (FAIL) single rules | `target-url` (required), `rules-file` (default: `""`), `fail-on` (default: `high`), `spider-minutes` (default: `1`), `report-dir` (default: `zap-report`), `image` (default: ZAP 2.17.0 by digest) |
 | ZAP API | [`zap-api`](.github/actions/zap-api/action.yml) | Runs `zap-api-scan.py` from the same pinned ZAP image against a definition (URL or repo path) with the server overridden to `target-url`; auth header passed by environment variable and scoped to the target host; reuses the baseline gate and rules-file semantics | `target-url` (required), `spec-url`, `spec-format` (default: `openapi`), `fail-on` (default: `high`), `rules-file`, `auth-header`, `safe-mode` (default: `false`), `report-dir` (default: `zap-api-report`), `image` |
+| Nuclei | [`nuclei`](.github/actions/nuclei/action.yml) | Installs checksum-verified nuclei and a pinned, checksum-verified nuclei-templates release (cached by version); scans with rate limiting and interactsh off by default; SARIF upload; annotates and gates on severity | `target-url` (required), `templates` (default: `cves,misconfiguration,exposures`), `tags` (default: `""`), `fail-on-severity` (default: `high`), `rate-limit` (default: `50`), `concurrency` (default: `10`), `interactsh` (default: `false`), `headers` (default: `""`), `version` (default: `3.11.1`), `templates-version` (default: `10.5.0`), `sarif-upload` (default: `true`) |
 
 ### GitHub Actionlint
 
@@ -465,6 +467,40 @@ A `services:` container on the job works the same way when the API ships as an i
 **Gate and rules file.** These work as for the baseline scan: ZAP risk against `fail-on`, and a ZAP rules file to IGNORE, downgrade or FAIL single rules.
 
 The `dast-api` CI job starts `tests/dast-api/fixtures/app.py`. Its one operation answers a quote with a MySQL syntax error, but only when the `X-Fixture-Token` header is present. The job scans it with that header and asserts that ZAP reports SQL Injection (High) and fails the gate. Without the header, the same scan finds no High alert.
+
+### DAST Nuclei
+
+[nuclei](https://github.com/projectdiscovery/nuclei) runs community-maintained templates for known CVEs, exposed files and admin panels, and misconfigurations against a running application (SecOps plan Step 5). The ZAP baseline finds classes of weakness; nuclei finds specific known issues. Run both against the same preview URL.
+
+```yaml
+jobs:
+  nuclei:
+    if: github.event.deployment_status.state == 'success'
+    permissions:
+      contents: read
+      security-events: write  # drop when sarif-upload: false
+    uses: sparkgeo/github-actions/.github/workflows/dast-nuclei.yml@<SHA>
+    with:
+      target-url: ${{ github.event.deployment_status.environment_url }}
+      fail-on-severity: high
+      actions-ref: <SHA>
+    secrets:
+      SCAN_HEADERS: ${{ secrets.PREVIEW_SCAN_HEADERS }}  # optional, e.g. "Authorization: Bearer ..."
+```
+
+**Templates.** The templates come from a pinned nuclei-templates release, checked against its published checksum and cached by version, so a scan never picks up an unreviewed template. `templates` lists directories or files in that release; a bare name is looked up under `http/` (`cves` is `http/cves`). `tags` narrows the selection, for example `templates: cves` with `tags: wordpress`. Bump `templates-version` the way you bump any pinned tool.
+
+**Load on shared staging.** The defaults keep a scan polite:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `rate-limit` | 50 requests per second | nuclei's own default is 150 |
+| `concurrency` | 10 templates in parallel | nuclei's own default is 25 |
+| `interactsh` | `false` | No out-of-band callbacks to ProjectDiscovery's public server; the templates that need them are skipped |
+
+A full run of the default directories sends several thousand requests, so lower `rate-limit` for a fragile environment. Run only against environments you own; the weekly active scan (#68) is the place for heavier settings.
+
+`tests/dast-nuclei/run.sh` checks the gate against a recorded export. The `dast-nuclei` CI job serves `tests/dast-nuclei/fixtures/site`, which deliberately exposes a `.gitmodules` file, and asserts that the high-severity `exposed-gitmodules` template finds it and fails the gate.
 
 ## Consuming repo CI setup
 
