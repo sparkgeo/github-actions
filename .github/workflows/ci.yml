@@ -151,10 +151,12 @@ jobs:
               want='Shell in demo container'
             else
               kubectl -n demo exec deploy/web -- cat /etc/shadow > /dev/null
-              logs="$(kubectl -n kube-system logs -l app.kubernetes.io/name=tetragon -c export-stdout --tail=-1)"
+              # Only the TracingPolicy's kprobe event counts, not the plain exec event.
+              logs="$(kubectl -n kube-system logs -l app.kubernetes.io/name=tetragon -c export-stdout --tail=-1 \
+                | grep -F '"process_kprobe"' || true)"
               want='/etc/shadow'
             fi
-            if grep -F "${want}" <<< "${logs}" | head -2; then echo "alert after ${i} tries"; exit 0; fi
+            if grep -F "${want}" <<< "${logs}" | head -2 | cut -c1-400; then echo "alert after ${i} tries"; exit 0; fi
             sleep 10
           done
           echo "::error::no '${want}' alert from ${SENSOR}"
