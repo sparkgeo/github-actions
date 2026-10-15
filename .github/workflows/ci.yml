@@ -258,3 +258,38 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/storage-optimizer
+
+  # End-of-life check (issue #230): eol.py against recorded endoflife.date
+  # responses with a fixed date (detection, eol/warn/ok, cache fallback) and
+  # issues.sh against a fake gh (open once, then update), then a live smoke
+  # run of the composite with open-issues off. Audit egress: endoflife.date.
+  eol-check:
+    name: End-of-life check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Recorded-response fixtures
+        run: tests/eol-check/run.sh
+
+      - id: live
+        uses: ./.github/actions/eol-check
+        with:
+          working-directory: .github
+          products: python:3.12
+          open-issues: "false"
+
+      - name: Assert the live smoke run
+        env:
+          EOL: ${{ steps.live.outputs.eol-count }}
+        run: |
+          [ "${EOL}" = "0" ] || { echo "::error title=eol-check::python 3.12 reported past end of life (${EOL})"; exit 1; }

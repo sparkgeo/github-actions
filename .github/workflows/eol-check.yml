@@ -1,0 +1,87 @@
+name: End-of-Life Check
+
+# Reusable endoflife.date check of the runtimes a repository runs on (SecOps
+# plan Step 3 Standard; issue #230). Meant for a quarterly schedule plus
+# workflow_dispatch: a runtime past end of life opens (or updates) an issue
+# labelled security-finding + sla:<severity> + end-of-life; one within
+# warn-days is a warning in the job summary.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. The only host it reaches besides GitHub is
+# endoflife.date.
+
+on:
+  workflow_call:
+    inputs:
+      products:
+        description: 'Explicit product:version pairs, e.g. python:3.10,nodejs:20,postgresql:14; empty detects them'
+        default: ''
+        type: string
+      working-directory:
+        description: 'Directory searched for version files'
+        default: '.'
+        type: string
+      warn-days:
+        description: 'Warn when end of life is this close'
+        default: 90
+        type: number
+      production:
+        description: 'true marks an end-of-life runtime High (Step 25), false Medium'
+        default: true
+        type: boolean
+      open-issues:
+        description: 'Open or update one issue per end-of-life finding'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the eol-check
+          composite from. Pin this to the SAME SHA you pinned eol-check.yml
+          to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      eol-count:
+        description: 'Runtimes past end of life'
+        value: ${{ jobs.eol.outputs.eol-count }}
+      warn-count:
+        description: 'Runtimes within warn-days of end of life'
+        value: ${{ jobs.eol.outputs.warn-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` and `issues: write` (drop it
+# with open-issues: false). See README.
+
+jobs:
+  eol:
+    name: End-of-life check
+    runs-on: ubuntu-latest
+    outputs:
+      eol-count: ${{ steps.check.outputs.eol-count }}
+      warn-count: ${{ steps.check.outputs.warn-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout eol-check composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: check
+        uses: ./.sparkgeo-github-actions/.github/actions/eol-check
+        with:
+          products: ${{ inputs.products }}
+          working-directory: ${{ inputs.working-directory }}
+          warn-days: ${{ inputs.warn-days }}
+          production: ${{ inputs.production }}
+          open-issues: ${{ inputs.open-issues }}
