@@ -1,0 +1,8 @@
+{"go_module": "example.com/fixture", "files": [{"file_name": "geo.go", "mutations": [
+ {"type": "CONDITIONALS_BOUNDARY", "status": "KILLED", "line": 5, "column": 9},
+ {"type": "CONDITIONALS_BOUNDARY", "status": "KILLED", "line": 8, "column": 9},
+ {"type": "CONDITIONALS_NEGATION", "status": "TIMED OUT", "line": 5, "column": 9},
+ {"type": "CONDITIONALS_NEGATION", "status": "LIVED", "line": 8, "column": 9},
+ {"type": "ARITHMETIC_BASE", "status": "NOT COVERED", "line": 9, "column": 10},
+ {"type": "INVERT_NEGATIVES", "status": "NOT VIABLE", "line": 9, "column": 10}
+]}]}
