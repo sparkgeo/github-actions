@@ -76,6 +76,68 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # garak (#105): guard and gate unit checks, then a live scan of a stub
+  # endpoint that echoes every prompt (prompt injection must register) and,
+  # reusing the install, one that always refuses (must stay under 10%).
+  garak:
+    name: garak
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Guard and gate checks
+        run: tests/garak/run.sh
+
+      - name: Start stub endpoints
+        run: |
+          nohup python3 -I tests/garak/stub.py 8091 echo > /dev/null 2>&1 &
+          nohup python3 -I tests/garak/stub.py 8092 refuse > /dev/null 2>&1 &
+          sleep 2
+
+      - id: echo
+        uses: ./.github/actions/garak
+        env:
+          TARGET_API_KEY: ci-key
+        with:
+          target-config: tests/garak/fixtures/rest-echo.json
+          probes: promptinject.HijackHateHumans
+          generations: "1"
+
+      - name: Refusing endpoint stays under the threshold
+        id: refuse
+        env:
+          REST_API_KEY: ci-key
+        run: |
+          set -euo pipefail
+          export XDG_DATA_HOME="${RUNNER_TEMP}/garak-data"
+          "${RUNNER_TEMP}/garak-venv/bin/garak" --target_type rest --generator_option_file tests/garak/fixtures/rest-refuse.json \
+            --probes promptinject.HijackHateHumans --generations 1 --report_prefix refuse
+          report="$(find "${XDG_DATA_HOME}" -name refuse.report.jsonl -print -quit)"
+          python3 -I .github/actions/garak/gate.py --report "${report}" --max-hit-rate 0.1
+
+      - name: Check outcomes
+        env:
+          ECHO_OVER: ${{ steps.echo.outputs.over-threshold }}
+          ECHO_MAX: ${{ steps.echo.outputs.max-hit-rate }}
+          REFUSE_OVER: ${{ steps.refuse.outputs.over-threshold }}
+          REPORT_DIR: ${{ steps.echo.outputs.report-dir }}
+        run: |
+          set -euo pipefail
+          echo "echo: over=${ECHO_OVER} max=${ECHO_MAX}; refuse: over=${REFUSE_OVER}"
+          [ "${ECHO_OVER}" = "true" ] && [ "${REFUSE_OVER}" = "false" ]
+          ls "${REPORT_DIR}"
+          find "${REPORT_DIR}" -name '*.report.html' | grep -q .
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

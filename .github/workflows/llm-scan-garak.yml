@@ -1,0 +1,125 @@
+name: LLM Scan (garak)
+
+# Reusable nightly scan of a staging LLM endpoint with NVIDIA garak (SecOps
+# plan Step 26 Standard, issue #105). Minutes to hours per run, so call it
+# from a schedule, not a PR. Production hosts are refused before install.
+# When a probe's hit rate exceeds max-hit-rate the job opens (or comments on)
+# one tracking issue per target in the calling repository and fails; a clean
+# run closes it. Reports (JSONL, HTML, hit log) are uploaded for 90 days.
+#
+# Egress: pypi.org, files.pythonhosted.org, download.pytorch.org (install),
+# huggingface.co and raw.githubusercontent.com (some probes fetch data), and
+# the target endpoint's host: add it to the job's allowlist (#83).
+
+on:
+  workflow_call:
+    inputs:
+      target-type:
+        description: 'garak generator: rest|openai|huggingface|...'
+        default: 'rest'
+        type: string
+      target-name:
+        description: 'Model name for generators that need one (empty for rest)'
+        default: ''
+        type: string
+      target-config:
+        description: 'Path to the generator config JSON in the consuming repo (endpoint URL, request template)'
+        required: true
+        type: string
+      probes:
+        description: 'Comma-separated probe modules; empty runs the default set'
+        default: 'promptinject,dan,encoding,leakreplay,packagehallucination,xss'
+        type: string
+      generations:
+        description: 'Generations per prompt; empty uses garak default'
+        default: ''
+        type: string
+      max-hit-rate:
+        description: 'Fail when any probe hit rate exceeds this fraction'
+        default: 0.1
+        type: number
+      production-pattern:
+        description: 'Regex for production hosts the scan refuses; empty uses the default (prod, production, live, www)'
+        default: ''
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned this workflow to.
+        default: 'main'
+        type: string
+    secrets:
+      TARGET_API_KEY:
+        required: false
+
+# Caller grants: contents: read, issues: write (tracking issue).
+
+jobs:
+  garak:
+    name: garak
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout repository with the target config
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: garak
+        uses: ./.sparkgeo-github-actions/.github/actions/garak
+        env:
+          TARGET_API_KEY: ${{ secrets.TARGET_API_KEY }}
+        with:
+          target-type: ${{ inputs.target-type }}
+          target-name: ${{ inputs.target-name }}
+          target-config: ${{ inputs.target-config }}
+          probes: ${{ inputs.probes }}
+          generations: ${{ inputs.generations }}
+          max-hit-rate: ${{ inputs.max-hit-rate }}
+          production-pattern: ${{ inputs.production-pattern }}
+
+      - name: Upload reports
+        if: always() && steps.garak.outputs.report-dir != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: garak-reports
+          path: ${{ steps.garak.outputs.report-dir }}
+          retention-days: 90
+
+      - name: Tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OVER: ${{ steps.garak.outputs.over-threshold }}
+          FAILING: ${{ steps.garak.outputs.failing }}
+          MAX: ${{ steps.garak.outputs.max-hit-rate }}
+          THRESHOLD: ${{ inputs.max-hit-rate }}
+          CONFIG: ${{ inputs.target-config }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # One issue per target config, found by a hidden marker in its body.
+          marker="<!-- garak-tracking: ${CONFIG} -->"
+          number="$(gh issue list -R "${REPO}" --state open --search "\"garak-tracking: ${CONFIG}\" in:body" \
+            --json number,body --jq ".[] | select(.body | contains(\"${marker}\")) | .number" | head -1)"
+          if [ "${OVER}" = "true" ]; then
+            text="garak hit rate ${MAX} is above ${THRESHOLD} for: ${FAILING//,/, }. Reports: ${RUN_URL}"
+            if [ -n "${number}" ]; then
+              gh issue comment "${number}" -R "${REPO}" --body "${text}"
+            else
+              gh issue create -R "${REPO}" --title "garak: LLM probe hit rate above ${THRESHOLD} (${CONFIG})" \
+                --body "$(printf '%s\n\n%s\n\nTriage each probe in the run summary: fix the prompt handling or record a time-boxed exception (#81). This issue closes on the first clean run.\n' "${marker}" "${text}")"
+            fi
+            echo "::error title=garak::hit rate above ${THRESHOLD}: ${FAILING}"
+            exit 1
+          elif [ -n "${number}" ]; then
+            gh issue close "${number}" -R "${REPO}" --comment "Clean run: every probe at or below ${THRESHOLD}. ${RUN_URL}"
+          fi

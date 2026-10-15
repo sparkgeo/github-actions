@@ -1,0 +1,112 @@
+name: "garak LLM Scan"
+description: |
+  Runs NVIDIA garak probes (prompt injection, jailbreaks, encoding bypasses,
+  data leakage, package hallucination, XSS via output) against an LLM
+  endpoint and reports the hit rate per probe and detector (SecOps plan
+  Step 26, issue #105). Refuses production hosts before installing anything.
+  Installs a pinned garak with CPU-only PyTorch. Writes JSONL and HTML
+  reports to `report-dir`; does not fail on hits: read `over-threshold`
+  (llm-scan-garak.yml opens a tracking issue and fails the job).
+
+  The API key, when the endpoint needs one, comes from the TARGET_API_KEY
+  environment variable of the calling step and is exposed to garak as the
+  variable its generator reads (REST_API_KEY for rest, OPENAI_API_KEY for
+  openai and so on); in a rest config write it as $KEY.
+inputs:
+  version:
+    description: "garak version (PyPI)."
+    default: "0.17.0"
+  target-type:
+    description: "garak generator: rest, openai, huggingface, ..."
+    default: "rest"
+  target-name:
+    description: "Model or target name passed as --target_name (empty for rest)."
+    default: ""
+  target-config:
+    description: "Path to the generator option JSON (endpoint URL, request template)."
+    required: true
+  probes:
+    description: "Comma-separated probe modules or classes; empty runs garak's default set."
+    default: "promptinject,dan,encoding,leakreplay,packagehallucination,xss"
+  generations:
+    description: "Generations per prompt (garak --generations). Empty: garak's default."
+    default: ""
+  max-hit-rate:
+    description: "A probe/detector pair above this fraction sets over-threshold."
+    default: "0.1"
+  production-pattern:
+    description: "Regex for production hosts the scan refuses. Empty: prod, production or live label, or www."
+    default: ""
+outputs:
+  report-dir:
+    description: "Directory with <prefix>.report.jsonl, .report.html and .hitlog.jsonl."
+    value: ${{ steps.scan.outputs.report-dir }}
+  max-hit-rate:
+    description: "Highest hit rate found."
+    value: ${{ steps.gate.outputs.max-hit-rate }}
+  over-threshold:
+    description: "true when any probe/detector hit rate exceeds max-hit-rate."
+    value: ${{ steps.gate.outputs.over-threshold }}
+  failing:
+    description: "Comma-separated probe/detector pairs above the threshold."
+    value: ${{ steps.gate.outputs.failing }}
+runs:
+  using: "composite"
+  steps:
+    - name: Refuse production targets
+      shell: bash
+      env:
+        CONFIG: ${{ inputs.target-config }}
+        TARGET_NAME: ${{ inputs.target-name }}
+        PATTERN: ${{ inputs.production-pattern }}
+      run: python3 -I "${GITHUB_ACTION_PATH}/guard.py" --config "${CONFIG}" --target-name "${TARGET_NAME}" --pattern "${PATTERN}"
+
+    - name: Install garak
+      shell: bash
+      env:
+        GARAK_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        python3 -m venv "${RUNNER_TEMP}/garak-venv"
+        # CPU-only torch: the CUDA wheels are gigabytes and probes run remote models.
+        "${RUNNER_TEMP}/garak-venv/bin/pip" install --quiet --disable-pip-version-check \
+          --extra-index-url https://download.pytorch.org/whl/cpu "garak==${GARAK_VERSION}"
+        "${RUNNER_TEMP}/garak-venv/bin/garak" --version
+
+    - name: Run garak
+      id: scan
+      shell: bash
+      env:
+        TARGET_TYPE: ${{ inputs.target-type }}
+        TARGET_NAME: ${{ inputs.target-name }}
+        CONFIG: ${{ inputs.target-config }}
+        PROBES: ${{ inputs.probes }}
+        GENERATIONS: ${{ inputs.generations }}
+      run: |
+        set -euo pipefail
+        export XDG_DATA_HOME="${RUNNER_TEMP}/garak-data"
+        # garak generators read their own key variable; map the one secret onto them.
+        if [ -n "${TARGET_API_KEY:-}" ]; then
+          export REST_API_KEY="${TARGET_API_KEY}" OPENAI_API_KEY="${TARGET_API_KEY}" \
+            HF_INFERENCE_TOKEN="${TARGET_API_KEY}" OPENAICOMPATIBLE_API_KEY="${TARGET_API_KEY}"
+        fi
+        prefix="garak-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+        args=(--target_type "${TARGET_TYPE}" --generator_option_file "${CONFIG}" --report_prefix "${prefix}")
+        [ -z "${TARGET_NAME}" ] || args+=(--target_name "${TARGET_NAME}")
+        [ -z "${PROBES}" ] || args+=(--probes "${PROBES}")
+        [ -z "${GENERATIONS}" ] || args+=(--generations "${GENERATIONS}")
+        "${RUNNER_TEMP}/garak-venv/bin/garak" "${args[@]}"
+        report="$(find "${XDG_DATA_HOME}" -name "${prefix}.report.jsonl" -print -quit)"
+        [ -n "${report}" ] || { echo "::error title=garak::no report written for ${prefix}"; exit 1; }
+        {
+          echo "report-dir=$(dirname "${report}")"
+          echo "report=${report}"
+        } >> "${GITHUB_OUTPUT}"
+
+    - name: Hit rates
+      id: gate
+      shell: bash
+      env:
+        REPORT: ${{ steps.scan.outputs.report }}
+        MAX: ${{ inputs.max-hit-rate }}
+      run: python3 -I "${GITHUB_ACTION_PATH}/gate.py" --report "${REPORT}" --max-hit-rate "${MAX}" --summary "${GITHUB_STEP_SUMMARY}"
