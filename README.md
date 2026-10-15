@@ -19,6 +19,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 | SBOM Generate | [`sbom-generate.yml`](.github/workflows/sbom-generate.yml) | `workflow_call` | Reusable syft build step — generates CycloneDX and SPDX SBOMs, uploads them as a workflow artefact, attaches them to the GitHub release on `release` events |
 | SBOM Scan | [`sbom-scan.yml`](.github/workflows/sbom-scan.yml) | `workflow_call` | Reusable grype gate — downloads the SBOM artefact, matches it against the vulnerability database, blocks at or above `fail-on-severity`, uploads SARIF to the Security tab |
+| VEX | [`vex.yml`](.github/workflows/vex.yml) | `workflow_call` | Reusable VEX publisher: checks the reviewed OpenVEX statements under `vex/`, merges them into `vex.openvex.json`, writes a CycloneDX VEX copy for Dependency-Track, uploads both as an artefact and attaches them to the release beside the SBOM; `sbom-scan.yml` takes the artefact as `vex-artifact` (#232) |
 
 ## Composite Actions
 
@@ -44,7 +45,8 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
 | Syft SBOM | [`syft`](.github/actions/syft/action.yml) | Generates a Software Bill of Materials (CycloneDX JSON, SPDX JSON) from a directory or an image reference; writes `sbom/sbom.cyclonedx.json` and `sbom/sbom.spdx.json`. Installs a checksum-verified syft binary | `version` (default: `1.54.1`), `target` (default: `.`), `formats` (default: `cyclonedx-json,spdx-json`), `output-dir` (default: `sbom`) |
-| Grype SBOM Scan | [`grype`](.github/actions/grype/action.yml) | Matches an SBOM file against the grype vulnerability database; blocks at or above `fail-on-severity`, annotates every match, uploads SARIF. Installs a checksum-verified grype binary | `version` (default: `0.120.1`), `sbom` (default: `sbom/sbom.cyclonedx.json`), `fail-on-severity` (default: `critical`), `only-fixed` (default: `false`), `sarif-upload` (default: `true`) |
+| Grype SBOM Scan | [`grype`](.github/actions/grype/action.yml) | Matches an SBOM file against the grype vulnerability database; blocks at or above `fail-on-severity`, annotates every match, uploads SARIF. Installs a checksum-verified grype binary | `version` (default: `0.120.1`), `sbom` (default: `sbom/sbom.cyclonedx.json`), `fail-on-severity` (default: `critical`), `only-fixed` (default: `false`), `sarif-upload` (default: `true`), `vex` (default: `""`; merged OpenVEX document whose not-affected matches drop out of the gate) |
+| VEX | [`vex`](.github/actions/vex/action.yml) | Checks OpenVEX statements (status, product, justification for `not_affected`, action statement for `affected`), flags statements whose packages are not in the SBOM, merges them with a checksum-verified vexctl and writes a CycloneDX VEX copy | `statements-dir` (default: `vex`), `sbom` (default: `sbom/sbom.cyclonedx.json`), `output-dir` (default: `vex-out`), `version` (default: `v0.4.4`) |
 
 ### GitHub Actionlint
 
@@ -421,9 +423,49 @@ The PR/CI counterpart to SBOM Generate. [grype](https://github.com/anchore/grype
       sbom-file: sbom.cyclonedx.json   # default
       fail-on-severity: critical       # default
       only-fixed: false                # true ignores matches with no fix yet
+      vex-artifact: vex                # optional; from vex.yml (issue #232)
 ```
 
 `fail-on-severity` follows the Remediation SLA Table: `critical` enforces the 48 h row in CI, `high` adds the 7 d row, `medium` the 30 d row, and so on. The same mapping is used by the dependency scan gate. grype also reports `Unknown` for advisories with no score; those never block on their own.
+
+### VEX (OpenVEX statements beside the SBOM)
+
+An SBOM tells a client what is inside. Without VEX, their scanner reports every CVE in it, including the ones already triaged as not reachable or mitigated. A VEX statement records that decision once, in a machine-readable form, and travels with the SBOM (SecOps plan Step 2 Standard).
+
+**Writing a statement.** Write one file per decision under `vex/` with [vexctl](https://github.com/openvex/vexctl):
+
+```sh
+vexctl create \
+  --product pkg:pypi/certifi@2022.12.7 \
+  --vuln CVE-2023-37920 --aliases GHSA-xqr8-7jwr-rhp7 \
+  --status not_affected --justification inline_mitigations_already_exist \
+  --impact-statement "We ship our own CA bundle and never load certifi's." \
+  --author "@alice" --file vex/CVE-2023-37920.json
+```
+
+- `--product` is the package URL exactly as the SBOM lists it. grype applies a statement to an SBOM scan only on that match. A statement naming the application with the package as a subcomponent is ignored.
+- `--vuln` is the CVE, and `--aliases` holds the ID grype reports (`GHSA-...` for language packages). Without the alias, grype does not apply the statement.
+- Statuses: `not_affected` needs a `--justification` (`component_not_present`, `vulnerable_code_not_present`, `vulnerable_code_not_in_execute_path`, `vulnerable_code_cannot_be_controlled_by_adversary`, `inline_mitigations_already_exist`). `affected` needs an `--action-statement`. `fixed` and `under_investigation` need nothing extra.
+
+**Review.** The PR that adds the file is the review record: a security reviewer approves it (CODEOWNERS on `vex/`, #84), and the finding it closes links to the PR (#61, #185). The `vex` job fails on a statement with a missing status, product, justification or action statement. It warns when a statement names a package that is not in the SBOM. The `sbom-scan` job warns when a statement matches no finding grype reports, so stale statements get removed.
+
+**Reaching the client.** `vex.yml` runs after `sbom-generate.yml` and publishes `vex.openvex.json` (for grype, Trivy and other OpenVEX readers) and `vex.cyclonedx.json` (for Dependency-Track) as release assets beside the SBOM. A client's scanner given both stops flagging what the statements cover. In this repository's own gate, `sbom-scan.yml` with `vex-artifact` lists covered matches as "not affected per VEX" notices; they stay out of the blocking count.
+
+```yaml
+# .github/workflows/release.yml (same file as the sbom and sbom-scan jobs)
+  vex:
+    needs: sbom
+    uses: sparkgeo/github-actions/.github/workflows/vex.yml@<SHA>
+    permissions:
+      contents: write   # release assets; contents: read when attach-to-release is false
+    with:
+      actions-ref: <SHA>
+      statements-dir: vex   # default
+```
+
+**Signed attestation (Advanced, release only).** `vexctl attest` only attests images that appear as products in the statements, which conflicts with the package-URL products grype needs. Instead, attach the merged document to the released image in the release job with the cosign composite (#15): `cosign attest --yes --type openvex --predicate vex.openvex.json <image>@<digest>`. Keyless signing needs the job's `id-token: write` OIDC token and push access to the registry, so this step runs only in a real release; CI does not exercise it.
+
+`tests/vex` holds an SBOM with certifi 2022.12.7 and a `not_affected` statement for CVE-2023-37920. grype reports that CVE as High and CVE-2024-39689 as Low. `tests/vex/run.sh` checks the statement checks, the stale checks and the CycloneDX copy. It also checks the gate against recorded grype results. The `vex` CI job runs grype live at `fail-on-severity: high` and asserts that it fails without the VEX and passes with it.
 
 ## Consuming repo CI setup
 

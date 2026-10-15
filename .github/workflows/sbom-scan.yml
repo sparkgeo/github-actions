@@ -32,6 +32,10 @@ on:
         description: 'Upload SARIF results to GitHub Security tab'
         default: true
         type: boolean
+      vex-artifact:
+        description: 'Optional: workflow artefact from vex.yml; matches its statements cover drop out of the gate (issue #232)'
+        default: ''
+        type: string
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the grype
@@ -75,6 +79,13 @@ jobs:
           name: ${{ inputs.sbom-artifact }}
           path: sbom
 
+      - name: Download VEX artefact
+        if: inputs.vex-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: ${{ inputs.vex-artifact }}
+          path: ${{ runner.temp }}/vex
+
       - uses: ./.sparkgeo-github-actions/.github/actions/grype
         id: grype
         with:
@@ -82,3 +93,4 @@ jobs:
           fail-on-severity: ${{ inputs.fail-on-severity }}
           only-fixed: ${{ inputs.only-fixed }}
           sarif-upload: ${{ inputs.sarif-upload }}
+          vex: ${{ inputs.vex-artifact != '' && format('{0}/vex/vex.openvex.json', runner.temp) || '' }}

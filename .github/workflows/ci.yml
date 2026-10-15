@@ -324,3 +324,56 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/storage-optimizer
+
+  # VEX (issue #232): vex.py and the grype gate against recorded results, then
+  # the vex composite on the fixture statements and a live grype run on the
+  # fixture SBOM at fail-on high, which must fail without the merged VEX and
+  # pass with it.
+  vex:
+    name: VEX
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checks against recorded results
+        run: bash tests/vex/run.sh
+
+      - id: vex
+        uses: ./.github/actions/vex
+        with:
+          statements-dir: tests/vex/fixtures/vex
+          sbom: tests/vex/fixtures/sbom.cyclonedx.json
+          output-dir: ${{ runner.temp }}/vex-out
+
+      - id: without
+        uses: ./.github/actions/grype
+        continue-on-error: true
+        with:
+          sbom: tests/vex/fixtures/sbom.cyclonedx.json
+          fail-on-severity: high
+          sarif-upload: "false"
+
+      - id: with
+        uses: ./.github/actions/grype
+        with:
+          sbom: tests/vex/fixtures/sbom.cyclonedx.json
+          fail-on-severity: high
+          sarif-upload: "false"
+          vex: ${{ steps.vex.outputs.openvex }}
+
+      - name: Assert the gate passes only with the VEX applied
+        env:
+          WITHOUT: ${{ steps.without.outcome }}
+          SUPPRESSED: ${{ steps.with.outputs.vex-suppressed-count }}
+        run: |
+          [ "${WITHOUT}" = "failure" ] || { echo "::error title=vex::grype gate passed without the VEX (${WITHOUT})"; exit 1; }
+          [ "${SUPPRESSED}" = "1" ] || { echo "::error title=vex::expected 1 match suppressed by the VEX, got ${SUPPRESSED}"; exit 1; }

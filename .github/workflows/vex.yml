@@ -1,0 +1,110 @@
+name: VEX
+
+# Reusable build-stage workflow (SecOps plan Step 2 Standard; issue #232):
+# checks the reviewed OpenVEX statements committed under vex/, merges them
+# into vex.openvex.json, writes a CycloneDX VEX copy for Dependency-Track,
+# uploads both as a workflow artefact and attaches them to the GitHub release
+# beside the SBOM on a `release` event. Feed the artefact to sbom-scan.yml
+# (vex-artifact) so grype drops the matches it covers. Run it after
+# sbom-generate.yml in the same workflow.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. It reaches github.com only (vexctl release).
+
+on:
+  workflow_call:
+    inputs:
+      statements-dir:
+        description: 'Reviewed OpenVEX documents committed in the repo, one per decision'
+        default: 'vex'
+        type: string
+      sbom-artifact:
+        description: 'Workflow artefact holding the SBOM the statements apply to (from sbom-generate.yml)'
+        default: 'sbom'
+        type: string
+      sbom-file:
+        description: 'SBOM file inside that artefact'
+        default: 'sbom.cyclonedx.json'
+        type: string
+      artifact-name:
+        description: 'Name of the uploaded VEX artefact'
+        default: 'vex'
+        type: string
+      attach-to-release:
+        description: 'Upload the VEX documents as release assets on a release event (caller must grant contents: write)'
+        default: true
+        type: boolean
+      vexctl-version:
+        description: 'vexctl release'
+        default: 'v0.4.4'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the vex
+          composite from. Pin this to the SAME SHA you pinned vex.yml to, so
+          the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      artifact-name:
+        description: 'Name of the uploaded VEX artefact'
+        value: ${{ inputs.artifact-name }}
+      stale-count:
+        description: 'Statements whose packages are not in the SBOM'
+        value: ${{ jobs.vex.outputs.stale-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always) and
+# `contents: write` only on release workflows that want assets attached.
+jobs:
+  vex:
+    name: VEX
+    runs-on: ubuntu-latest
+    outputs:
+      stale-count: ${{ steps.vex.outputs.stale-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout vex composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Download SBOM artefact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: ${{ inputs.sbom-artifact }}
+          path: ${{ runner.temp }}/sbom
+
+      - id: vex
+        uses: ./.sparkgeo-github-actions/.github/actions/vex
+        with:
+          statements-dir: ${{ inputs.statements-dir }}
+          sbom: ${{ runner.temp }}/sbom/${{ inputs.sbom-file }}
+          output-dir: ${{ runner.temp }}/vex-out
+          version: ${{ inputs.vexctl-version }}
+
+      - name: Upload VEX artefact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ runner.temp }}/vex-out/
+          if-no-files-found: error
+
+      - name: Attach VEX to release
+        if: inputs.attach-to-release && github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          OUT: ${{ runner.temp }}/vex-out
+        run: gh release upload "${TAG}" "${OUT}/vex.openvex.json" "${OUT}/vex.cyclonedx.json" --clobber -R "${GITHUB_REPOSITORY}"

@@ -1,0 +1,23 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "vex-fixture",
+      "version": "1.0.0",
+      "bom-ref": "vex-fixture",
+      "purl": "pkg:generic/sparkgeo/vex-fixture@1.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "certifi",
+      "version": "2022.12.7",
+      "bom-ref": "pkg:pypi/certifi@2022.12.7?package-id=fixture",
+      "purl": "pkg:pypi/certifi@2022.12.7"
+    }
+  ]
+}

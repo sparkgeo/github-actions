@@ -32,6 +32,9 @@ inputs:
   only-fixed:
     description: "Ignore matches that have no fix available yet."
     default: "false"
+  vex:
+    description: "Optional merged OpenVEX document (from the vex composite, issue #232). Matches it marks not_affected or fixed drop out of the gate and are listed as not affected per VEX."
+    default: ""
   sarif-upload:
     description: "Upload SARIF results to the GitHub Security tab."
     default: "true"
@@ -42,6 +45,12 @@ outputs:
   blocking-count:
     description: "Number of matches at or above fail-on-severity."
     value: ${{ steps.gate.outputs.blocking-count }}
+  vex-suppressed-count:
+    description: "Matches suppressed by the vex document."
+    value: ${{ steps.gate.outputs.vex-suppressed-count }}
+  vex-stale-count:
+    description: "VEX statements that match no finding grype reports."
+    value: ${{ steps.gate.outputs.vex-stale-count }}
 runs:
   using: "composite"
   steps:
@@ -68,6 +77,7 @@ runs:
       env:
         SBOM: ${{ inputs.sbom }}
         ONLY_FIXED: ${{ inputs.only-fixed }}
+        VEX: ${{ inputs.vex }}
         GRYPE_CHECK_FOR_APP_UPDATE: "false"
       run: |
         set -euo pipefail
@@ -80,6 +90,10 @@ runs:
         ARGS=(--quiet -o "json=${RESULTS}" -o "sarif=${SARIF}")
         if [ "${ONLY_FIXED}" = "true" ]; then
           ARGS+=(--only-fixed)
+        fi
+        if [ -n "${VEX}" ]; then
+          [ -f "${VEX}" ] || { echo "::error title=grype::VEX document not found: ${VEX}"; exit 2; }
+          ARGS+=(--vex "${VEX}")
         fi
         # The gate decides pass/fail; grype itself never fails the step here.
         "${RUNNER_TEMP}/grype" "sbom:${SBOM}" "${ARGS[@]}"
@@ -99,4 +113,5 @@ runs:
       env:
         RESULTS: ${{ steps.scan.outputs.results }}
         FAIL_ON_SEVERITY: ${{ inputs.fail-on-severity }}
+        VEX: ${{ inputs.vex }}
       run: bash "${GITHUB_ACTION_PATH}/gate.sh"

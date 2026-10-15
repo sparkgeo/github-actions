@@ -2,10 +2,12 @@
 # Gate on grype JSON results.
 #
 # Env: RESULTS (grype -o json file), FAIL_ON_SEVERITY
-# (negligible|low|medium|high|critical). Matches at or above the threshold
+# (negligible|low|medium|high|critical), optional VEX (the OpenVEX document
+# grype was given; matches it suppressed are listed, and statements that
+# match nothing grype reports are flagged stale). Matches at or above the threshold
 # become ::error annotations and fail the step (exit 1); the rest become
 # ::warning annotations. Exit 2 on bad input.
-# Outputs: match-count, blocking-count.
+# Outputs: match-count, blocking-count, vex-suppressed-count, vex-stale-count.
 set -euo pipefail
 
 : "${RESULTS:?}" "${FAIL_ON_SEVERITY:?}"
@@ -73,9 +75,33 @@ done < <(jq -r '.matches[] | [.vulnerability.id, .vulnerability.severity, .artif
   fi
 } >> "${GITHUB_STEP_SUMMARY}"
 
+SUPPRESSED=0
+STALE=0
+if [ -n "${VEX:-}" ]; then
+  while IFS=$'\t' read -r id sev pkg ver; do
+    SUPPRESSED=$((SUPPRESSED + 1))
+    echo "::notice title=grype::${id} ${sev} ${pkg} ${ver}: not affected per VEX"
+  done < <(jq -r '.ignoredMatches[]? | select(any(.appliedIgnoreRules[]?; .namespace == "vex"))
+    | [.vulnerability.id, .vulnerability.severity, .artifact.name, .artifact.version] | @tsv' "${RESULTS}")
+  # A statement is stale when neither its name nor an alias is among the IDs grype matched.
+  while IFS= read -r name; do
+    STALE=$((STALE + 1))
+    echo "::warning title=grype::VEX statement ${name} matches no finding grype reports; it is stale (remove it, or fix its product purl or aliases)"
+  done < <(jq -r --slurpfile r "${RESULTS}" '
+    ([$r[0].ignoredMatches[]?, $r[0].matches[]? | .vulnerability.id, .relatedVulnerabilities[]?.id]) as $seen
+    | .statements[] | select(([.vulnerability.name] + (.vulnerability.aliases // [])) | any(. as $i | $seen | index($i)) | not)
+    | .vulnerability.name' "${VEX}")
+  {
+    echo
+    echo "VEX: ${SUPPRESSED} match(es) not affected per VEX; ${STALE} stale statement(s)."
+  } >> "${GITHUB_STEP_SUMMARY}"
+fi
+
 {
   echo "match-count=${MATCHES}"
   echo "blocking-count=${BLOCKING}"
+  echo "vex-suppressed-count=${SUPPRESSED}"
+  echo "vex-stale-count=${STALE}"
 } >> "${GITHUB_OUTPUT}"
 
 [ "${BLOCKING}" -eq 0 ]
