@@ -3,13 +3,19 @@
 
 Usage: export.py --input DIR --output FILE [--cluster NAME] [--now ISO8601]
 
-For each Kubescape VulnerabilityManifestSummary (one per workload container):
-every CVE in the image's manifest ("all") becomes an entry; it is
-relevant: true when the workload's filtered manifest ("relevant") lists the
-same CVE and package, false when that manifest exists and does not, and
-"unknown" when the node agent has produced no filtered manifest yet. Trivy
-Operator findings for an image digest Kubescape has no entry for are added
-as "unknown", so the export covers every running image either tool saw.
+Kubescape (kubevuln 0.3, chart 1.40) writes two kinds of
+VulnerabilityManifest, told apart by the label kubescape.io/context:
+"non-filtered", one per image (every CVE in it), and "filtered", one per
+workload container, scanned from only the files that container loaded and
+labelled with kubescape.io/workload-namespace, -kind, -name and
+-container-name. Both carry the image digest in the kubescape.io/image-id
+annotation. For each workload container, every CVE in its image's manifest
+becomes an entry, relevant: true when the filtered manifest lists the same
+CVE and package and false when it does not. A workload with a
+VulnerabilityManifestSummary but no filtered manifest yet (the node agent is
+still learning) gets "unknown" for every CVE. Trivy Operator findings for an
+image digest Kubescape has not scanned are added as "unknown", so the export
+covers every running image either tool saw.
 
 Output: {"generated_at", "cluster", "counts": {...}, "entries": [{"image",
 "workload", "container", "cve", "advisory", "package", "version",
@@ -61,6 +67,7 @@ def created(manifest):
             or (manifest.get("metadata") or {}).get("creationTimestamp") or "")
 
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
@@ -69,36 +76,53 @@ def main():
     ap.add_argument("--now", default="")
     a = ap.parse_args()
 
-    manifests = {}
-    for p in glob.glob(os.path.join(a.input, "manifests", "*.json")):
+    images, filtered = {}, []
+    for p in sorted(glob.glob(os.path.join(a.input, "manifests", "*.json"))):
         m = load(p)
         md = m.get("metadata") or {}
-        manifests[(md.get("namespace", ""), md.get("name", ""))] = m
+        context = (md.get("labels") or {}).get("kubescape.io/context")
+        image = digest((md.get("annotations") or {}).get("kubescape.io/image-id"))
+        if context == "filtered":
+            filtered.append(m)
+        elif context == "non-filtered":
+            images[image] = m
 
-    entries, seen_images = [], set()
-    for s in load(os.path.join(a.input, "summaries.json")).get("items") or []:
-        labels = (s.get("metadata") or {}).get("labels") or {}
-        ref = (s.get("spec") or {}).get("vulnerabilitiesRef") or {}
-        all_ref, rel_ref = ref.get("all") or {}, ref.get("relevant") or {}
-        all_m = manifests.get((all_ref.get("namespace", ""), all_ref.get("name", "")))
-        if not all_m:
-            continue
-        rel_m = manifests.get((rel_ref.get("namespace", ""), rel_ref.get("name", ""))) if rel_ref.get("name") else None
-        ann = (all_m.get("metadata") or {}).get("annotations") or {}
-        image = digest(ann.get("kubescape.io/image-id") or ann.get("kubescape.io/image-tag"))
-        seen_images.add(image)
-        workload = "/".join(labels.get(k, "") for k in (
-            "kubescape.io/workload-namespace", "kubescape.io/workload-kind", "kubescape.io/workload-name"))
-        container = labels.get("kubescape.io/workload-container-name", "")
-        loaded = pairs(rel_m) if rel_m else None
-        last_seen = created(rel_m) if rel_m else created(all_m)
+    def key(labels, prefix="kubescape.io/workload-"):
+        return tuple((labels.get(prefix + k) or "").lower() for k in ("namespace", "kind", "name", "container-name"))
+
+    def emit(all_m, image, labels, loaded, last_seen):
+        ns, kind, name, container = (labels.get("kubescape.io/workload-" + k, "") for k in
+                                     ("namespace", "kind", "name", "container-name"))
         for (cve, pkg), (adv, ver) in sorted(pairs(all_m).items()):
             entries.append({
-                "image": image, "workload": workload, "container": container,
+                "image": image, "workload": f"{ns}/{kind}/{name}", "container": container,
                 "cve": cve, "advisory": adv, "package": pkg, "version": ver,
                 "relevant": "unknown" if loaded is None else (cve, pkg) in loaded,
                 "last_seen": last_seen, "source": "kubescape",
             })
+
+    entries, seen_images, done = [], set(), set()
+    for f in filtered:
+        md = f.get("metadata") or {}
+        image = digest((md.get("annotations") or {}).get("kubescape.io/image-id"))
+        all_m = images.get(image)
+        if not all_m:
+            continue  # image-wide scan not stored yet; the next run picks it up
+        labels = md.get("labels") or {}
+        emit(all_m, image, labels, set(pairs(f)), created(f))
+        seen_images.add(image)
+        done.add(key(labels))
+
+    # Workloads Kubescape knows about but has no filtered manifest for yet.
+    for s in load(os.path.join(a.input, "summaries.json")).get("items") or []:
+        md = s.get("metadata") or {}
+        labels = md.get("labels") or {}
+        image = digest((md.get("annotations") or {}).get("kubescape.io/image-id"))
+        if key(labels) in done or image not in images:
+            continue
+        emit(images[image], image, labels, None, created(images[image]))
+        seen_images.add(image)
+        done.add(key(labels))
 
     for r in load(os.path.join(a.input, "trivy.json")).get("items") or []:
         rep = r.get("report") or {}

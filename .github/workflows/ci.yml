@@ -76,9 +76,10 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
-  # Runtime scanners (#179) on a throwaway kind cluster: install both
-  # operators with the composite, run a workload with known CVEs, wait for
-  # Kubescape's relevancy data, then export it. Audit egress: images and
+  # Runtime scanners (#179): exporter fixtures, then a throwaway kind cluster:
+  # install both operators with the composite, run a workload with known CVEs,
+  # wait for Kubescape's per-workload manifest, export it and load the export
+  # through the runtime-relevance composite. Audit egress: images and
   # vulnerability databases come from several registries and CDNs.
   runtime-scanners:
     name: Runtime Scanners (kind)
@@ -96,6 +97,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Exporter and annotator fixtures
+        run: tests/runtime-scanners/run.sh
+
       - name: Create kind cluster
         run: kind create cluster --name ci --wait 180s
 
@@ -111,9 +115,11 @@ jobs:
           set -euo pipefail
           kubectl apply -f tests/runtime-scanners/workload.yaml
           kubectl -n demo rollout status deployment/web --timeout 5m
+          # Kubescape writes the per-workload ("filtered") manifest into its own
+          # namespace, labelled with the workload's namespace.
           for i in $(seq 120); do
-            n="$(kubectl get vulnerabilitymanifests.spdx.softwarecomposition.kubescape.io -n demo \
-              -l kubescape.io/context=filtered -o name 2>/dev/null | wc -l)"
+            n="$(kubectl get vulnerabilitymanifests.spdx.softwarecomposition.kubescape.io -A \
+              -l kubescape.io/context=filtered,kubescape.io/workload-namespace=demo -o name 2>/dev/null | wc -l)"
             if [ "${n}" -gt 0 ]; then echo "filtered manifest after ${i} polls"; exit 0; fi
             sleep 15
           done
@@ -123,11 +129,25 @@ jobs:
           kubectl -n security-scanners logs ds/node-agent --tail=40 | grep -iE 'error|profile|learning|completed' || true
           exit 1
 
-      - name: Collect
+      - name: Collect and export
         if: always()
         env:
           OUT_DIR: ${{ runner.temp }}/runtime-collect
-        run: bash .github/actions/runtime-relevance/collect.sh
+        run: |
+          set -euo pipefail
+          bash .github/actions/runtime-relevance/collect.sh
+          python3 -I .github/actions/runtime-relevance/export.py --input "${OUT_DIR}" --cluster kind-ci \
+            --output "${OUT_DIR}/runtime-relevance.json"
+          # The demo workload must be classified from its filtered manifest, not left unknown.
+          jq -e '[.entries[] | select(.workload == "demo/Deployment/web")] | length > 0 and all(.relevant != "unknown")' \
+            "${OUT_DIR}/runtime-relevance.json"
+          jq -c '[.entries[] | select(.workload == "demo/Deployment/web") | .relevant] | group_by(.) | map({(tostring): length})' \
+            "${OUT_DIR}/runtime-relevance.json"
+
+      - id: relevance
+        uses: ./.github/actions/runtime-relevance
+        with:
+          export-file: ${{ runner.temp }}/runtime-collect/runtime-relevance.json
 
       - name: Upload collected objects
         if: always()

@@ -1,0 +1,149 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "spdx.softwarecomposition.kubescape.io/v1beta1",
+   "kind": "VulnerabilityManifestSummary",
+   "metadata": {
+    "annotations": {
+     "kubescape.io/cve-matching-mode": "adaptive",
+     "kubescape.io/image-id": "docker.io/library/nginx@sha256:b997b0db9c2bc0a2fb803ced5fb9ff3a757e54903a28ada3e50412cc3ab7822f",
+     "kubescape.io/image-tag": "docker.io/library/nginx@sha256:b997b0db9c2bc0a2fb803ced5fb9ff3a757e54903a28ada3e50412cc3ab7822f",
+     "kubescape.io/resource-size": "1007920",
+     "kubescape.io/scan-id": "replicaset-web-678fbbfc98-nginx-4165-35df-v1-42-3-v0-104-1-matching-adaptive",
+     "kubescape.io/status": "ready",
+     "kubescape.io/sync-checksum": "f63349de9248ac7f4f19afddae3b8513dcd447faa04175e2db88c4e23898741f",
+     "kubescape.io/timestamp": "1792099279",
+     "kubescape.io/tool-version": "v1.42.3",
+     "kubescape.io/wlid": "wlid://cluster-kind-ci/namespace-demo/deployment-web",
+     "kubescape.io/workload-container-name": "nginx"
+    },
+    "creationTimestamp": "2026-10-15T21:19:40Z",
+    "labels": {
+     "kubescape.io/context": "filtered",
+     "kubescape.io/image-id": "docker-io-library-nginx-sha256-b997b0db9c2bc0a2fb803ced5fb9ff3a",
+     "kubescape.io/image-name": "docker-io-library-nginx",
+     "kubescape.io/workload-api-group": "apps",
+     "kubescape.io/workload-api-version": "v1",
+     "kubescape.io/workload-container-name": "nginx",
+     "kubescape.io/workload-kind": "deployment",
+     "kubescape.io/workload-name": "web",
+     "kubescape.io/workload-namespace": "demo"
+    },
+    "name": "deployment-web-nginx",
+    "namespace": "demo",
+    "resourceVersion": "3",
+    "uid": "a485ae53-962c-40ef-bfdd-d44caab9a926"
+   },
+   "spec": {
+    "severities": {
+     "critical": {
+      "all": 0
+     },
+     "high": {
+      "all": 0
+     },
+     "low": {
+      "all": 0
+     },
+     "medium": {
+      "all": 0
+     },
+     "negligible": {
+      "all": 0
+     },
+     "unknown": {
+      "all": 0
+     }
+    },
+    "vulnerabilitiesRef": {
+     "all": {
+      "kind": "",
+      "name": "",
+      "namespace": ""
+     },
+     "relevant": {
+      "kind": "",
+      "name": "",
+      "namespace": ""
+     }
+    }
+   },
+   "status": {}
+  },
+  {
+   "apiVersion": "spdx.softwarecomposition.kubescape.io/v1beta1",
+   "kind": "VulnerabilityManifestSummary",
+   "metadata": {
+    "annotations": {
+     "kubescape.io/cve-matching-mode": "adaptive",
+     "kubescape.io/image-id": "docker.io/library/nginx@sha256:b997b0db9c2bc0a2fb803ced5fb9ff3a757e54903a28ada3e50412cc3ab7822f",
+     "kubescape.io/image-tag": "docker.io/library/nginx@sha256:b997b0db9c2bc0a2fb803ced5fb9ff3a757e54903a28ada3e50412cc3ab7822f",
+     "kubescape.io/resource-size": "1007920",
+     "kubescape.io/scan-id": "replicaset-web-678fbbfc98-nginx-4165-35df-v1-42-3-v0-104-1-matching-adaptive",
+     "kubescape.io/status": "ready",
+     "kubescape.io/sync-checksum": "f63349de9248ac7f4f19afddae3b8513dcd447faa04175e2db88c4e23898741f",
+     "kubescape.io/timestamp": "1792099279",
+     "kubescape.io/tool-version": "v1.42.3",
+     "kubescape.io/wlid": "wlid://cluster-kind-ci/namespace-demo/deployment-web",
+     "kubescape.io/workload-container-name": "nginx"
+    },
+    "creationTimestamp": "2026-10-15T21:19:40Z",
+    "labels": {
+     "kubescape.io/context": "filtered",
+     "kubescape.io/image-id": "docker-io-library-nginx-sha256-b997b0db9c2bc0a2fb803ced5fb9ff3a",
+     "kubescape.io/image-name": "docker-io-library-nginx",
+     "kubescape.io/workload-api-group": "apps",
+     "kubescape.io/workload-api-version": "v1",
+     "kubescape.io/workload-container-name": "nginx",
+     "kubescape.io/workload-kind": "deployment",
+     "kubescape.io/workload-name": "worker",
+     "kubescape.io/workload-namespace": "demo"
+    },
+    "name": "deployment-worker-nginx",
+    "namespace": "demo",
+    "resourceVersion": "3",
+    "uid": "a485ae53-962c-40ef-bfdd-d44caab9a926"
+   },
+   "spec": {
+    "severities": {
+     "critical": {
+      "all": 0
+     },
+     "high": {
+      "all": 0
+     },
+     "low": {
+      "all": 0
+     },
+     "medium": {
+      "all": 0
+     },
+     "negligible": {
+      "all": 0
+     },
+     "unknown": {
+      "all": 0
+     }
+    },
+    "vulnerabilitiesRef": {
+     "all": {
+      "kind": "",
+      "name": "",
+      "namespace": ""
+     },
+     "relevant": {
+      "kind": "",
+      "name": "",
+      "namespace": ""
+     }
+    }
+   },
+   "status": {}
+  }
+ ],
+ "kind": "List",
+ "metadata": {
+  "resourceVersion": ""
+ }
+}

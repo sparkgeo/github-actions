@@ -17,6 +17,8 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
+| Runtime Scanners Deploy | [`runtime-scanners-deploy.yml`](.github/workflows/runtime-scanners-deploy.yml) | `workflow_call` | Reusable EKS deploy of Trivy Operator and the Kubescape operator with relevancy on; charts pinned by version and SHA-256; OIDC auth |
+| Runtime Relevance Export | [`runtime-relevance-export.yml`](.github/workflows/runtime-relevance-export.yml) | `workflow_call` (call daily) | Exports which CVEs sit in packages the running workloads load as `runtime-relevance.json`; artifact plus a rolling `runtime-relevance-latest` release |
 
 ## Composite Actions
 
@@ -41,6 +43,8 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Runtime Scanners | [`runtime-scanners`](.github/actions/runtime-scanners/action.yml) | Installs or upgrades Trivy Operator (chart 0.36.0) and the Kubescape operator (chart 1.40.4, relevancy and node agent on, other scanners off) into the current kubectl context; namespace labelled with the #114 tags | `cluster-name` (required), `namespace` (default: `security-scanners`), `exclude-namespaces` (default: `actions-runner-system`), `namespace-labels`, chart `-version`/`-sha256` pairs, `trivy-operator-values`, `kubescape-values` |
+| Runtime Relevance | [`runtime-relevance`](.github/actions/runtime-relevance/action.yml) | Marks SARIF findings `runtime-relevant` true, false or `unknown` from the export (tag `runtime:not-loaded`) and exposes the export for the EPSS/KEV override's `runtime-relevance-file` | `findings-file`, `image-digest`, `export-file`, `repository` (default: this repository), `token` |
 
 ### GitHub Actionlint
 
@@ -373,6 +377,45 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Runtime scanners and runtime relevance (Trivy Operator, Kubescape)
+
+SecOps plan Step 41 Standard (issue #179). `container-scan.yml` scans an image when it is built; Trivy Operator keeps scanning what is running, so an image that turns vulnerable a month later is still found. Kubescape's node agent records which packages each container loads: a CVE in a package never loaded is real but not urgent, and the Step 25 runtime-relevance modifier drops it one SLA row.
+
+```yaml
+# In the platform repo
+name: Runtime scanners
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '30 4 * * *'
+jobs:
+  deploy:
+    if: github.event_name == 'push'
+    uses: sparkgeo/github-actions/.github/workflows/runtime-scanners-deploy.yml@<SHA>
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      actions-ref: <SHA>
+      cluster-name: prescient-prod
+      aws-role-arn: arn:aws:iam::<account>:role/runtime-scanners-deploy
+      aws-region: us-west-2
+  export:
+    if: github.event_name == 'schedule'
+    uses: sparkgeo/github-actions/.github/workflows/runtime-relevance-export.yml@<SHA>
+    permissions:
+      contents: write      # runtime-relevance-latest release
+      id-token: write
+    with:
+      actions-ref: <SHA>
+      cluster-name: prescient-prod
+      aws-role-arn: arn:aws:iam::<account>:role/runtime-relevance-read
+      aws-region: us-west-2
+```
+
+`runtime-relevance.json` holds one entry per image digest, workload and CVE: `cve`, `package`, `version`, `relevant` (`true`, `false`, or `unknown` while the node agent is still learning or for images only Trivy Operator saw) and `last_seen`. A container scan reads it through the `runtime-relevance` composite; the EPSS/KEV override (#80) takes it as `runtime-relevance-file`. Relevancy is Kubernetes on Linux 5.4+ only; VMs and serverless use deployment status (#113). CI installs both operators on a kind cluster, runs an nginx workload with known CVEs, waits for Kubescape's relevancy data and checks the export.
 
 ## Consuming repo CI setup
 
