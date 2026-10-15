@@ -37,6 +37,10 @@ on:
         description: 'Upload SARIF results to the GitHub Security tab'
         default: true
         type: boolean
+      ai-services:
+        description: 'Also run the managed-AI-service group (Bedrock, SageMaker, Vertex AI, Azure OpenAI): the curated checks in policies/ai, the SPK_AI_2 and SPK_AI_3 logging policies, and the SPK_AI_1 invocation-logging script'
+        default: true
+        type: boolean
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the checkov
@@ -78,3 +82,44 @@ jobs:
           skip-checks: ${{ inputs.skip-checks }}
           download-external-modules: ${{ inputs.download-external-modules }}
           sarif-upload: ${{ inputs.sarif-upload }}
+
+      # AI-service group (issue #189, plan Step 17 Standard). The built-in ids
+      # already ran above; this pass adds the SPK_AI_* policies and reports the
+      # group on its own. No SARIF upload: a second upload under the same
+      # category would replace the first run's results.
+      - name: Resolve the AI-service checks
+        id: ai
+        if: always() && inputs.ai-services
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir=".sparkgeo-github-actions/policies/ai"
+          checks="$(grep -oE '^[A-Z_0-9]+' "${dir}/checks.txt" | paste -sd, -)"
+          custom="$(grep -hoE 'id: "SPK_AI_[0-9]+"' "${dir}"/*.yaml | grep -oE 'SPK_AI_[0-9]+' | paste -sd, -)"
+          echo "policies=${dir}" >> "${GITHUB_OUTPUT}"
+          echo "checks=${checks},${custom}" >> "${GITHUB_OUTPUT}"
+
+      - name: AI-service policies (checkov)
+        if: always() && inputs.ai-services
+        uses: ./.sparkgeo-github-actions/.github/actions/checkov
+        with:
+          directory: ${{ inputs.directory }}
+          frameworks: ${{ inputs.frameworks }}
+          checks: ${{ steps.ai.outputs.checks }}
+          external-checks-dir: ${{ steps.ai.outputs.policies }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          skip-checks: ${{ inputs.skip-checks }}
+          download-external-modules: ${{ inputs.download-external-modules }}
+          sarif-upload: "false"
+
+      - name: Bedrock model invocation logging (SPK_AI_1)
+        if: always() && inputs.ai-services
+        shell: bash
+        env:
+          DIRECTORY: ${{ inputs.directory }}
+          FAIL_ON: ${{ inputs.fail-on-severity }}
+        run: |
+          set -euo pipefail
+          args=(--directory "${DIRECTORY}")
+          [ "${FAIL_ON}" != "none" ] && [ "${FAIL_ON}" != "critical" ] && args+=(--fail)
+          python3 -I .sparkgeo-github-actions/.github/actions/checkov/ai-logging.py "${args[@]}"

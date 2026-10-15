@@ -1,0 +1,28 @@
+# Curated checkov checks for managed AI services (issue #189, plan Step 17
+# Standard): no public model endpoints, encryption with a CMK, guardrails,
+# identity and host hygiene, for Bedrock, SageMaker, Vertex AI and Azure
+# OpenAI (Cognitive Services). One id per line; text after # is a comment.
+# Invocation logging is SPK_AI_1 (ai-logging.py, Terraform), SPK_AI_2 (Vertex
+# endpoint) and SPK_AI_3 (Cognitive Services diagnostic setting).
+CKV_AWS_122   # SageMaker notebook: direct internet access disabled
+CKV_AWS_306   # SageMaker notebook: launched into a VPC subnet
+CKV_AWS_370   # SageMaker model: network isolation
+CKV_AWS_22    # SageMaker notebook: encrypted with a CMK
+CKV_AWS_98    # SageMaker endpoint configuration: encrypted at rest
+CKV_AWS_187   # SageMaker domain and notebook: CMK
+CKV_AWS_373   # Bedrock agent: encrypted with a CMK
+CKV_AWS_383   # Bedrock agent: guardrails associated
+CKV_AWS_307   # SageMaker notebook: no root access
+CKV_AWS_371   # SageMaker notebook: IMDSv2 only
+CKV_GCP_89    # Vertex AI (notebooks) instances private
+CKV_GCP_92    # Vertex AI dataset: CMK
+CKV_GCP_96    # Vertex AI metadata store: CMK
+CKV_GCP_126   # Vertex AI notebook: Shielded VM
+CKV_GCP_127   # Vertex AI notebook: integrity monitoring
+CKV_AZURE_134 # Cognitive Services: public network access disabled
+CKV_AZURE_144 # Machine Learning workspace: public access disabled
+CKV_AZURE_236 # Cognitive Services: local authentication disabled
+CKV_AZURE_238 # Cognitive Services: managed identity
+CKV_AZURE_247 # Azure OpenAI: data loss prevention configured
+CKV2_AZURE_22 # Cognitive Services: customer-managed key
+CKV2_AZURE_49 # Machine Learning workspace: network access not overly permissive

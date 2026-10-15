@@ -1,0 +1,14 @@
+# AI-service policy pack (issue #189, plan Step 17 Standard): a Vertex AI
+# endpoint logs requests and responses (the GCP equivalent of Bedrock model
+# invocation logging).
+metadata:
+  id: "SPK_AI_2"
+  name: "Vertex AI endpoint has request-response logging configured"
+  category: "LOGGING"
+  guideline: "https://github.com/sparkgeo/github-actions/blob/main/README.md#iac-scan-checkov"
+definition:
+  cond_type: attribute
+  resource_types:
+    - google_vertex_ai_endpoint
+  attribute: predict_request_response_logging_config
+  operator: exists
