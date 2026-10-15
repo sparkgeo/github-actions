@@ -1,0 +1,86 @@
+name: "vex"
+description: |
+  Turns the reviewed OpenVEX statements committed in a repository into the
+  VEX documents published beside its SBOM (SecOps plan Step 2 Standard;
+  issue #232). Each statement records one triage decision, such as a CVE
+  in a shipped component that is not affected, fixed, or affected with an
+  action. The PR that adds it is the review record.
+
+  Installs a pinned vexctl release binary checked against the release's
+  SHA-256 list. vex.py checks every statement:
+  - status and product are present
+  - a justification is given for not_affected
+  - an action statement is given for affected
+  - a statement whose packages are not in the SBOM is flagged stale
+  vexctl merge then writes vex.openvex.json, and vex.py writes a
+  CycloneDX copy (vex.cyclonedx.json) for Dependency-Track. Pass
+  vex.openvex.json to the grype composite's vex input (sbom-scan.yml
+  vex-artifact). Suppressed matches drop out of the gate there and are
+  listed as not affected per VEX.
+
+  grype applies a statement to an SBOM scan only when the statement's
+  product is the package URL as it appears in the SBOM, and its name or an
+  alias is the ID grype reports (GHSA-... for language packages). Write
+  statements with --product <package purl> --vuln <CVE> --aliases <GHSA>.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  statements-dir:
+    description: "Directory of reviewed OpenVEX documents (*.json), one per decision."
+    default: "vex"
+  sbom:
+    description: "SBOM the statements apply to (CycloneDX or SPDX JSON from the syft composite)."
+    default: "sbom/sbom.cyclonedx.json"
+  output-dir:
+    description: "Where vex.openvex.json and vex.cyclonedx.json are written."
+    default: "vex-out"
+  version:
+    description: "vexctl release (with the leading v)."
+    default: "v0.4.4"
+outputs:
+  openvex:
+    description: "Path of the merged OpenVEX document."
+    value: ${{ steps.vex.outputs.openvex }}
+  cyclonedx:
+    description: "Path of the CycloneDX VEX document."
+    value: ${{ steps.vex.outputs.cyclonedx }}
+  statement-count:
+    description: "Statements published."
+    value: ${{ steps.vex.outputs.statement-count }}
+  stale-count:
+    description: "Statements whose packages are not in the SBOM."
+    value: ${{ steps.vex.outputs.stale-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install vexctl
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/openvex/vexctl/releases/download/${VERSION}"
+        curl -sSfL -o "${TMP}/vexctl-linux-amd64" "${BASE}/vexctl-linux-amd64"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/vexctl_checksums.txt"
+        ( cd "${TMP}" && grep " vexctl-linux-amd64\$" checksums.txt | sha256sum -c - )
+        # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
+        install "${TMP}/vexctl-linux-amd64" "${RUNNER_TEMP}/vexctl"
+
+    - name: Check, merge and convert statements
+      id: vex
+      shell: bash
+      env:
+        STATEMENTS: ${{ inputs.statements-dir }}
+        SBOM: ${{ inputs.sbom }}
+        OUT: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        [ -f "${SBOM}" ] || { echo "::error title=vex::SBOM file not found: ${SBOM}"; exit 2; }
+        mkdir -p "${OUT}"
+        python3 -I "${GITHUB_ACTION_PATH}/vex.py" --statements "${STATEMENTS}" --sbom "${SBOM}" \
+          --cyclonedx "${OUT}/vex.cyclonedx.json" >> "${GITHUB_OUTPUT}"
+        mapfile -t DOCS < <(find "${STATEMENTS}" -maxdepth 1 -name '*.json' | sort)
+        "${RUNNER_TEMP}/vexctl" merge --author "${GITHUB_REPOSITORY}" "${DOCS[@]}" > "${OUT}/vex.openvex.json"
+        echo "openvex=${OUT}/vex.openvex.json" >> "${GITHUB_OUTPUT}"
+        echo "cyclonedx=${OUT}/vex.cyclonedx.json" >> "${GITHUB_OUTPUT}"

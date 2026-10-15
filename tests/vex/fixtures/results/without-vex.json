@@ -1,0 +1,61 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "GHSA-xqr8-7jwr-rhp7",
+        "severity": "High",
+        "fix": {
+          "versions": [
+            "2023.7.22"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "2023.7.22",
+              "date": "2023-08-17",
+              "kind": "first-observed"
+            }
+          ]
+        }
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2023-37920"
+        }
+      ],
+      "artifact": {
+        "name": "certifi",
+        "version": "2022.12.7"
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-248v-346w-9cwc",
+        "severity": "Low",
+        "fix": {
+          "versions": [
+            "2024.7.4"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "2024.7.4",
+              "date": "2025-02-12",
+              "kind": "first-observed"
+            }
+          ]
+        }
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2024-39689"
+        }
+      ],
+      "artifact": {
+        "name": "certifi",
+        "version": "2022.12.7"
+      }
+    }
+  ],
+  "ignoredMatches": []
+}
