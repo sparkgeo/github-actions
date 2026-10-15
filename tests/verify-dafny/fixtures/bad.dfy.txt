@@ -1,0 +1,10 @@
+// A false postcondition: Inc(-1) is 0, not > 0. Kept as .txt so a
+// whole-tree `dafny verify` of this repository does not pick it up; run.sh
+// copies it to a .dfy file before verifying.
+module Bad {
+  function Inc(x: int): int
+    ensures Inc(x) > 0
+  {
+    x + 1
+  }
+}

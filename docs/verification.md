@@ -58,6 +58,20 @@ The plan keeps two self-contained reference workflows beside each other, uncommi
 **/geometry/** **/geom/** **/crs/** **/projection*/** **/transform*/** **/tiles/** **/tile*/** **/index*/** **/h3/** **/s2/** **/quadkey*
 ```
 
+### 5.4 Dafny: `verify-dafny.yml` (#128)
+
+**Build layout.** Proven sources live in one directory (`source-dir`, default `verified/`); each target's compiled output is committed where that language's code imports it (`output-dirs`), and nobody edits it by hand. The workflow verifies every `.dfy` under `verify-root` with `--verification-time-limit 60` (the brief's whole-tree rule), then runs `dafny translate <target> --no-verify` into a temp directory and diffs: a generated file missing from or different in the committed directory fails the build, and the regenerated tree is in the artefact to copy back. Files only in the committed directory are allowed, so `go.mod`, `package.json` and consumer tests sit beside the generated code.
+
+| Target | Committed directory holds | Runtime | Consumer |
+|---|---|---|---|
+| `py` | `<name>-py/` contents: one module per Dafny module, `_dafny/`, `System_/` | bundled (`--include-runtime`) | `import Quadkey`; `Quadkey.default__.EncodeChecked(...)` |
+| `go` | `<name>-go/` contents plus your `go.mod` (its `module` line becomes `--go-module-name`) | `github.com/dafny-lang/DafnyRuntimeGo/v4`, required in `go.mod` (the bundled Go runtime imports a bare `dafny` package and does not build in module mode); `goimports` installed pinned | `Quadkey.Companion_Default___.EncodeChecked(...)` |
+| `js` | `<name>.js` (a script, not a module) | bundled, plus `bignumber.js` from npm | wrap once: `new Function("require", src + "return { Quadkey };")(require)` |
+
+The pinned release is `dafny-4.11.0-x64-ubuntu-22.04.zip` (bundled .NET runtime and Z3), checked against a recorded SHA-256 because the release publishes none; another version needs `dafny-sha256`. The target languages' normal test jobs (`test-python.yml` #71, `test-go.yml` #73, `test-node.yml` #72) run the consumers; the example's three run in this repository's CI.
+
+**SMT timeouts.** A time out is not a counterexample: Z3 gave up. Before raising the limit, find which obligation is slow with `dafny verify --isolate-assertions --filter-symbol <Name>` and give the solver the step it cannot find, as a lemma called at that point. The example needed three, each a typical cause: nonlinear arithmetic (`HalfPlusBit`: `x == 2 * (x / 2) + x % 2`), a bound through division (`HalfBound`: `x < Pow2(zoom)` implies `x / 2 < Pow2(zoom - 1)`), and a recursive function the solver kept unrolling inside quantifiers (`Pow2` made `opaque`, with `Pow2Step` exposing one level). With them the module verifies in about a second; without them `RoundTrip` timed out at 60 s.
+
 ## 6. The map: `verify.yml`
 
 Schema: [`policies/verification/verify.schema.json`](../policies/verification/verify.schema.json); example with all three languages and the cross-language tools: [`examples/verify.yml`](examples/verify.yml). One entry per path glob: `risk` (`high`, `medium`, `low`), `rungs` (lowest first), `tool` (inferred from the extension when absent), `targets` for Dafny compile targets, `covers` for the implementation globs a model stands for, `budget` overrides. `verify-map.yml` validates the file, resolves the changed files to their entries (longest glob wins) or to the fallback, and writes `verify-map.json` (`files`, `mapped`, `bare_high_risk`, `by_tool`) for the other workflows. A changed high-risk path with no rung is a warning at Baseline and fails with `strict-high-risk`; an implementation change under a model's `covers` without a change to the model is a warning.

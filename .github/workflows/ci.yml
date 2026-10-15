@@ -116,6 +116,51 @@ jobs:
         run: |
           { [ "${FALLBACK}" = "true" ] && [ "${MAPPED}" = "0" ] && [ "${ERRORS}" = "0" ]; } || { echo "::error title=verify-map::expected fallback mode with nothing mapped and no errors; got fallback=${FALLBACK} mapped=${MAPPED} errors=${ERRORS}"; exit 1; }
 
+  verify-dafny:
+    name: Verify Dafny
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The example: proof, then drift of the committed py, go and js output.
+      - id: self
+        uses: ./.github/actions/dafny
+        with:
+          verify-root: docs/examples/verify/dafny
+          source-dir: docs/examples/verify/dafny/verified
+          output-dirs: py=docs/examples/verify/dafny/compiled/py,go=docs/examples/verify/dafny/compiled/go,js=docs/examples/verify/dafny/compiled/js
+          output-name: quadkey
+          output-dir: ${{ runner.temp }}/verify-dafny
+
+      - name: Fixtures
+        env:
+          DAFNY_BIN: ${{ steps.self.outputs.bin }}
+        run: PATH="${DAFNY_BIN}:${PATH}" tests/verify-dafny/run.sh
+
+      # Step 4 of the flow: each target's consumer runs the compiled core.
+      - name: Consumers (Python, Go, JavaScript)
+        run: |
+          set -euo pipefail
+          ( cd docs/examples/verify/dafny/compiled/py && python3 -m unittest -v test_quadkey )
+          ( cd docs/examples/verify/dafny/compiled/go && go test ./... )
+          ( cd docs/examples/verify/dafny/compiled/js && npm ci --ignore-scripts --no-audit --no-fund && npm test )
+
+      - name: Outcome
+        env:
+          DAFNY: ${{ steps.self.outputs.dafny }}
+          DRIFT: ${{ steps.self.outputs.drift }}
+        run: |
+          { [ "${DAFNY}" = "0" ] && [ "${DRIFT}" = "0" ]; } || { echo "::error title=verify-dafny::expected a proven example with no drift; got dafny=${DAFNY} drift=${DRIFT}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

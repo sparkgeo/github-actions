@@ -1,0 +1,7 @@
+verified/quadkey.dfy(53,8): Error: Verification of 'Quadkey.RoundTrip' timed out after 60 seconds. (the limit can be increased using --verification-time-limit)
+   |
+53 |   lemma RoundTrip(x: nat, y: nat, zoom: nat)
+   |         ^^^^^^^^^
+
+
+Dafny program verifier finished with 8 verified, 0 errors, 1 time out
