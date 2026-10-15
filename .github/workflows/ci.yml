@@ -82,6 +82,13 @@ jobs:
         with:
           directory: tests/iac-scan/fixtures/clean
 
+      # AI-service group (#189): checkov over the pass and fail fixtures and
+      # the invocation-logging script, with the checkov the composite installed.
+      - name: AI-service policy pack fixtures
+        env:
+          CHECKOV: ${{ runner.temp }}/checkov
+        run: tests/iac-scan/ai-services.sh
+
   # Validate Helm/Kustomize with kubeconform. This repo has no charts/, so this
   # is a smoke test that the composite installs and runs (exits 0, nothing to
   # validate).

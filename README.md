@@ -18,7 +18,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
-| IaC Scan | [`iac-scan.yml`](.github/workflows/iac-scan.yml) | `workflow_call` | Reusable checkov gate — Terraform/OpenTofu/CloudFormation misconfiguration scan, cloud-agnostic, PR annotations, SARIF to Security tab; blocks on `fail-on-severity` |
+| IaC Scan | [`iac-scan.yml`](.github/workflows/iac-scan.yml) | `workflow_call` | Reusable checkov gate — Terraform/OpenTofu/CloudFormation misconfiguration scan, cloud-agnostic, PR annotations, SARIF to Security tab; blocks on `fail-on-severity`; `ai-services` adds the managed-AI group (Bedrock, SageMaker, Vertex AI, Azure OpenAI) from `policies/ai` (#189) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -384,6 +384,8 @@ resource "aws_s3_bucket" "site" {
 ```
 
 `skip-checks` disables a check ID for the whole run; prefer the inline form. On a private repo without a Code Security licence, set `sarif-upload: false` (annotations and the log still work).
+
+**Managed AI services** (`ai-services`, on by default; SecOps plan Step 17 Standard, issue #189). A second pass runs the curated group in [`policies/ai/checks.txt`](policies/ai/checks.txt) for Bedrock, SageMaker, Vertex AI and Azure OpenAI (no public model endpoints, CMK encryption, guardrails, notebook and identity hygiene) plus three logging controls the built-ins lack: `SPK_AI_1`, Bedrock model invocation logging declared wherever Bedrock resources are (a script, [`ai-logging.py`](.github/actions/checkov/ai-logging.py), because a graph policy cannot express "B exists when A exists"; CloudFormation templates get a notice since invocation logging is an account setting with no template resource); `SPK_AI_2`, Vertex AI endpoint request-response logging; `SPK_AI_3`, a diagnostic setting on every Cognitive Services account. The group gates with the same `fail-on-severity`; the script fails the job at `high` and below. The group's SARIF is not uploaded (a second upload under the `checkov` category would replace the main run); its findings show as annotations and in the log. The fixtures under `tests/iac-scan/fixtures/ai` hold one compliant and one failing stack per service.
 
 ### Lint Helm (kubeconform)
 
