@@ -57,7 +57,7 @@ def days(text):
 
 
 def tags_of(values):
-    t = values.get("tags_all") or values.get("tags") or {}
+    t = values.get("tags_all") or values.get("tags") or values.get("Tags") or {}
     if isinstance(t, list):  # CloudFormation [{Key, Value}]
         t = {x.get("Key"): x.get("Value") for x in t if isinstance(x, dict)}
     return {str(k).lower(): str(v).lower() for k, v in t.items()}
