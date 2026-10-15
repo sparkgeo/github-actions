@@ -1,0 +1,9 @@
+{
+  "version": "0.2",
+  "currency": "USD",
+  "projects": [
+    {"name": "Shared", "summary": {"unsupportedResourceCounts": {"AWS::S3::BucketPolicy": 1}}},
+    {"name": "Staging-StagingCompute763409C8", "summary": {"unsupportedResourceCounts": {"AWS::EC2::EIP": 1, "AWS::S3::BucketPolicy": 2}}},
+    {"name": "Empty", "summary": {}}
+  ]
+}

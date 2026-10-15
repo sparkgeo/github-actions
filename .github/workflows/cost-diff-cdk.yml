@@ -1,0 +1,212 @@
+name: Cost Diff (CDK)
+
+# Reusable PR cost diff for AWS CDK apps (SecOps plan Step 18; issue #90).
+# Infracost prices CloudFormation templates, and `cdk synth` produces them:
+# the app is synthesised on the PR base and head (synth.sh lays every
+# template out as <stack>/plan.json), Infracost prices the base, diffs the
+# head against it, keeps one PR comment updated and gates through the shared
+# threshold logic (#91). A new app with nothing on the base is priced alone,
+# without a gate. No AWS credentials are needed unless the app performs
+# context lookups; then pass role-arn (a read-only role, as for #89).
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. The hosts it reaches: registry.npmjs.org
+# (or PyPI), github.com (Infracost release) and pricing.api.infracost.io.
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory holding cdk.json'
+        default: '.'
+        type: string
+      runtime:
+        description: 'node|python'
+        default: 'node'
+        type: string
+      synth-args:
+        description: 'Arguments to cdk synth (e.g. --all, or stack names; add -c flags to skip asset builds)'
+        default: '--all'
+        type: string
+      role-arn:
+        description: 'Only needed when the CDK app performs context lookups (read-only role through OIDC)'
+        default: ''
+        type: string
+      aws-region:
+        description: 'Region for context lookups'
+        default: 'us-west-2'
+        type: string
+      usage-file:
+        description: 'Path to infracost-usage.yml (empty or missing skips usage estimates)'
+        default: 'infracost-usage.yml'
+        type: string
+      max-monthly-increase:
+        description: 'USD; job fails when the monthly delta exceeds it (0 disables)'
+        default: 0
+        type: number
+      max-percent-increase:
+        description: 'Percent; job fails when the monthly delta exceeds it (0 disables)'
+        default: 0
+        type: number
+      cdk-version:
+        description: 'aws-cdk CLI version run with npx'
+        default: '2.1145.0'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composites
+          from. Pin this to the SAME SHA you pinned cost-diff-cdk.yml to, so
+          the whole workflow is immutable.
+        default: 'main'
+        type: string
+    secrets:
+      INFRACOST_API_KEY:
+        description: 'Infracost API key (free tier is enough for CI)'
+        required: true
+    outputs:
+      monthly-diff:
+        description: 'Change in monthly cost (USD)'
+        value: ${{ jobs.cost.outputs.monthly-diff }}
+      gate:
+        description: 'comment-only, passed or failed'
+        value: ${{ jobs.cost.outputs.gate }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`, `pull-requests: write` (the
+# comment) and `id-token: write` only when role-arn is set. See README.
+jobs:
+  cost:
+    name: Infracost (CDK)
+    runs-on: ubuntu-latest
+    outputs:
+      monthly-diff: ${{ steps.diff.outputs.monthly-diff }}
+      gate: ${{ steps.diff.outputs.gate }}
+    steps:
+      - name: Checkout head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .cost-base
+          persist-credentials: false
+
+      # Load the composite actions at the caller-pinned ref into a fixed path,
+      # then invoke them locally. Keeps the action reference immutable (no
+      # mutable cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout sparkgeo composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - name: Assume the read-only role for context lookups
+        if: inputs.role-arn != ''
+        uses: ./.sparkgeo-github-actions/.github/actions/aws-oidc-auth
+        with:
+          role-arn: ${{ inputs.role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Synthesise base and head
+        id: synth
+        env:
+          WORKDIR: ${{ inputs.working-directory }}
+          RUNTIME: ${{ inputs.runtime }}
+          CDK_VERSION: ${{ inputs.cdk-version }}
+          SYNTH_ARGS: ${{ inputs.synth-args }}
+          PLANS: ${{ runner.temp }}/plans
+          STACKS: ${{ runner.temp }}/stacks.txt
+        run: |
+          set -euo pipefail
+          SYNTH=.sparkgeo-github-actions/.github/actions/infracost/synth.sh
+          : > "${STACKS}.all"
+          bash "${SYNTH}" "${GITHUB_WORKSPACE}" "${WORKDIR}" "${RUNTIME}" "${CDK_VERSION}" "${SYNTH_ARGS}" "${PLANS}/head" "${STACKS}.all"
+          if [ -f "${GITHUB_WORKSPACE}/.cost-base/${WORKDIR}/cdk.json" ]; then
+            bash "${SYNTH}" "${GITHUB_WORKSPACE}/.cost-base" "${WORKDIR}" "${RUNTIME}" "${CDK_VERSION}" "${SYNTH_ARGS}" "${PLANS}/base" "${STACKS}.all"
+            echo "base=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::notice title=infracost::no CDK app at ${WORKDIR} on the base ref; pricing the head alone, without a gate"
+            echo "base=false" >> "${GITHUB_OUTPUT}"
+          fi
+          # A stack added or removed on one side is skipped there by mkconfig.sh.
+          sort -u "${STACKS}.all" > "${STACKS}"
+          echo "stacks=${STACKS}" >> "${GITHUB_OUTPUT}"
+          echo "stacks:"; cat "${STACKS}"
+
+      - name: Breakdown on the base ref
+        if: steps.synth.outputs.base == 'true'
+        uses: ./.sparkgeo-github-actions/.github/actions/infracost
+        with:
+          mode: breakdown
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+          stacks-file: ${{ steps.synth.outputs.stacks }}
+          plans-dir: ${{ runner.temp }}/plans/base
+          usage-file: .cost-base/${{ inputs.usage-file }}
+          out-file: ${{ runner.temp }}/infracost-base.json
+
+      - name: Diff on the head ref
+        id: diff
+        if: steps.synth.outputs.base == 'true'
+        uses: ./.sparkgeo-github-actions/.github/actions/infracost
+        with:
+          mode: diff
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+          stacks-file: ${{ steps.synth.outputs.stacks }}
+          plans-dir: ${{ runner.temp }}/plans/head
+          usage-file: ${{ inputs.usage-file }}
+          compare-to: ${{ runner.temp }}/infracost-base.json
+          out-file: ${{ runner.temp }}/infracost-diff.json
+          max-monthly-increase: ${{ inputs.max-monthly-increase }}
+          max-percent-increase: ${{ inputs.max-percent-increase }}
+
+      - name: Breakdown of a new app (no base)
+        if: steps.synth.outputs.base == 'false'
+        uses: ./.sparkgeo-github-actions/.github/actions/infracost
+        with:
+          mode: breakdown
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+          stacks-file: ${{ steps.synth.outputs.stacks }}
+          plans-dir: ${{ runner.temp }}/plans/head
+          usage-file: ${{ inputs.usage-file }}
+          out-file: ${{ runner.temp }}/infracost-diff.json
+
+      - name: Not-estimated resources in the job summary
+        if: always()
+        env:
+          RESULT: ${{ runner.temp }}/infracost-diff.json
+        run: |
+          set -euo pipefail
+          [ -f "${RESULT}" ] || exit 0
+          bash .sparkgeo-github-actions/.github/actions/infracost/unsupported.sh "${RESULT}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Update the PR comment
+        if: >-
+          always() && github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository
+        uses: ./.sparkgeo-github-actions/.github/actions/infracost
+        with:
+          mode: comment
+          out-file: ${{ runner.temp }}/infracost-diff.json
+          pull-request: ${{ github.event.pull_request.number }}
+
+      - name: Remove the templates
+        if: always()
+        env:
+          PLANS: ${{ runner.temp }}/plans
+        run: |
+          [ -d "${PLANS}" ] && find "${PLANS:?}" -type f -delete
+          echo "templates removed"
+
+      - name: Upload Infracost JSON
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: infracost-cdk
+          path: ${{ runner.temp }}/infracost-*.json
+          if-no-files-found: ignore
