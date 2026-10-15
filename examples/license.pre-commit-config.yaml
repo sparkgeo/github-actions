@@ -1,0 +1,25 @@
+# Reference .pre-commit-config.yaml hooks for the licence policy where GitHub's
+# dependency review cannot run (no dependency graph, unsupported ecosystem,
+# air-gapped build). Copy the hooks into your repo's .pre-commit-config.yaml
+# and gate them in CI with lint-precommit.yml. The allowlist is the allowed
+# class of docs/license-policy.md; append the allowed-with-notice class only
+# with a third-party notice in the repository. Both hooks read the installed
+# packages, so run them after `pip install` / `npm ci`.
+---
+repos:
+  - repo: local
+    hooks:
+      - id: pip-licenses
+        name: pip-licenses (policy allowlist)
+        language: python
+        additional_dependencies: ['pip-licenses==5.5.5']
+        entry: pip-licenses --allow-only="MIT;MIT-0;Apache-2.0;BSD-2-Clause;BSD-3-Clause;0BSD;ISC;Unlicense;CC0-1.0;Zlib;BSL-1.0;PSF-2.0;Python-2.0;PostgreSQL;Unicode-DFS-2016"
+        pass_filenames: false
+        files: ^(requirements.*\.txt|pyproject\.toml|poetry\.lock|uv\.lock)$
+      - id: license-checker
+        name: license-checker (policy allowlist)
+        language: node
+        additional_dependencies: ['license-checker-rseidelsohn@5.0.1']
+        entry: license-checker-rseidelsohn --production --onlyAllow "MIT;MIT-0;Apache-2.0;BSD-2-Clause;BSD-3-Clause;0BSD;ISC;Unlicense;CC0-1.0;Zlib;BSL-1.0;PSF-2.0;Python-2.0;PostgreSQL;Unicode-DFS-2016"
+        pass_filenames: false
+        files: ^(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$
