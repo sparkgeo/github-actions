@@ -76,6 +76,45 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # govulncheck composite (issue #180): report.py against recorded output, then
+  # a real run on the fixture module (one reachable advisory, one imported but
+  # not called) in advisory mode, asserting the counts. Audit egress: the Go
+  # toolchain, module proxy and vulnerability database hosts are documented in
+  # dep-scan-go.yml.
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Report fixtures
+        run: tests/govulncheck/run.sh
+
+      - id: fixture
+        uses: ./.github/actions/govulncheck
+        with:
+          working-directory: tests/govulncheck/fixtures/module
+          fail-on: none
+          sarif-upload: "false"
+
+      - name: Assert the fixture module counts
+        env:
+          REACHABLE: ${{ steps.fixture.outputs.reachable-count }}
+          IMPORTED: ${{ steps.fixture.outputs.imported-count }}
+        run: |
+          set -euo pipefail
+          [ "${REACHABLE}" = "1" ] || { echo "::error title=govulncheck::expected 1 reachable advisory on the fixture module, got ${REACHABLE}"; exit 1; }
+          [ "${IMPORTED}" = "1" ] || { echo "::error title=govulncheck::expected 1 imported-not-called advisory, got ${IMPORTED}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

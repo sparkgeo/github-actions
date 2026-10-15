@@ -1,0 +1,103 @@
+name: "govulncheck"
+description: |
+  Runs govulncheck (golang.org/x/vuln) on a Go module and gates on
+  reachability: only advisories whose vulnerable function the code actually
+  calls fail the job (SecOps plan Step 3 Baseline, Step 25 reachability row;
+  issue #180). Advisories in imported packages that are never called, and in
+  required modules whose package is not imported, are reported as
+  informational one SLA row down. govulncheck carries no CVSS; the CVSS gate
+  for go.sum stays with dep-scan-app.yml.
+
+  Installs the Go toolchain from go.mod with actions/setup-go and govulncheck
+  at a pinned version with `go install`, reads the vulnerability database at
+  https://vuln.go.dev, and uploads govulncheck's own SARIF to the Security tab
+  (symbol-level findings are errors, package-level warnings, module-level
+  notes).
+
+  Required permissions on the calling job: contents: read, plus
+  security-events: write when sarif-upload is true.
+inputs:
+  working-directory:
+    description: "Directory holding go.mod."
+    default: "."
+  go-version-file:
+    description: "File actions/setup-go reads the toolchain version from, relative to working-directory."
+    default: "go.mod"
+  version:
+    description: "golang.org/x/vuln version to install (with the leading v)."
+    default: "v1.9.0"
+  fail-on:
+    description: "reachable fails the job on any advisory with a called vulnerable function; none reports only."
+    default: "reachable"
+  packages:
+    description: "Package pattern passed to govulncheck."
+    default: "./..."
+  sarif-upload:
+    description: "Upload govulncheck's SARIF to the Security tab."
+    default: "true"
+  sarif-category:
+    description: "Code-scanning category for the SARIF upload."
+    default: "govulncheck"
+outputs:
+  reachable-count:
+    description: "Advisories whose vulnerable function is called."
+    value: ${{ steps.report.outputs.reachable-count }}
+  imported-count:
+    description: "Advisories in imported packages with no vulnerable call."
+    value: ${{ steps.report.outputs.imported-count }}
+  module-count:
+    description: "Advisories in required modules whose vulnerable package is not imported."
+    value: ${{ steps.report.outputs.module-count }}
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Go from go.mod
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      with:
+        go-version-file: ${{ inputs.working-directory }}/${{ inputs.go-version-file }}
+        cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+
+    - name: Install govulncheck
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
+        GOBIN="${RUNNER_TEMP}/gobin" go install "golang.org/x/vuln/cmd/govulncheck@${VERSION}"
+        "${RUNNER_TEMP}/gobin/govulncheck" -version
+
+    - name: Run govulncheck
+      id: scan
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        set -euo pipefail
+        GV="${RUNNER_TEMP}/gobin/govulncheck"
+        OUT="${RUNNER_TEMP}/govulncheck"; mkdir -p "${OUT}"
+        # Exit status is not the gate: govulncheck exits 3 on findings; report.py decides.
+        "${GV}" -format json "${PACKAGES}" > "${OUT}/govulncheck.json" || true
+        "${GV}" -format sarif "${PACKAGES}" > "${OUT}/govulncheck.sarif" || true
+        echo "dir=${OUT}" >> "${GITHUB_OUTPUT}"
+
+    - name: Upload SARIF
+      if: inputs.sarif-upload == 'true'
+      uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+      with:
+        sarif_file: ${{ steps.scan.outputs.dir }}/govulncheck.sarif
+        category: ${{ inputs.sarif-category }}
+      continue-on-error: true
+
+    - name: Classify by reachability and gate
+      id: report
+      shell: bash
+      env:
+        DIR: ${{ steps.scan.outputs.dir }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        WORKDIR: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        python3 -I "${GITHUB_ACTION_PATH}/report.py" --input "${DIR}/govulncheck.json" --fail-on "${FAIL_ON}" \
+          --working-directory "${WORKDIR}" --output "${DIR}/report.json"
