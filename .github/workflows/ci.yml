@@ -76,6 +76,31 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Renovate config (#86): validate the shared preset and the runner's global
+  # config with renovate-config-validator at the pinned renovate version.
+  renovate-config:
+    name: Renovate Config
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            registry.npmjs.org:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate default.json and renovate-global.json
+        run: |
+          npx --yes --package renovate@44.161.1 renovate-config-validator --strict default.json
+          npx --yes --package renovate@44.161.1 renovate-config-validator --strict .github/renovate-global.json
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

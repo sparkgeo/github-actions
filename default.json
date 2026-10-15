@@ -1,0 +1,91 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Sparkgeo shared Renovate preset (issue #86, SecOps plan Steps 3 and 7). Consuming repositories opt in with a renovate.json that extends github>sparkgeo/github-actions. Renovate owns every ecosystem except github-actions, which Dependabot owns (#87); the release cooldown is 5 days with a security-fix exemption (sparkgeo/systeam-home#11). See docs/dependency-management.md.",
+  "extends": [
+    "config:recommended"
+  ],
+  "enabledManagers": [
+    "npm",
+    "pep621",
+    "pip_requirements",
+    "pip-compile",
+    "poetry",
+    "gomod",
+    "cargo",
+    "terraform",
+    "terraform-version",
+    "helmv3",
+    "helm-values",
+    "kustomize",
+    "dockerfile",
+    "docker-compose",
+    "pre-commit"
+  ],
+  "pre-commit": {
+    "enabled": true
+  },
+  "timezone": "America/Vancouver",
+  "schedule": [
+    "* 0-6 * * 1-5"
+  ],
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 4,
+  "minimumReleaseAge": "5 days",
+  "internalChecksFilter": "strict",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ]
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "minimumReleaseAge": null,
+    "labels": [
+      "security"
+    ]
+  },
+  "osvVulnerabilityAlerts": true,
+  "labels": [
+    "dependencies"
+  ],
+  "packageRules": [
+    {
+      "description": "Pin Docker base images by digest (plan Step 3: immutable references).",
+      "matchDatasources": [
+        "docker"
+      ],
+      "pinDigests": true
+    },
+    {
+      "description": "Group minor and patch updates into one PR per run to keep the review queue short.",
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch"
+    },
+    {
+      "description": "A security fix bypasses the cooldown (the weekly review already looks at it); the vulnerabilityAlerts object above covers GitHub alerts, this rule covers OSV ones.",
+      "matchUpdateTypes": [
+        "patch",
+        "minor",
+        "major"
+      ],
+      "isVulnerabilityAlert": true,
+      "minimumReleaseAge": null
+    },
+    {
+      "description": "Lock-file maintenance, pins and rollbacks carry no release timestamp Renovate can check; the package manager's own cooldown (pnpm minimumReleaseAge, npm min-release-age, uv exclude-newer) is the guard there.",
+      "matchUpdateTypes": [
+        "lockFileMaintenance",
+        "pin",
+        "pinDigest",
+        "rollback",
+        "replacement"
+      ],
+      "minimumReleaseAge": null
+    }
+  ]
+}
