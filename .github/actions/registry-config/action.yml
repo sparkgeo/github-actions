@@ -1,0 +1,51 @@
+name: "Registry Config"
+description: |
+  Points package clients at the org proxy registry (SecOps plan Step 3
+  Advanced, issue #231) so builds pull through one place where a malicious
+  package is quarantined once for every project. Writes user-level config:
+  ~/.npmrc `registry` (npm, pnpm, yarn 1; package-lock URLs on
+  registry.npmjs.org are rewritten by npm), pip.conf `index-url` and uv.toml
+  default index, the go env file `GOPROXY` (no `direct` fallback), and the
+  Docker daemon `registry-mirrors` (Docker Hub pulls; restarts dockerd).
+  `hf-url` is returned as `hf-endpoint` for steps to set HF_ENDPOINT.
+
+  Every input empty is a no-op. Callers pass the org variables:
+  REGISTRY_NPM_URL, REGISTRY_PYPI_URL, REGISTRY_GO_URL,
+  REGISTRY_DOCKER_MIRROR, REGISTRY_HF_URL. Run it before any install step.
+  See docs/dependency-management.md "Proxy registry".
+inputs:
+  npm-url:
+    description: "npm registry URL of the proxy (e.g. https://proxy.example/repository/npm/). Empty: unchanged."
+    default: ""
+  pypi-url:
+    description: "PyPI simple-index URL of the proxy (e.g. https://proxy.example/repository/pypi/simple/). Empty: unchanged."
+    default: ""
+  go-url:
+    description: "GOPROXY URL of the proxy. Empty: unchanged."
+    default: ""
+  docker-mirror:
+    description: "Docker Hub pull-through mirror URL. Empty: unchanged. Needs sudo (GitHub-hosted runners have it)."
+    default: ""
+  hf-url:
+    description: "Hugging Face endpoint of the proxy or gateway, returned as `hf-endpoint`. Empty: unchanged."
+    default: ""
+outputs:
+  configured:
+    description: "Comma-separated clients configured (npm, pypi, go, docker, huggingface); empty when nothing was set."
+    value: ${{ steps.configure.outputs.configured }}
+  hf-endpoint:
+    description: "Value for HF_ENDPOINT on steps that pull models (empty when hf-url is empty)."
+    value: ${{ steps.configure.outputs.hf-endpoint }}
+runs:
+  using: "composite"
+  steps:
+    - name: Configure package clients
+      id: configure
+      shell: bash
+      env:
+        NPM_URL: ${{ inputs.npm-url }}
+        PYPI_URL: ${{ inputs.pypi-url }}
+        GO_URL: ${{ inputs.go-url }}
+        DOCKER_MIRROR: ${{ inputs.docker-mirror }}
+        HF_URL: ${{ inputs.hf-url }}
+      run: bash "${GITHUB_ACTION_PATH}/configure.sh"

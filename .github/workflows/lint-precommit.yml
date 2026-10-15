@@ -49,6 +49,16 @@ jobs:
           path: .sparkgeo-github-actions
           persist-credentials: false
 
+      # Hook environments (pip, npm, go, docker) pull through the org proxy
+      # registry when its variables are set (#231); a no-op otherwise.
+      - name: Point package clients at the org proxy registry
+        uses: ./.sparkgeo-github-actions/.github/actions/registry-config
+        with:
+          npm-url: ${{ vars.REGISTRY_NPM_URL }}
+          pypi-url: ${{ vars.REGISTRY_PYPI_URL }}
+          go-url: ${{ vars.REGISTRY_GO_URL }}
+          docker-mirror: ${{ vars.REGISTRY_DOCKER_MIRROR }}
+
       - uses: ./.sparkgeo-github-actions/.github/actions/pre-commit
         with:
           config-path: ${{ inputs.config-path }}
