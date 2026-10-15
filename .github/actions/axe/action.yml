@@ -1,0 +1,107 @@
+name: "Accessibility Scan (axe-core)"
+description: |
+  WCAG 2.1 AA gate (SecOps plan Step 7 Standard, issue #70): runs
+  @axe-core/cli against a URL, or serves a static build directory locally and
+  scans the listed paths, with the rules scoped by WCAG tags. Writes the axe
+  JSON results and an HTML report into output-dir, summarises violations per
+  page and rule in the job summary, annotates every violation, and fails when
+  fail-on-violations is true and any violation exists (report-only mode
+  otherwise). Uses the Chrome and ChromeDriver preinstalled on GitHub-hosted
+  Ubuntu runners (CHROMEWEBDRIVER); the npm chromedriver download is skipped.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  target-url:
+    description: "URL to scan; empty serves build-dir locally."
+    default: ""
+  build-dir:
+    description: "Static build directory to serve when target-url is empty."
+    default: "dist"
+  urls-file:
+    description: "File listing paths (or full URLs) to scan, one per line; empty scans / only."
+    default: ""
+  tags:
+    description: "axe rule tags, comma-separated."
+    default: "wcag2a,wcag2aa,wcag21aa"
+  fail-on-violations:
+    description: "Fail the job on any violation; false is report-only."
+    default: "true"
+  output-dir:
+    description: "Directory for results.json and report.html."
+    default: "a11y"
+  load-delay:
+    description: "Milliseconds to wait after page load before auditing (client-rendered apps)."
+    default: "0"
+  timeout:
+    description: "Seconds axe may spend per page."
+    default: "90"
+  version:
+    description: "@axe-core/cli version (npm)."
+    default: "4.13.0"
+outputs:
+  violation-count:
+    description: "Violations across all pages."
+    value: ${{ steps.report.outputs.violation-count }}
+  page-count:
+    description: "Pages scanned."
+    value: ${{ steps.report.outputs.page-count }}
+  output-dir:
+    description: "Directory holding results.json and report.html."
+    value: ${{ inputs.output-dir }}
+runs:
+  using: "composite"
+  steps:
+    - id: scan
+      shell: bash
+      env:
+        TARGET_URL: ${{ inputs.target-url }}
+        BUILD_DIR: ${{ inputs.build-dir }}
+        URLS_FILE: ${{ inputs.urls-file }}
+        TAGS: ${{ inputs.tags }}
+        OUT: ${{ inputs.output-dir }}
+        LOAD_DELAY: ${{ inputs.load-delay }}
+        TIMEOUT: ${{ inputs.timeout }}
+        VERSION: ${{ inputs.version }}
+        CHROMEDRIVER_SKIP_DOWNLOAD: "true"
+      run: |
+        set -euo pipefail
+        mkdir -p "${OUT}"
+        BASE="${TARGET_URL}"
+        if [ -z "${BASE}" ]; then
+          [ -d "${BUILD_DIR}" ] || { echo "::error title=a11y::build directory ${BUILD_DIR} does not exist and no target-url was given"; exit 1; }
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory "${BUILD_DIR}" > "${OUT}/server.log" 2>&1 &
+          echo "$!" > "${OUT}/server.pid"
+          BASE="http://127.0.0.1:4173"
+          for _ in $(seq 1 20); do curl -fs -o /dev/null "${BASE}/" && break; sleep 0.5; done
+        fi
+        BASE="${BASE%/}"
+        URLS=()
+        if [ -n "${URLS_FILE}" ]; then
+          while IFS= read -r line || [ -n "${line}" ]; do
+            line="${line%%#*}"; line="$(echo "${line}" | xargs)"
+            [ -z "${line}" ] && continue
+            case "${line}" in http://*|https://*) URLS+=("${line}") ;; /*) URLS+=("${BASE}${line}") ;; *) URLS+=("${BASE}/${line}") ;; esac
+          done < "${URLS_FILE}"
+        else
+          URLS=("${BASE}/")
+        fi
+        echo "Scanning ${#URLS[@]} page(s) with tags ${TAGS}"
+        CHROMEDRIVER="${CHROMEWEBDRIVER:-}/chromedriver"
+        DRIVER_ARGS=()
+        [ -x "${CHROMEDRIVER}" ] && DRIVER_ARGS=(--chromedriver-path "${CHROMEDRIVER}")
+        # no --exit: report.py applies fail-on-violations after writing the reports
+        npx --yes "@axe-core/cli@${VERSION}" "${URLS[@]}" --tags "${TAGS}" --timeout "${TIMEOUT}" --load-delay "${LOAD_DELAY}" \
+          --chrome-options="no-sandbox,disable-dev-shm-usage" "${DRIVER_ARGS[@]}" --save results.json --dir "${OUT}" > "${OUT}/axe.log" 2>&1 || true
+        [ -f "${OUT}/server.pid" ] && { kill "$(cat "${OUT}/server.pid")" 2>/dev/null || true; rm -f "${OUT}/server.pid"; }
+        [ -s "${OUT}/results.json" ] || { cat "${OUT}/axe.log"; echo "::error title=a11y::axe produced no results"; exit 1; }
+
+    - id: report
+      shell: bash
+      env:
+        OUT: ${{ inputs.output-dir }}
+        FAIL: ${{ inputs.fail-on-violations }}
+      run: |
+        set -euo pipefail
+        ARGS=(--results "${OUT}/results.json" --html "${OUT}/report.html" --output "${OUT}/summary.json")
+        [ "${FAIL}" = "true" ] && ARGS+=(--fail-on-violations)
+        python3 -I "${GITHUB_ACTION_PATH}/report.py" "${ARGS[@]}"
