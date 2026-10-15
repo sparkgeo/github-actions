@@ -46,6 +46,8 @@ form=(
   -F "close_old_findings=${CLOSE_OLD}" -F "do_not_reactivate=true"
   -F "minimum_severity=${MIN_SEVERITY}" -F "push_to_jira=${PUSH_JIRA}"
   -F "active=true" -F "verified=false" -F "apply_tags_to_findings=true"
+  # Respond once deduplication has run, so the counts below are final.
+  -F "deduplication_execution_mode=async_wait"
 )
 IFS=',' read -ra tags <<< "${TAGS:-}"
 for t in "${tags[@]}" "env:${ENVIRONMENT}"; do
@@ -60,10 +62,12 @@ if [ "${code}" -lt 200 ] || [ "${code}" -ge 300 ]; then
   exit 1
 fi
 
-# statistics.delta.<kind>.total is a per-state count object; its .total is the sum.
+# Re-import into an existing test returns statistics.delta.<action>.total.total;
+# the first import (new test) returns only statistics.after, all of it new.
 read -r test_id created closed reactivated untouched < <(jq -r '
-  def n(k): (.statistics.delta[k].total // 0) | if type == "object" then (.total // 0) else . end;
-  [.test, n("created"), n("closed"), n("reactivated"), n("untouched")] | @tsv' "${TMP}/resp.json")
+  def n(k): .statistics.delta[k].total.total // 0;
+  if .statistics.delta then [.test, n("created"), n("closed"), n("reactivated"), n("untouched")]
+  else [.test, (.statistics.after.total.total // 0), 0, 0, 0] end | @tsv' "${TMP}/resp.json")
 out imported true
 out test-id "${test_id}"
 out created "${created}"
