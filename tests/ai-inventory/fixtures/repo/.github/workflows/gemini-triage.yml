@@ -1,0 +1,8 @@
+name: Gemini triage
+on: [issues]
+permissions: {}
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo triage

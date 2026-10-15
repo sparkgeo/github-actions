@@ -14,6 +14,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
+| AI Inventory Check | [`ai-inventory-check.yml`](.github/workflows/ai-inventory-check.yml) | `workflow_call` | Reusable gate for the AI agent registry: every file that configures an agent, assistant or MCP server (patterns in [`policies/ai/agent-config-patterns.txt`](policies/ai/agent-config-patterns.txt)) needs a row in `docs/ai-agents.md` with owner, class, risk tier, lifecycle state and kill switch (#102) |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| AI Inventory | [`ai-inventory`](.github/actions/ai-inventory/action.yml) | Matches agent configuration files against the pattern list, parses the inventory table, fails on an uncovered file, a file covered only by a retired row, or a row missing owner, class, risk tier, lifecycle state or kill switch; job summary with a row template | `inventory-path` (default: `docs/ai-agents.md`), `patterns-file` (default: bundled list), `extra-patterns`, `exclude` (default: `.git,node_modules,.sparkgeo-github-actions,.sparkgeo-policies`) |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,23 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### AI Inventory Check (agent registry)
+
+SecOps plan Step 26 (issue #102): "document every AI tool and agent in use, what systems each can reach, and a named human owner per agent; the inventory is the registry: nothing gets a credential until it is on the list". A registry kept by hand drifts the day someone adds an MCP server to `.claude/settings.json`; this gate makes the PR fail instead. [`docs/ai-agents.md`](docs/ai-agents.md) is this repository's inventory and the template for consuming repositories: one table, one row per agent, the columns the plan's registry needs.
+
+```yaml
+jobs:
+  ai-inventory:
+    permissions:
+      contents: read
+    uses: sparkgeo/github-actions/.github/workflows/ai-inventory-check.yml@<SHA>
+    with:
+      actions-ref: <SHA>            # same SHA as above
+      extra-patterns: bots/*.yaml   # repo-specific agent configuration, optional
+```
+
+The check fails on: a matched file with no row whose `Config path` glob covers it; a file covered only by a `retired` row; a row with an empty `Owner`, `Class`, `Risk tier`, `Lifecycle state` or `Kill switch`; a value outside the enums (`class`, `risk tier`, `lifecycle state`, the two yes/no columns). A row whose path matches no file is a warning. The job summary lists every matched file with the row that covers it and prints a row template. The security-agent rule (#186) says what goes in each column for reviewers, testers and pentest agents.
 
 ## Consuming repo CI setup
 

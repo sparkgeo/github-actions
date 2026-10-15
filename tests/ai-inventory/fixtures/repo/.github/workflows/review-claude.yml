@@ -1,0 +1,8 @@
+name: Claude review
+on: [pull_request]
+permissions: {}
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo review

@@ -1,0 +1,64 @@
+name: AI Inventory Check
+
+# Reusable PR gate (issue #102, plan Step 26): any file that configures an AI
+# agent, assistant or MCP server must have a row in docs/ai-agents.md with an
+# owner, class, risk tier, lifecycle state and kill switch. The inventory is
+# the agent registry: nothing gets a credential until it is on the list.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. It reaches github.com only (checkout).
+
+on:
+  workflow_call:
+    inputs:
+      inventory-path:
+        description: 'Inventory file, relative to the repository root'
+        default: 'docs/ai-agents.md'
+        type: string
+      extra-patterns:
+        description: 'Additional config-file globs, comma-separated'
+        default: ''
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          and the pattern list from. Pin this to the SAME SHA you pinned
+          ai-inventory-check.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      file-count:
+        description: 'Configuration files matched'
+        value: ${{ jobs.inventory.outputs.file-count }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read`.
+jobs:
+  inventory:
+    name: AI inventory
+    runs-on: ubuntu-latest
+    outputs:
+      file-count: ${{ steps.check.outputs.file-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout ai-inventory composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: check
+        uses: ./.sparkgeo-github-actions/.github/actions/ai-inventory
+        with:
+          inventory-path: ${{ inputs.inventory-path }}
+          extra-patterns: ${{ inputs.extra-patterns }}
