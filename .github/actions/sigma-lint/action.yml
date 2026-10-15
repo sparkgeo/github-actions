@@ -89,8 +89,11 @@ runs:
         set -euo pipefail
         JUNIT="${RUNNER_TEMP}/sigma-check.xml"
         if [ -d "${RULES}" ]; then
-          # exit 1 on rule errors is reported by check.py from the JUnit file
-          "${ENV}/bin/sigma" check --junitxml "${JUNIT}" "${RULES}" || true
+          # exit 1 on rule errors is reported by check.py from the JUnit file;
+          # any other failure (no JUnit written) stops the job here
+          "${ENV}/bin/sigma" check --junitxml "${JUNIT}" "${RULES}" > "${RUNNER_TEMP}/sigma-check.txt" 2>&1 || true
+          cat "${RUNNER_TEMP}/sigma-check.txt"
+          [ -s "${JUNIT}" ] || { echo "::error title=sigma-lint::sigma check produced no JUnit report"; exit 1; }
         fi
         ARGS=(--rules-dir "${RULES}" --tests-dir "${TESTS}" --junit "${JUNIT}" --backend "${BACKEND}" \
               --pipeline "${PIPELINE}" --output-dir "${OUT_DIR}" --stale-days "${STALE}" \

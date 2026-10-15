@@ -20,6 +20,7 @@ if [ -z "${SIGMA_ENV:-}" ]; then
   SIGMA_ENV="${TMP}/env"
   python3 -m venv "${SIGMA_ENV}"
   "${SIGMA_ENV}/bin/python" -m pip install --quiet --disable-pip-version-check "sigma-cli==${SIGMA_CLI_VERSION}" "pysigma-backend-splunk==${SPLUNK_VERSION}"
+  "${SIGMA_ENV}/bin/python" -m pip freeze | grep -i "sigma\|yaml"
 fi
 PY="${SIGMA_ENV}/bin/python"
 SIGMA="${SIGMA_ENV}/bin/sigma"
@@ -39,8 +40,11 @@ copy() { rm -rf "${TMP:?}/$1"; cp -r "${FIX}" "${TMP}/$1"; }
 echo "== sigma check on the fixtures: the broken rule is a rule error"
 set +e
 (cd "${FIX}" && "${SIGMA}" check --junitxml "${TMP}/check.xml" rules > "${TMP}/check.log" 2>&1)
-[ $? -eq 1 ] || fail "sigma check should exit 1: $(cat "${TMP}/check.log")"
+check_rc=$?
 set -e
+[ "${check_rc}" -eq 1 ] || fail "sigma check should exit 1, got ${check_rc}: $(cat "${TMP}/check.log")"
+[ -s "${TMP}/check.xml" ] || fail "sigma check wrote no JUnit file: $(cat "${TMP}/check.log")"
+grep -q 'classname="SigmaIdentifierError"' "${TMP}/check.xml" || fail "JUnit lacks the identifier error: $(cat "${TMP}/check.xml")"
 
 echo "== fixtures with require-test-case: syntax error + missing test case = 2 errors"
 run fx "${FIX}" --junit "${TMP}/check.xml" --require-test-case
