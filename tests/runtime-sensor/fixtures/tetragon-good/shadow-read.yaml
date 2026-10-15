@@ -20,6 +20,6 @@ spec:
       selectors:
         - matchArgs:
             - index: 0
-              operator: Equal
+              operator: Prefix
               values:
                 - /etc/shadow

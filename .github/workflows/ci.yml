@@ -161,6 +161,10 @@ jobs:
           done
           echo "::error::no '${want}' alert from ${SENSOR}"
           tail -20 <<< "${logs}"
+          if [ "${SENSOR}" = tetragon ]; then
+            kubectl get tracingpolicies -o yaml | tail -30
+            kubectl -n kube-system logs -l app.kubernetes.io/name=tetragon -c tetragon --tail=-1 | grep -iE 'level=(warn|error)|shadow-read|kprobe' | tail -30
+          fi
           exit 1
 
   # Dogfood the app lint gate by calling the reusable workflow directly.
