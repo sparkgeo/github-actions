@@ -355,3 +355,105 @@ jobs:
           [ "${OUTCOME}" = "failure" ] || { echo "::error title=dast-api::the SQL injection did not fail the gate (${OUTCOME})"; exit 1; }
           jq -e '[.site[].alerts[] | select(.pluginid == "40018" and .riskcode == "3")] | length > 0' "${OUT}/zap.json" > /dev/null \
             || { echo "::error title=dast-api::SQL Injection not reported; was the auth header sent?"; exit 1; }
+
+  # Nuclei (issue #66): gate.py against a recorded export, then a live scan of
+  # tests/dast-nuclei/fixtures/site served on the runner, which serves a
+  # .gitmodules file on purpose; the high-severity exposed-gitmodules
+  # template must find it and fail the gate. Audit egress: github.com.
+  dast-nuclei:
+    name: DAST nuclei
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Gate fixtures
+        run: tests/dast-nuclei/run.sh
+
+      - name: Serve the fixture site
+        run: |
+          python3 -m http.server 8081 --bind 127.0.0.1 --directory tests/dast-nuclei/fixtures/site > /dev/null 2>&1 &
+          for _ in $(seq 30); do curl -sf http://127.0.0.1:8081/ > /dev/null && exit 0; sleep 1; done
+          echo "::error title=dast-nuclei::fixture site did not start"; exit 1
+
+      - id: live
+        uses: ./.github/actions/nuclei
+        continue-on-error: true
+        with:
+          target-url: http://127.0.0.1:8081
+          templates: exposures/configs
+          sarif-upload: "false"
+
+      - name: Assert the live scan
+        env:
+          OUTCOME: ${{ steps.live.outcome }}
+          HIGH: ${{ steps.live.outputs.high-count }}
+          RESULTS: ${{ steps.live.outputs.results }}
+        run: |
+          set -euo pipefail
+          [ "${OUTCOME}" = "failure" ] || { echo "::error title=dast-nuclei::the exposed .gitmodules did not fail the gate (${OUTCOME})"; exit 1; }
+          jq -e 'any(.[]; ."template-id" == "exposed-gitmodules")' "${RESULTS}" > /dev/null \
+            || { echo "::error title=dast-nuclei::exposed-gitmodules not reported (high-count ${HIGH})"; exit 1; }
+
+  # Scheduled DAST (issue #68): the production guard, report.py and the
+  # tracking-issue logic (against a fake gh), then a live ZAP full scan of the
+  # dast-baseline fixture site combined by the dast-report composite with
+  # issues off. Audit egress: ghcr.io (ZAP image).
+  dast-scheduled:
+    name: DAST scheduled
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Guard, report and issue fixtures
+        run: tests/dast-scheduled/run.sh
+
+      - name: Serve the fixture site
+        run: |
+          python3 -m http.server 8080 --bind 127.0.0.1 --directory tests/dast-baseline/fixtures/site > /dev/null 2>&1 &
+          for _ in $(seq 30); do curl -sf http://127.0.0.1:8080/ > /dev/null && exit 0; sleep 1; done
+          echo "::error title=dast-scheduled::fixture site did not start"; exit 1
+
+      - name: Production guard lets the fixture through
+        run: python3 -I .github/actions/dast-report/guard.py --target http://127.0.0.1:8080/ --pattern '(^|[.-])(prod|production|live)([.-]|$)|^www\.'
+
+      - id: full
+        uses: ./.github/actions/zap-baseline
+        with:
+          target-url: http://127.0.0.1:8080/
+          scan: full
+          fail-on: none
+          report-dir: ${{ runner.temp }}/zap-full
+
+      - id: report
+        uses: ./.github/actions/dast-report
+        with:
+          target-url: http://127.0.0.1:8080/
+          zap-reports: ${{ runner.temp }}/zap-full/zap.json
+          fail-on: high
+          open-issues: "false"
+
+      - name: Assert the full scan ran its active rules
+        env:
+          OUT: ${{ runner.temp }}/zap-full
+        run: |
+          set -euo pipefail
+          # The full scan reports the active rules it ran, e.g. SQL Injection [40018], as PASS lines.
+          grep -q 'PASS: SQL Injection \[40018\]' "${OUT}/zap-output.txt" || { echo "::error title=dast-scheduled::active rules did not run"; exit 1; }

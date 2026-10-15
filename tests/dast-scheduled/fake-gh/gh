@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Stand-in for the gh CLI in tests/dast-scheduled/run.sh: open issues live in
+# ${FAKE_GH_STATE} (a JSON list of {number, title, body}); each write is
+# logged to ${FAKE_GH_LOG}.
+set -euo pipefail
+arg() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "${want}" ] && { echo "$2"; return; }; shift; done; }
+case "$1 $2" in
+  "label create") echo "label $3" >> "${FAKE_GH_LOG}" ;;
+  "issue list") jq -r "$(arg --jq "$@")" "${FAKE_GH_STATE}" ;;
+  "issue create")
+    n=$(( $(jq length "${FAKE_GH_STATE}") + 1 ))
+    jq --arg t "$(arg --title "$@")" --arg b "$(arg --body "$@")" --argjson n "${n}" '. + [{number: $n, title: $t, body: $b}]' \
+      "${FAKE_GH_STATE}" > "${FAKE_GH_STATE}.tmp" && mv "${FAKE_GH_STATE}.tmp" "${FAKE_GH_STATE}"
+    echo "create $(arg --title "$@") [$(arg --label "$@")]" >> "${FAKE_GH_LOG}" ;;
+  "issue edit")
+    jq --argjson n "$3" --arg b "$(arg --body "$@")" 'map(if .number == $n then .body = $b else . end)' \
+      "${FAKE_GH_STATE}" > "${FAKE_GH_STATE}.tmp" && mv "${FAKE_GH_STATE}.tmp" "${FAKE_GH_STATE}"
+    echo "edit $3" >> "${FAKE_GH_LOG}" ;;
+  "issue comment") echo "comment $3 $(arg --body "$@" | tr '\n' ' ')" >> "${FAKE_GH_LOG}" ;;
+  *) echo "fake gh: unexpected $*" >&2; exit 1 ;;
+esac

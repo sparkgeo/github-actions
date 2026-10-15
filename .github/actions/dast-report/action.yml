@@ -1,0 +1,82 @@
+name: "dast-report"
+description: |
+  Combines the scheduled DAST results (ZAP full scan, ZAP API scan, nuclei;
+  issue #68), gates them on fail-on, and opens or updates one tracking issue
+  per target host when there are High or Critical findings. The issue's body
+  always shows the current High and Critical list; a run that finds a new
+  one also comments, so watchers are notified.
+
+  guard.py, in the same directory, is the production guard the scheduled
+  workflow runs before any scan.
+
+  Required permissions on the calling job: contents: read, plus issues: write
+  when open-issues is true.
+inputs:
+  target-url:
+    description: "The scanned URL (names the tracking issue)."
+    required: true
+  zap-reports:
+    description: "Newline-separated ZAP JSON reports; missing files are skipped and noted."
+    default: ""
+  nuclei-results:
+    description: "nuclei JSON export; a missing file is skipped and noted."
+    default: ""
+  fail-on:
+    description: "Lowest severity that fails the job: critical, high, medium, low, info, or none."
+    default: "high"
+  open-issues:
+    description: "Open or update the tracking issue for High and Critical findings."
+    default: "true"
+  github-token:
+    description: "Token for the issue step."
+    default: ${{ github.token }}
+outputs:
+  high-count:
+    description: "High findings."
+    value: ${{ steps.report.outputs.high-count }}
+  critical-count:
+    description: "Critical findings."
+    value: ${{ steps.report.outputs.critical-count }}
+  findings:
+    description: "Path of the High and Critical findings JSON."
+    value: ${{ steps.report.outputs.findings }}
+runs:
+  using: "composite"
+  steps:
+    - name: Combine results
+      id: report
+      shell: bash
+      env:
+        ZAP: ${{ inputs.zap-reports }}
+        NUCLEI: ${{ inputs.nuclei-results }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/dast-findings.json"
+        args=(--out "${OUT}" --fail-on "${FAIL_ON}")
+        while IFS= read -r f; do [ -z "${f}" ] || args+=(--zap "${f}"); done <<< "${ZAP}"
+        [ -z "${NUCLEI}" ] || args+=(--nuclei "${NUCLEI}")
+        status=0
+        python3 -I "${GITHUB_ACTION_PATH}/report.py" "${args[@]}" >> "${GITHUB_OUTPUT}" || status=$?
+        echo "findings=${OUT}" >> "${GITHUB_OUTPUT}"
+        echo "status=${status}" >> "${GITHUB_OUTPUT}"
+
+    - name: Open or update the tracking issue
+      if: inputs.open-issues == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        TARGET: ${{ inputs.target-url }}
+        FINDINGS: ${{ steps.report.outputs.findings }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: bash "${GITHUB_ACTION_PATH}/issue.sh"
+
+    - name: Gate
+      if: steps.report.outputs.status != '0'
+      shell: bash
+      env:
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        echo "::error title=dast-scheduled::findings at or above '${FAIL_ON}'; see the job summary and the tracking issue"
+        exit 1
