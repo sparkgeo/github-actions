@@ -16,6 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
+| Privacy Review Gate | [`privacy-review-gate.yml`](.github/workflows/privacy-review-gate.yml) | `workflow_call` | Reusable PR gate for changes touching personal data: triggered by privacy paths, a store from `ropa.yml`, a new privado data flow or a filled-in PIA section; requires the `privacy-review` label, the privacy owner's approval on the current head and a PIA link; re-evaluates on review events (#121) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| Privacy Review Gate | [`privacy-review-gate`](.github/actions/privacy-review-gate/action.yml) | Reads the PR, its reviews, the privacy team and the privado-report artefact through the API, decides whether review is needed and whether it is complete, posts one updating comment | `privacy-paths`, `privacy-owner` (default: `sparkgeo/privacy`), `privacy-reviewers`, `pia-link-pattern` (default: `docs/pia/`), `pia-heading`, `label` (default: `privacy-review`), `use-privado-signal` (default: `true`), `token`, `comment` |
 
 ### GitHub Actionlint
 
@@ -119,6 +121,25 @@ jobs:
           comment-summary-in-pr: always                       # always | on-failure | never
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}  # leave empty on pull_request
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}           # leave empty on pull_request
+```
+
+### Privacy Review Gate
+
+SecOps plan Step 36 Standard (issue #121): a change that touches personal or location data merges only after a privacy review. The gate triggers on privacy paths (`ropa.yml`, `retention.yml`, migrations, models, schemas, IaC naming a `ropa.yml` store), on a new data flow in the privado report (#99) or on a filled-in PIA section in the PR body, and then requires the `privacy-review` label, an approving review on the current head from the privacy owner team and a link to a PIA written from [`docs/pia-template.md`](docs/pia-template.md). Setup, the PR template section, the CODEOWNERS snippet and the ruleset guidance: [`docs/privacy-review.md`](docs/privacy-review.md).
+
+```yaml
+on:
+  pull_request:
+  pull_request_review:
+jobs:
+  gate:
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+    uses: sparkgeo/github-actions/.github/workflows/privacy-review-gate.yml@<SHA>
+    with:
+      actions-ref: <SHA>   # same SHA as above
 ```
 
 ### Storage Optimizer

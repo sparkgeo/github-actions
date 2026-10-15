@@ -1,0 +1,2 @@
+{"number": 43, "head": {"sha": "abc123"}, "labels": [],
+ "body": "## Summary\n\nFix a typo in the README.\n\n## Privacy impact\n\n<!-- Fill in when the change touches personal or location data; otherwise leave as is. -->\nN/A\n"}

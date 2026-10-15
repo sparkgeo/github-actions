@@ -1,0 +1,91 @@
+name: Privacy Review Gate
+
+# Reusable PR gate (issue #121, plan Step 36 Standard): a change that touches
+# personal data (privacy paths, a store from ropa.yml, a new data flow in the
+# privado report, or a filled-in PIA section) merges only with the
+# privacy-review label, an approving review on the current head from the
+# privacy owner team, and a PIA link in the body. Call it on pull_request
+# and pull_request_review so it re-evaluates when the reviewer approves.
+# Never pull_request_target: the token stays read-only on the repository
+# and only writes the PR comment. Mark the check required at Standard tier
+# (ruleset guidance in docs/privacy-review.md).
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. Egress: github.com only.
+
+on:
+  workflow_call:
+    inputs:
+      privacy-paths:
+        description: 'Comma-separated globs that need privacy review; empty uses the defaults'
+        default: ''
+        type: string
+      privacy-owner:
+        description: 'Team (org/slug) whose approval counts'
+        default: 'sparkgeo/privacy'
+        type: string
+      privacy-reviewers:
+        description: 'Comma-separated logins that count when the token cannot read the team'
+        default: ''
+        type: string
+      pia-link-pattern:
+        description: 'Regex the PR body must contain'
+        default: 'docs/pia/'
+        type: string
+      use-privado-signal:
+        description: 'Read the privado-report artefact of this head for new data flows'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the composite
+          from. Pin this to the SAME SHA you pinned privacy-review-gate.yml to,
+          so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    secrets:
+      reviewer-token:
+        description: 'Optional token with members:read to resolve the privacy-owner team; GITHUB_TOKEN cannot'
+        required: false
+    outputs:
+      triggered:
+        description: 'true when the PR needs privacy review'
+        value: ${{ jobs.gate.outputs.triggered }}
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions (contents: read, pull-requests: write).
+jobs:
+  gate:
+    name: Privacy review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
+    outputs:
+      triggered: ${{ steps.gate.outputs.triggered }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the base must be reachable for the changed-files diff
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout privacy-review-gate composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: gate
+        uses: ./.sparkgeo-github-actions/.github/actions/privacy-review-gate
+        with:
+          privacy-paths: ${{ inputs.privacy-paths }}
+          privacy-owner: ${{ inputs.privacy-owner }}
+          privacy-reviewers: ${{ inputs.privacy-reviewers }}
+          pia-link-pattern: ${{ inputs.pia-link-pattern }}
+          use-privado-signal: ${{ inputs.use-privado-signal }}
+          token: ${{ secrets.reviewer-token || github.token }}

@@ -1,0 +1,7 @@
+version: 1
+activities:
+  - id: accounts
+    stores: [aws_rds_cluster.app]
+  - id: ingest
+    stores:
+      - aws_s3_bucket.ingest

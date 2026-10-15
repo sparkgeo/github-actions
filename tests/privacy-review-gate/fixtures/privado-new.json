@@ -1,0 +1,1 @@
+{"new": {"sources": ["Data.Sensitive.ContactData.PhoneNumber"], "destinations": ["https://api.example-crm.com/v1/contacts"], "sinks": {"third_parties": ["Sinks.ThirdParties.API.api.example-crm.com"], "storages": []}, "flows": []}, "baseline": true}

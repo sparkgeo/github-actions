@@ -1,0 +1,136 @@
+name: "Privacy Review Gate"
+description: |
+  Privacy review gate for changes touching personal data (SecOps plan Step 36
+  Standard, issue #121). Needs review when a changed path matches
+  privacy-paths or names a store from ropa.yml, when the privado data-flow
+  report (#99) adds a source, sink or destination, or when the PR body's PIA
+  section is filled in. Then passes only with the privacy-review label, an
+  approving review on the current head from a member of privacy-owner (or
+  privacy-reviewers), and a PIA link in the body. Posts one updating comment
+  listing what is missing. Reads the PR, its reviews and the team through the
+  API with the token given; never writes to the repository.
+
+  Required permissions on the calling job: contents: read, pull-requests: write.
+inputs:
+  privacy-paths:
+    description: "Comma-separated globs; empty uses ropa.yml, retention.yml, **/migrations/**, **/models/**, **/schemas/**, **/schema/**, **/*.sql plus IaC files naming a ropa.yml store."
+    default: ""
+  privacy-owner:
+    description: "Team (org/slug) whose approval counts."
+    default: "sparkgeo/privacy"
+  privacy-reviewers:
+    description: "Comma-separated logins that count as privacy reviewers when the token cannot read the team."
+    default: ""
+  pia-link-pattern:
+    description: "Regex the PR body must contain (a PIA path or tracker URL)."
+    default: "docs/pia/"
+  pia-heading:
+    description: "Markdown heading of the PIA section in the PR template."
+    default: "## Privacy impact"
+  label:
+    description: "Label that marks the PR as under privacy review."
+    default: "privacy-review"
+  use-privado-signal:
+    description: "Read the privado-report artefact of this PR's head run for new data flows."
+    default: "true"
+  token:
+    description: "Token for the API reads (team membership needs members:read; the default GITHUB_TOKEN cannot read org teams)."
+    default: ${{ github.token }}
+  comment:
+    description: "Post or update the PR comment."
+    default: "true"
+outputs:
+  triggered:
+    description: "true when the PR needs privacy review."
+    value: ${{ steps.gate.outputs.triggered }}
+  complete:
+    description: "true when not triggered or every requirement holds."
+    value: ${{ steps.gate.outputs.complete }}
+runs:
+  using: "composite"
+  steps:
+    - id: collect
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        OWNER: ${{ inputs.privacy-owner }}
+        USE_PRIVADO: ${{ inputs.use-privado-signal }}
+      run: |
+        set -euo pipefail
+        OUT="${RUNNER_TEMP}/privacy-gate"; mkdir -p "${OUT}"
+        [ -n "${PR}" ] || { echo "::error title=privacy-review::not a pull_request or pull_request_review event"; exit 1; }
+        gh api "repos/${GH_REPO}/pulls/${PR}" > "${OUT}/pr.json"
+        gh api --paginate "repos/${GH_REPO}/pulls/${PR}/reviews" | jq -s 'add' > "${OUT}/reviews.json"
+        git fetch -q --depth=1 origin "${BASE_SHA}" 2>/dev/null || true
+        git diff --name-only --diff-filter=ACMR "${BASE_SHA}...${HEAD_SHA}" > "${OUT}/changed.txt" 2>/dev/null \
+          || git diff --name-only --diff-filter=ACMR "${BASE_SHA}" "${HEAD_SHA}" > "${OUT}/changed.txt"
+        ORG="${OWNER%%/*}"; SLUG="${OWNER#*/}"
+        if gh api --paginate "orgs/${ORG}/teams/${SLUG}/members" 2>/dev/null | jq -s 'add' > "${OUT}/members.json" && jq -e 'type == "array"' "${OUT}/members.json" > /dev/null; then
+          echo "privacy owner ${OWNER}: $(jq length "${OUT}/members.json") member(s)"
+        else
+          rm -f "${OUT}/members.json"; echo "::notice title=privacy-review::token cannot read team ${OWNER}; using privacy-reviewers"
+        fi
+        if [ "${USE_PRIVADO}" = "true" ]; then
+          # shellcheck disable=SC2016  # $s is a jq variable
+          ID="$(gh api "repos/${GH_REPO}/actions/artifacts?name=privado-report&per_page=100" 2>/dev/null \
+            | jq -r --arg s "${HEAD_SHA}" '[.artifacts[] | select(.expired == false and .workflow_run.head_sha == $s)] | sort_by(.created_at) | last | .id // empty')" || ID=""
+          if [ -n "${ID}" ]; then
+            gh api "repos/${GH_REPO}/actions/artifacts/${ID}/zip" > "${OUT}/privado.zip" && mkdir -p "${OUT}/privado" && unzip -qo "${OUT}/privado.zip" -d "${OUT}/privado"
+            [ -f "${OUT}/privado/report.json" ] && cp "${OUT}/privado/report.json" "${OUT}/report.json" && echo "privado report: artefact ${ID}"
+          fi
+        fi
+        echo "dir=${OUT}" >> "${GITHUB_OUTPUT}"
+
+    - id: gate
+      shell: bash
+      env:
+        OUT: ${{ steps.collect.outputs.dir }}
+        PATHS: ${{ inputs.privacy-paths }}
+        OWNER: ${{ inputs.privacy-owner }}
+        REVIEWERS: ${{ inputs.privacy-reviewers }}
+        PATTERN: ${{ inputs.pia-link-pattern }}
+        HEADING: ${{ inputs.pia-heading }}
+        LABEL: ${{ inputs.label }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        set -euo pipefail
+        ARGS=(--pr "${OUT}/pr.json" --reviews "${OUT}/reviews.json" --changed "${OUT}/changed.txt" --privacy-paths "${PATHS}" \
+              --owner "${OWNER}" --reviewers "${REVIEWERS}" --pia-link-pattern "${PATTERN}" --pia-heading "${HEADING}" --label "${LABEL}" \
+              --head-sha "${HEAD_SHA}" --comment "${OUT}/comment.md" --output "${OUT}/gate.json")
+        [ -f "${OUT}/members.json" ] && ARGS+=(--members "${OUT}/members.json")
+        [ -f "${OUT}/report.json" ] && ARGS+=(--privado "${OUT}/report.json")
+        set +e
+        python3 -I "${GITHUB_ACTION_PATH}/gate.py" "${ARGS[@]}"
+        rc=$?
+        set -e
+        echo "rc=${rc}" >> "${GITHUB_OUTPUT}"
+
+    - name: Post or update the PR comment
+      if: ${{ inputs.comment == 'true' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+        BODY_FILE: ${{ steps.collect.outputs.dir }}/comment.md
+        TRIGGERED: ${{ steps.gate.outputs.triggered }}
+      run: |
+        set -euo pipefail
+        [ -s "${BODY_FILE}" ] || exit 0
+        ID="$(gh api "repos/${GH_REPO}/issues/${PR}/comments?per_page=100" --jq '[.[] | select(.body | startswith("<!-- privacy-review-gate -->"))] | first | .id // empty')"
+        if [ -n "${ID}" ]; then
+          gh api -X PATCH "repos/${GH_REPO}/issues/comments/${ID}" -F body=@"${BODY_FILE}" > /dev/null
+        elif [ "${TRIGGERED}" = "true" ]; then
+          gh pr comment "${PR}" --body-file "${BODY_FILE}"
+        fi
+
+    - name: Outcome
+      shell: bash
+      env:
+        RC: ${{ steps.gate.outputs.rc }}
+      run: |
+        [ "${RC}" = "0" ] || exit 1
