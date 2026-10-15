@@ -141,8 +141,6 @@ jobs:
           # The demo workload must be classified from its filtered manifest, not left unknown.
           jq -e '[.entries[] | select(.workload == "demo/Deployment/web")] | length > 0 and all(.relevant != "unknown")' \
             "${OUT_DIR}/runtime-relevance.json"
-          jq -c '[.entries[] | select(.workload == "demo/Deployment/web") | .relevant] | group_by(.) | map({(tostring): length})' \
-            "${OUT_DIR}/runtime-relevance.json"
 
       - id: relevance
         uses: ./.github/actions/runtime-relevance
