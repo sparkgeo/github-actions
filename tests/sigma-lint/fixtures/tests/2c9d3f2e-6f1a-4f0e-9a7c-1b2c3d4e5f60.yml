@@ -1,0 +1,3 @@
+technique: T1098.003
+source: stratus:aws.persistence.iam-create-admin-user
+expect: detected

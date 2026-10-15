@@ -1,0 +1,9 @@
+title: Broken rule
+id: not-a-uuid
+logsource:
+  product: aws
+detection:
+  selection:
+    eventName: Foo
+  condition: selection_missing
+level: high

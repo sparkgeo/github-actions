@@ -76,6 +76,59 @@ jobs:
 
       - uses: ./.github/actions/kubeconform
 
+  # Sigma lint (#177): check.py against the fixture rule set (a passing rule,
+  # a syntax error, a missing test case), then the composite on the clean
+  # fixture with the splunk backend; the converted query is uploaded as
+  # sigma-splunk on main, the hand-off a consuming repository's SIEM push
+  # job would download. PyPI is the only egress besides github.com.
+  sigma-lint:
+    name: Sigma Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fixture rule set
+        run: tests/sigma-lint/run.sh
+
+      - id: clean
+        uses: ./.github/actions/sigma-lint
+        with:
+          rules-dir: tests/sigma-lint/fixtures/clean/rules
+          tests-dir: tests/sigma-lint/fixtures/clean/tests
+          backend: splunk
+          backend-package: pysigma-backend-splunk==2.1.0
+          output-dir: ${{ runner.temp }}/sigma-converted
+
+      - name: Outcome
+        env:
+          RULES: ${{ steps.clean.outputs.rule-count }}
+          CONVERTED: ${{ steps.clean.outputs.converted-count }}
+          ERRORS: ${{ steps.clean.outputs.error-count }}
+        run: |
+          [ "${ERRORS}" = "0" ] || exit 1
+          { [ "${RULES}" = "1" ] && [ "${CONVERTED}" = "1" ]; } || { echo "::error title=sigma-lint::expected 1 rule converted, got ${CONVERTED} of ${RULES}"; exit 1; }
+
+      - name: Upload converted queries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sigma-splunk
+          path: ${{ runner.temp }}/sigma-converted/
+          if-no-files-found: error
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

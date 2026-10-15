@@ -1,0 +1,5 @@
+technique: T1078.004
+source: manual
+expect: detected
+steps: |
+  Orphan test case: no rule carries this id.

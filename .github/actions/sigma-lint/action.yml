@@ -1,0 +1,109 @@
+name: "Sigma Lint"
+description: |
+  Detection as code (SecOps plan Steps 9 and 40, issue #177): installs
+  sigma-cli and the pySigma backend into a virtualenv (PyPI is the only
+  egress), runs `sigma check` on the rules directory, requires a test case
+  per rule (<tests-dir>/<rule id>.yml with technique, source and expect, see
+  docs/sigma.md), converts every rule to the backend's query language, and
+  writes a job summary with rule counts per logsource product, rules without
+  a test case, conversion failures and stale rules. Errors and issues are
+  annotations.
+
+  Required permissions on the calling job: contents: read.
+inputs:
+  rules-dir:
+    description: "Directory of Sigma rule YAML files."
+    default: "detections/rules"
+  tests-dir:
+    description: "Directory of per-rule test cases."
+    default: "detections/tests"
+  backend:
+    description: "pySigma backend identifier (sigma list targets): splunk, elasticsearch, opensearch, kusto, secops, loki, ... or none."
+    default: "none"
+  backend-package:
+    description: "PyPI package and version of the backend plugin; empty derives pysigma-backend-<backend> unpinned."
+    default: ""
+  pipeline:
+    description: "Processing pipeline identifier or YAML file; empty converts without one."
+    default: ""
+  require-test-case:
+    description: "Fail on a rule without a valid test case."
+    default: "true"
+  output-dir:
+    description: "Directory the converted queries are written to (one file per rule)."
+    default: "converted"
+  stale-days:
+    description: "Rules not modified for this many days are listed as stale."
+    default: "365"
+  exclude-validators:
+    description: "sigma check validators to skip, comma-separated. The defaults download MITRE ATT&CK and D3FEND data from GitHub at run time; the test-case check validates technique ids offline."
+    default: "attacktag,d3_fendtag"
+  sigma-cli-version:
+    description: "sigma-cli version (PyPI)."
+    default: "3.1.0"
+outputs:
+  rule-count:
+    description: "Rules parsed."
+    value: ${{ steps.check.outputs.rule-count }}
+  missing-test-count:
+    description: "Rules without a valid test case."
+    value: ${{ steps.check.outputs.missing-test-count }}
+  error-count:
+    description: "Errors found."
+    value: ${{ steps.check.outputs.error-count }}
+  converted-count:
+    description: "Rules converted."
+    value: ${{ steps.check.outputs.converted-count }}
+runs:
+  using: "composite"
+  steps:
+    # A virtualenv rather than pipx: check.py runs on the same interpreter so
+    # it gets sigma-cli's PyYAML (the runner's python3 has no YAML parser).
+    - id: install
+      shell: bash
+      env:
+        VERSION: ${{ inputs.sigma-cli-version }}
+        BACKEND: ${{ inputs.backend }}
+        PACKAGE: ${{ inputs.backend-package }}
+      run: |
+        set -euo pipefail
+        ENV="${RUNNER_TEMP}/sigma-env"
+        python3 -m venv "${ENV}"
+        PKGS=("sigma-cli==${VERSION}")
+        if [ "${BACKEND}" != "none" ] && [ -n "${BACKEND}" ]; then
+          PKGS+=("${PACKAGE:-pysigma-backend-${BACKEND}}")
+        fi
+        "${ENV}/bin/python" -m pip install --quiet --disable-pip-version-check "${PKGS[@]}"
+        echo "env=${ENV}" >> "${GITHUB_OUTPUT}"
+        "${ENV}/bin/sigma" version
+
+    - id: check
+      shell: bash
+      env:
+        ENV: ${{ steps.install.outputs.env }}
+        RULES: ${{ inputs.rules-dir }}
+        TESTS: ${{ inputs.tests-dir }}
+        BACKEND: ${{ inputs.backend }}
+        PIPELINE: ${{ inputs.pipeline }}
+        REQUIRE: ${{ inputs.require-test-case }}
+        OUT_DIR: ${{ inputs.output-dir }}
+        STALE: ${{ inputs.stale-days }}
+        EXCLUDE: ${{ inputs.exclude-validators }}
+      run: |
+        set -euo pipefail
+        JUNIT="${RUNNER_TEMP}/sigma-check.xml"
+        EXCLUDES=()
+        IFS=',' read -r -a NAMES <<< "${EXCLUDE}"
+        for v in "${NAMES[@]}"; do [ -n "${v}" ] && EXCLUDES+=(-x "${v}"); done
+        if [ -d "${RULES}" ]; then
+          # exit 1 on rule errors is reported by check.py from the JUnit file;
+          # any other failure (no JUnit written) stops the job here
+          "${ENV}/bin/sigma" check "${EXCLUDES[@]}" --junitxml "${JUNIT}" "${RULES}" > "${RUNNER_TEMP}/sigma-check.txt" 2>&1 || true
+          cat "${RUNNER_TEMP}/sigma-check.txt"
+          [ -s "${JUNIT}" ] || { echo "::error title=sigma-lint::sigma check produced no JUnit report"; exit 1; }
+        fi
+        ARGS=(--rules-dir "${RULES}" --tests-dir "${TESTS}" --junit "${JUNIT}" --backend "${BACKEND}" \
+              --pipeline "${PIPELINE}" --output-dir "${OUT_DIR}" --stale-days "${STALE}" \
+              --sigma "${ENV}/bin/sigma" --output "${RUNNER_TEMP}/sigma-lint.json")
+        [ "${REQUIRE}" = "true" ] && ARGS+=(--require-test-case)
+        "${ENV}/bin/python" -I "${GITHUB_ACTION_PATH}/check.py" "${ARGS[@]}"
