@@ -116,6 +116,53 @@ jobs:
         run: |
           { [ "${FALLBACK}" = "true" ] && [ "${MAPPED}" = "0" ] && [ "${ERRORS}" = "0" ]; } || { echo "::error title=verify-map::expected fallback mode with nothing mapped and no errors; got fallback=${FALLBACK} mapped=${MAPPED} errors=${ERRORS}"; exit 1; }
 
+  verify-ts:
+    name: Verify TypeScript
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The example at tier standard with a fixed changed list and a map that
+      # marks src/bbox.ts high risk: tsc, ESLint, entry points, fast-check
+      # census, XState paths and Stryker all run; nothing may block.
+      - name: Changed list
+        run: printf 'src/bbox.ts\nsrc/upload.machine.ts\ntest/bbox.property.test.ts\n' > "${RUNNER_TEMP}/changed.txt"
+
+      - id: self
+        uses: ./.github/actions/verify-ts
+        with:
+          working-directory: docs/examples/verify/ts
+          changed-list: ${{ runner.temp }}/changed.txt
+          map-json: ${{ github.workspace }}/tests/verify-ts/fixtures/tsc/verify-map.json
+          tier: standard
+          mutation-threshold: 50
+          output-dir: ${{ runner.temp }}/verify-ts
+
+      - name: Fixtures
+        run: tests/verify-ts/run.sh
+
+      - name: Outcome
+        env:
+          TSC: ${{ steps.self.outputs.ts-errors-changed }}
+          ESLINT: ${{ steps.self.outputs.eslint-errors }}
+          XSTATE: ${{ steps.self.outputs.xstate-failures }}
+          SCORE: ${{ steps.self.outputs.mutation-score }}
+          BLOCKING: ${{ steps.self.outputs.blocking }}
+          SUMMARY: ${{ runner.temp }}/verify-ts/summary.json
+        run: |
+          { [ "${TSC}" = "0" ] && [ "${ESLINT}" = "0" ] && [ "${XSTATE}" = "0" ] && [ -n "${SCORE}" ] && [ "${BLOCKING}" = "0" ] \
+            && [ "$(jq '.xstate_paths' "${SUMMARY}")" -ge 50 ] && [ -f "${RUNNER_TEMP}/verify-ts/reports/mutation.html" ]; } \
+            || { echo "::error title=verify-ts::expected a clean standard-tier run with XState paths and a Stryker report; got tsc=${TSC} eslint=${ESLINT} xstate=${XSTATE} score=${SCORE} blocking=${BLOCKING}"; exit 1; }
+
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
   # is its exit code, which needs continue-on-error + if:always; those are

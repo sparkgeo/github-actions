@@ -1,0 +1,3 @@
+src/bbox.ts
+src/upload.machine.ts
+test/bbox.property.test.ts
