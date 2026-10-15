@@ -257,6 +257,11 @@ jobs:
         with:
           base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
+          # tests/govulncheck/fixtures/module pins golang.org/x/text v0.3.6 on
+          # purpose: GO-2021-0113 (GHSA-ppp9-7jff-5vj2) is the reachable
+          # advisory and GO-2022-1059 (GHSA-69ch-w2m2-3vjp) the imported one
+          # that the govulncheck job asserts on. Nothing in this repo runs it.
+          allow-ghsas: GHSA-ppp9-7jff-5vj2, GHSA-69ch-w2m2-3vjp
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).

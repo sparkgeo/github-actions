@@ -8,8 +8,10 @@ description: |
   informational one SLA row down. govulncheck carries no CVSS; the CVSS gate
   for go.sum stays with dep-scan-app.yml.
 
-  Installs the Go toolchain from go.mod with actions/setup-go and govulncheck
-  at a pinned version with `go install`, reads the vulnerability database at
+  Installs the latest stable Go toolchain with actions/setup-go (govulncheck
+  needs a recent toolchain and analyses older modules fine; set go-version to
+  pin one) and govulncheck at a pinned version with `go install`, reads the
+  vulnerability database at
   https://vuln.go.dev, and uploads govulncheck's own SARIF to the Security tab
   (symbol-level findings are errors, package-level warnings, module-level
   notes).
@@ -20,9 +22,9 @@ inputs:
   working-directory:
     description: "Directory holding go.mod."
     default: "."
-  go-version-file:
-    description: "File actions/setup-go reads the toolchain version from, relative to working-directory."
-    default: "go.mod"
+  go-version:
+    description: "Toolchain for actions/setup-go: stable, oldstable, or an exact version. govulncheck v1.9.0 needs Go 1.26 or newer, so reading go.mod of an older module would fail the install."
+    default: "stable"
   version:
     description: "golang.org/x/vuln version to install (with the leading v)."
     default: "v1.9.0"
@@ -54,7 +56,7 @@ runs:
     - name: Set up Go from go.mod
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
       with:
-        go-version-file: ${{ inputs.working-directory }}/${{ inputs.go-version-file }}
+        go-version: ${{ inputs.go-version }}
         cache-dependency-path: ${{ inputs.working-directory }}/go.sum
 
     - name: Install govulncheck

@@ -7,7 +7,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPORT="${HERE}/../../.github/actions/govulncheck/report.py"
-FIX="${HERE}/fixtures/govulncheck.json"
+FIX="${HERE}/fixtures/govulncheck.jsonl"
 TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 

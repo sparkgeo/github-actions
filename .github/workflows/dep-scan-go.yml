@@ -21,9 +21,9 @@ on:
         description: 'Directory holding go.mod'
         default: '.'
         type: string
-      go-version-file:
-        description: 'File actions/setup-go reads the toolchain version from, relative to working-directory'
-        default: 'go.mod'
+      go-version:
+        description: 'Toolchain for actions/setup-go: stable (default), oldstable, or an exact version; govulncheck needs Go 1.26 or newer'
+        default: 'stable'
         type: string
       fail-on:
         description: 'reachable (default) fails on any called vulnerable function; none reports only'
@@ -88,7 +88,7 @@ jobs:
         uses: ./.sparkgeo-github-actions/.github/actions/govulncheck
         with:
           working-directory: ${{ inputs.working-directory }}
-          go-version-file: ${{ inputs.go-version-file }}
+          go-version: ${{ inputs.go-version }}
           fail-on: ${{ inputs.fail-on }}
           packages: ${{ inputs.packages }}
           sarif-upload: ${{ inputs.sarif-upload }}
