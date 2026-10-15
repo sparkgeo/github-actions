@@ -73,7 +73,7 @@ Nexus CE (EPL) covers all four package ecosystems in one place within its usage 
 
 **Workflows that call it.** `lint-precommit.yml` today (pre-commit hook environments install from npm, PyPI and Go). Every new reusable workflow that installs packages calls it first; the test, verify, dependency-scan and model-scan workflows in open pull requests add the step when they merge.
 
-**Blocking the bypass.** With `harden-runner` in block mode (#83), a repository that opts in drops `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org` and the Docker Hub hosts from its job's `allowed-endpoints`, so a client that ignores the proxy fails the build instead of passing quietly. The `registry-config` CI job proves the client side: with Verdaccio and devpi running on the runner and the public registries blackholed, `npm ci` of a lockfile pointing at `registry.npmjs.org` and `pip install` both succeed through the proxies.
+**Blocking the bypass.** With `harden-runner` in block mode (#83), a repository that opts in drops `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org` and the Docker Hub hosts from its job's `allowed-endpoints`, so a client that ignores the proxy fails the build instead of passing quietly. The `registry-config` CI job proves the client side: with Verdaccio and pypiserver running on the runner and the public registries blackholed, `npm ci` of a lockfile pointing at `registry.npmjs.org` and `pip install` both succeed through the proxies.
 
 **At the proxy.**
 
