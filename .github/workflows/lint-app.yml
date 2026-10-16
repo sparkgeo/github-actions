@@ -65,10 +65,10 @@ env:
 jobs:
   megalinter:
     name: MegaLinter
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
     steps:
       - name: Checkout repository under test
-        uses: useblacksmith/checkout@v1  # v7.0.1
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
           fetch-depth: 0  # MegaLinter needs history to diff against the base
