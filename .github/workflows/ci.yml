@@ -37,11 +37,18 @@ jobs:
 
       - uses: ./.github/actions/github-actionlint
 
+  # Jobs whose composite downloads a per-CPU binary run on both Blacksmith
+  # runner types (x64 and arm64), so a wrong asset name fails here first.
+
   # Lint Terraform/OpenTofu with tflint. This repo has no .tf files, so this is
   # a smoke test that the composite installs and runs (exits 0 on no findings).
   tflint:
-    name: TFLint
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    name: TFLint (${{ matrix.runner == 'blacksmith-2vcpu-ubuntu-2404-arm' && 'arm64' || 'x64' }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [blacksmith-2vcpu-ubuntu-2404, blacksmith-2vcpu-ubuntu-2404-arm]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
@@ -56,12 +63,15 @@ jobs:
 
       - uses: ./.github/actions/tflint
 
-  # Validate Helm/Kustomize with kubeconform. This repo has no charts/, so this
-  # is a smoke test that the composite installs and runs (exits 0, nothing to
-  # validate).
+  # Validate Helm/Kustomize with kubeconform against a one-template fixture
+  # chart, so the installed binary actually runs on each architecture.
   kubeconform:
-    name: Kubeconform
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    name: Kubeconform (${{ matrix.runner == 'blacksmith-2vcpu-ubuntu-2404-arm' && 'arm64' || 'x64' }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [blacksmith-2vcpu-ubuntu-2404, blacksmith-2vcpu-ubuntu-2404-arm]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
@@ -75,6 +85,8 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/kubeconform
+        with:
+          charts-dir: tests/kubeconform/charts
 
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
@@ -112,8 +124,12 @@ jobs:
   # Pattern-based secret detection with Gitleaks.
   # Hard-fails the build on any match. On PRs scans only the PR commit range.
   gitleaks:
-    name: Gitleaks
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    name: Gitleaks (${{ matrix.runner == 'blacksmith-2vcpu-ubuntu-2404-arm' && 'arm64' || 'x64' }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [blacksmith-2vcpu-ubuntu-2404, blacksmith-2vcpu-ubuntu-2404-arm]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
@@ -133,8 +149,12 @@ jobs:
   # Hard-fails on any verified secret; unverified matches are warnings in the
   # Security tab. On PRs scans only the PR commit range.
   trufflehog:
-    name: TruffleHog
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    name: TruffleHog (${{ matrix.runner == 'blacksmith-2vcpu-ubuntu-2404-arm' && 'arm64' || 'x64' }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [blacksmith-2vcpu-ubuntu-2404, blacksmith-2vcpu-ubuntu-2404-arm]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       security-events: write  # SARIF upload to the Security tab
@@ -174,7 +194,8 @@ jobs:
   # Scorecard hard-requires the default branch; skipped on PRs and feature branches.
   scorecard:
     name: OpenSSF Scorecard
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    # x86: the scorecard-action image is published for linux/amd64 only.
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -222,8 +243,12 @@ jobs:
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
   terramate-opentofu-setup:
-    name: Terramate + OpenTofu Setup
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    name: Terramate + OpenTofu Setup (${{ matrix.runner == 'blacksmith-2vcpu-ubuntu-2404-arm' && 'arm64' || 'x64' }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [blacksmith-2vcpu-ubuntu-2404, blacksmith-2vcpu-ubuntu-2404-arm]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:

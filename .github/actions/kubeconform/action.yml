@@ -39,11 +39,17 @@ runs:
         set -euo pipefail
         TMP="$(mktemp -d)"
         BASE="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}"
-        curl -sSfL -o "${TMP}/kubeconform-linux-amd64.tar.gz" "${BASE}/kubeconform-linux-amd64.tar.gz"
+        # Release asset names differ per tool; map the runner's CPU to this one's.
+        case "$(uname -m)" in
+          x86_64) ARCH=amd64 ;;
+          aarch64|arm64) ARCH=arm64 ;;
+          *) echo "::error::unsupported runner architecture $(uname -m)"; exit 1 ;;
+        esac
+        curl -sSfL -o "${TMP}/kubeconform-linux-${ARCH}.tar.gz" "${BASE}/kubeconform-linux-${ARCH}.tar.gz"
         curl -sSfL -o "${TMP}/CHECKSUMS" "${BASE}/CHECKSUMS"
         # Verify the downloaded archive against the published checksum before use.
-        ( cd "${TMP}" && grep " kubeconform-linux-amd64.tar.gz\$" CHECKSUMS | sha256sum -c - )
-        tar -xzf "${TMP}/kubeconform-linux-amd64.tar.gz" -C "${TMP}" kubeconform
+        ( cd "${TMP}" && grep " kubeconform-linux-${ARCH}.tar.gz\$" CHECKSUMS | sha256sum -c - )
+        tar -xzf "${TMP}/kubeconform-linux-${ARCH}.tar.gz" -C "${TMP}" kubeconform
         # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
         install "${TMP}/kubeconform" "${RUNNER_TEMP}/kubeconform"
 

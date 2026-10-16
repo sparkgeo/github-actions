@@ -35,7 +35,13 @@ runs:
         set -euo pipefail
         TMP="$(mktemp -d)"
         BASE="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
-        TARBALL="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        # Release asset names differ per tool; map the runner's CPU to this one's.
+        case "$(uname -m)" in
+          x86_64) ARCH=x64 ;;
+          aarch64|arm64) ARCH=arm64 ;;
+          *) echo "::error::unsupported runner architecture $(uname -m)"; exit 1 ;;
+        esac
+        TARBALL="gitleaks_${GITLEAKS_VERSION}_linux_${ARCH}.tar.gz"
         curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
         curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
         # Verify the downloaded binary against the published checksum before use.

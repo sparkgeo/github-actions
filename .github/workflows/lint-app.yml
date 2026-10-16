@@ -65,7 +65,8 @@ env:
 jobs:
   megalinter:
     name: MegaLinter
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    # x86: the MegaLinter images are published for linux/amd64 only.
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout repository under test
         uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
