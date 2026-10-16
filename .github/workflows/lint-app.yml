@@ -65,13 +65,21 @@ env:
 jobs:
   megalinter:
     name: MegaLinter
-    runs-on: ubuntu-latest
+    # x86: the MegaLinter images are published for linux/amd64 only.
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout repository under test
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
           fetch-depth: 0  # MegaLinter needs history to diff against the base
+
+      # Newer git (2.55 on Blacksmith images) writes "# pack-refs with: sorted";
+      # MegaLinter's GitPython rejects any header without "peeled" and crashes
+      # listing refs. The header is optional: git reads the file without it.
+      - name: Make packed-refs readable by GitPython
+        run: |
+          if [ -f .git/packed-refs ]; then sed -i '/^# pack-refs with:/d' .git/packed-refs; fi
 
       - name: Resolve MegaLinter settings
         id: settings

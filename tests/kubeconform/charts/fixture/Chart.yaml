@@ -1,0 +1,4 @@
+apiVersion: v2
+name: fixture
+description: One-template chart so CI runs kubeconform on every runner architecture
+version: 0.1.0

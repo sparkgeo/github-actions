@@ -39,7 +39,13 @@ runs:
         set -euo pipefail
         TMP="$(mktemp -d)"
         BASE="https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}"
-        TARBALL="trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
+        # Release asset names differ per tool; map the runner's CPU to this one's.
+        case "$(uname -m)" in
+          x86_64) ARCH=amd64 ;;
+          aarch64|arm64) ARCH=arm64 ;;
+          *) echo "::error::unsupported runner architecture $(uname -m)"; exit 1 ;;
+        esac
+        TARBALL="trufflehog_${TRUFFLEHOG_VERSION}_linux_${ARCH}.tar.gz"
         curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
         curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/trufflehog_${TRUFFLEHOG_VERSION}_checksums.txt"
         # Verify the downloaded binary against the published checksum before use.
