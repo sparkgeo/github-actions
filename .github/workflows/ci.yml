@@ -21,7 +21,7 @@ jobs:
   # Lint workflow and action YAML files with actionlint.
   actionlint:
     name: Actionlint
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       checks: write
@@ -31,7 +31,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
 
@@ -41,7 +41,7 @@ jobs:
   # a smoke test that the composite installs and runs (exits 0 on no findings).
   tflint:
     name: TFLint
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
@@ -50,7 +50,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
 
@@ -61,7 +61,7 @@ jobs:
   # validate).
   kubeconform:
     name: Kubeconform
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
@@ -70,7 +70,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
 
@@ -93,7 +93,7 @@ jobs:
   # Run this repo's own .pre-commit-config.yaml hooks via the composite.
   pre-commit:
     name: Pre-commit
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
@@ -102,7 +102,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0  # full history so the PR diff range can be resolved
@@ -113,7 +113,7 @@ jobs:
   # Hard-fails the build on any match. On PRs scans only the PR commit range.
   gitleaks:
     name: Gitleaks
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
@@ -122,7 +122,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0  # full history so the PR commit range can be scanned
@@ -134,7 +134,7 @@ jobs:
   # Security tab. On PRs scans only the PR commit range.
   trufflehog:
     name: TruffleHog
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       security-events: write  # SARIF upload to the Security tab
@@ -144,7 +144,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0  # full history so the PR commit range can be scanned
@@ -154,7 +154,7 @@ jobs:
   # Security-scan workflow and action YAML files with zizmor.
   zizmor:
     name: Zizmor
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       security-events: write
@@ -164,7 +164,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
 
@@ -174,7 +174,7 @@ jobs:
   # Scorecard hard-requires the default branch; skipped on PRs and feature branches.
   scorecard:
     name: OpenSSF Scorecard
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -186,7 +186,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
 
@@ -199,7 +199,7 @@ jobs:
   # Skipped on first push to a branch (event.before = zero SHA) — no base to compare.
   dependency-review:
     name: Dependency Review
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before != '0000000000000000000000000000000000000000')
     permissions:
       contents: read
@@ -210,7 +210,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
 
@@ -223,7 +223,7 @@ jobs:
   # Terramate stack steps are no-ops in this repo (no stacks defined).
   terramate-opentofu-setup:
     name: Terramate + OpenTofu Setup
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
@@ -232,7 +232,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0  # terramate --changed requires full git history
@@ -243,7 +243,7 @@ jobs:
   # Runs on push to main (demonstration) and workflow_dispatch (on-demand).
   storage-optimizer:
     name: Storage Optimizer
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     permissions:
       contents: read
@@ -253,7 +253,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@v1  # v7.0.1
         with:
           persist-credentials: false
 
