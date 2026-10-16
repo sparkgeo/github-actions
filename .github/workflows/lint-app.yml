@@ -74,6 +74,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 0  # MegaLinter needs history to diff against the base
 
+      # Newer git (2.55 on Blacksmith images) writes "# pack-refs with: sorted";
+      # MegaLinter's GitPython rejects any header without "peeled" and crashes
+      # listing refs. The header is optional: git reads the file without it.
+      - name: Make packed-refs readable by GitPython
+        run: |
+          if [ -f .git/packed-refs ]; then sed -i '/^# pack-refs with:/d' .git/packed-refs; fi
+
       - name: Resolve MegaLinter settings
         id: settings
         env:
