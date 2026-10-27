@@ -6,8 +6,6 @@ Reusable GitHub Actions composite actions and CI workflow for the Sparkgeo organ
 
 All action references in this repo are pinned to full commit SHAs. See [CONTRIBUTING.md](CONTRIBUTING.md) for authoring standards and how to add new actions.
 
-Findings from the scan gates map to the Remediation SLA Table in [CONTRIBUTING.md § Findings and SLAs](CONTRIBUTING.md#findings-and-slas). A finding that cannot be fixed inside its window goes through the [security exception](.github/ISSUE_TEMPLATE/security-exception.yml) issue form; the label set is in [`docs/findings-labels.md`](docs/findings-labels.md). Validation runs that prove a control still works, and the signals that owe one, are in [`docs/validation.md`](docs/validation.md).
-
 ## Workflow
 
 | Workflow | File | Triggers | Purpose |
@@ -380,6 +378,8 @@ For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`]
 
 Public and private repos use different subsets of these actions. The key differences are `harden-runner` (sends egress telemetry to StepSecurity — omit on private repos) and `scorecard` (requires public visibility to produce meaningful scores).
 
+**Runners.** The reusable workflows run on Blacksmith x64 (`blacksmith-2vcpu-ubuntu-2404`) by default. Pass `runs-on: ubuntu-latest` in a repo without the Blacksmith GitHub App, or the job waits for a runner until GitHub cancels it. Pass `runs-on: blacksmith-2vcpu-ubuntu-2404-arm` for ARM once your own pre-commit hooks and tflint plugins have arm64 builds; the composites here run on both. `lint-app.yml` must stay on x64 (MegaLinter images are amd64 only).
+
 ### Public repo
 
 ```yaml
@@ -492,5 +492,7 @@ This repo is part of the Sparkgeo GitHub Actions security programme. The pillars
 | OIDC & secret federation | #27 | No static credentials; OIDC for cloud auth; environment-scoped secrets |
 | Runner egress control | #28 | `harden-runner` audit → block; self-hosted runner isolation policy |
 | Enterprise governance & observability | #29 | Org rulesets; OpenSSF Scorecard; audit log → SIEM |
+
+Findings from the scan gates map to the SLA table in [CONTRIBUTING.md § Findings and SLAs](CONTRIBUTING.md#findings-and-slas). Track them, and any exception request ([template](docs/templates/security-exception.yml)), in a private repo, never in a public issue; the label set and monthly review queries are in [`docs/findings-labels.md`](docs/findings-labels.md). Validation runs that prove a control still works, and the signals that owe one, are in [`docs/validation.md`](docs/validation.md).
 
 To report a security vulnerability, use the [Security Advisory](../../security/advisories/new) process — do not open a public issue.

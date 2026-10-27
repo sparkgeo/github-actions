@@ -1,12 +1,15 @@
+# Issue form template for validation triggers. Do NOT add it to a public
+# repository: the issue names an unvalidated asset and, once the run is done,
+# the techniques the controls missed. Copy it to .github/ISSUE_TEMPLATE/ in a
+# PRIVATE repo only. See docs/findings-labels.md.
 name: Validation trigger
-description: A signal that owes a control-validation run (SecOps plan Step 40 trigger table). High tier is validated within 72 hours, Medium within 7 days.
+description: A signal that owes a control-validation run (SecOps plan Step 40 trigger table). High tier is validated within 72 hours, Medium within 7 days. Private repositories only.
 title: "[validation] <signal>"
-labels: ["validation:high"]
 body:
   - type: markdown
     attributes:
       value: |
-        The clock starts when this issue is opened. Change the label to `validation:medium` for a Medium-tier signal. Rules of engagement, the trigger table, and how to read a result: `docs/validation.md`. Every technique recorded as *missed* gets its own issue with `validation:miss`, `security-finding`, and `sla:high`.
+        **File this only in a private repository.** The clock starts when this issue is opened. The triager applies `validation:high` or `validation:medium` from the Tier field below. Rules of engagement, the trigger table, and how to read a result: `docs/validation.md` in sparkgeo/github-actions. Every technique recorded as *missed* gets its own issue with `validation:miss`, `security-finding`, and `sla:high`.
   - type: dropdown
     id: source
     attributes:
@@ -68,6 +71,6 @@ body:
     attributes:
       label: Closure
       options:
-        - label: Rules of engagement in `docs/validation.md` section 1 were followed (MDR notified, change ticket, non-destructive subset)
+        - label: Rules of engagement in `docs/validation.md` (sparkgeo/github-actions) section 1 were followed (MDR notified, change ticket, non-destructive subset)
         - label: Every *missed* technique has its own issue with `validation:miss`, `security-finding`, and `sla:high`
         - label: Evidence is linked above and classified Confidential
