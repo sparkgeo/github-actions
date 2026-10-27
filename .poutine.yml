@@ -1,35 +1,39 @@
-# poutine configuration for this repository (triage of the first scan with
-# pipeline-posture, issue #234). Each skip names the finding it accepts and why.
-disableVersionCheck: true
+# poutine configuration for this repository (pipeline-posture, issue #234).
+# Triage redone on 2026-10-27 against main after the Blacksmith migration
+# (#256), with poutine v1.1.6. Each entry names the finding it accepts and why.
+
+rulesConfig:
+  # poutine counts any runner label it does not recognise as GitHub-hosted as
+  # self-hosted. Blacksmith runners are ephemeral VMs, one job each, so a PR
+  # job cannot persist on them the way it can on a reused self-hosted runner.
+  # The shared state Blacksmith does keep (the useblacksmith/checkout git
+  # mirror) is tracked separately: fork-PR approval policy, #256 review.
+  pr_runs_on_self_hosted:
+    allowed_runners:
+      - blacksmith-2vcpu-ubuntu-2404
+      - blacksmith-2vcpu-ubuntu-2404-arm
 
 skip:
-  # untrusted_checkout_exec treats every workflow_call workflow as possibly
-  # privileged and flags a local action run after a checkout. These reusable
-  # workflows run their composite from a second checkout of
-  # sparkgeo/github-actions at the caller-pinned actions-ref into
-  # .sparkgeo-github-actions; actions/checkout empties that path before
-  # cloning, so content from the caller's pull request cannot replace the
-  # action, and no workflow here checks out a PR head ref. A new reusable
-  # workflow using the same pattern adds its path here after review.
-  - rule: untrusted_checkout_exec
-    path:
-      - .github/workflows/lint-helm.yml
-      - .github/workflows/lint-iac.yml
-      - .github/workflows/lint-precommit.yml
-      - .github/workflows/secrets-precommit.yml
-      - .github/workflows/secrets-scan.yml
-
-  # Third-party actions reviewed, SHA-pinned and listed in
-  # docs/approved-actions.md (org allowlist).
+  # Third-party actions reviewed, on the repo's actions allowlist and listed
+  # in docs/approved-actions.md. Each entry matches the reviewed SHA only, so
+  # a version bump (Dependabot) brings the note back for review: update the
+  # SHA here in the same PR once the new version is reviewed.
   - rule: github_action_from_unverified_creator_used
     purl:
-      - pkg:githubactions/opentofu/setup-opentofu
-      - pkg:githubactions/reviewdog/action-actionlint
-      - pkg:githubactions/terramate-io/terramate-action
-      - pkg:githubactions/zizmorcore/zizmor-action
+      - pkg:githubactions/opentofu/setup-opentofu@847eaa4afeb791b06daa46e8eafa8b1b68d7cfb4
+      - pkg:githubactions/reviewdog/action-actionlint@419a49378266e892f40c773b4f2fc6de9aa87499
+      - pkg:githubactions/useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a
+      - pkg:githubactions/zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d
 
-# Not skipped: unpinnable_action notes on .github/actions/scorecard
-# (ossf/scorecard-action runs a container image by tag) and
-# .github/actions/github-actionlint (reviewdog/action-actionlint builds a
-# container that downloads actionlint at run time). Both stay visible until
-# those composites install pinned, checksum-verified binaries instead.
+# Not skipped:
+# - unpinnable_action notes on .github/actions/scorecard and
+#   .github/actions/github-actionlint: poutine's reputation data lists
+#   ossf/scorecard-action and reviewdog/action-actionlint as unpinnable (they
+#   run container images). Visible until those composites install pinned,
+#   checksum-verified binaries instead.
+# - untrusted_checkout_exec has nothing to skip, but note its blind spot:
+#   poutine v1.1.6 only recognises actions/checkout, not the
+#   useblacksmith/checkout every workflow here uses, so it cannot see a PR-head
+#   checkout. Its precondition, a pull_request_target or workflow_run trigger,
+#   is reported by zizmor (dangerous-triggers, error) in pre-commit and the
+#   Security tab.
