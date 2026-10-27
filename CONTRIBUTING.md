@@ -165,13 +165,28 @@ Each scan gate listed below maps its findings to one row of the SLA table (from 
 
 Workflows marked with a PR number are in review and not on `main` yet. A scan gate added later (for example grype, govulncheck, GuardDog, DAST, serverless) adds its row here when it merges; until then its findings take the row that matches the tool's own severity (critical, high, medium, low).
 
+### Decision outcomes
+
+Every finding older than 14 days carries exactly one `outcome:*` label, on the finding's own issue, with its evidence there. The plan maps the four outcomes onto CISA SSVC decisions so a client or auditor using SSVC can read them. SSVC decisions are priorities set before remediation, so the mapping is approximate: an accepted Critical is still a Critical.
+
+| Outcome | Label | Evidence on the issue | SSVC |
+|---|---|---|---|
+| **Fix** | `outcome:fix` | Merged PR and passing re-scan; for a configuration, rule, or control change, the re-validation result (prevented or detected, [`docs/validation.md` § 6](docs/validation.md#6-re-validation-gate)) | Act |
+| **Mitigate** | `outcome:mitigate` | A compensating control recorded as *prevented* under emulation, or every layer of the control decomposition recorded as prevented or detected. The triager swaps the `sla:*` label one row lower; the window still runs from the issue's creation. The downgrade expires when the next run records the control, or any layer, below the outcome it was credited with | Attend |
+| **Monitor** | `outcome:monitor` | The detection rule that fires for the technique, confirmed under emulation. The finding stays open and is re-reviewed each cycle | Track\* |
+| **Accept** | `outcome:accept` | A link to the approved exception request ([template](docs/templates/security-exception.yml)). The approver adds the label to the finding's issue when applying `exception-approved`. Re-enters validation when the asset, the control it relied on, or the threat intelligence around it changes, not only at expiry; the [trigger table](docs/validation.md#3-trigger-table) is the signal | Track |
+
+**AI-generated findings**: a finding raised by a model (LLM diff review, AI test sweep, pentest agent) enters the SLA table only with a reproducer, an exploited status, or a traced path from input to sink attached. Otherwise it carries `ai-informational` and starts no clock. A model's downgrade of a Critical is a recommendation until a person records the outcome.
+
+**Forensic triage**: a KEV-listed CVE giving total control on a publicly exposed asset is `sla:critical` plus `forensic-triage`. Assume the asset was reached before the patch: scope in 0–2 hours, preserve evidence in 2–24 hours before patching, contain in 6–24 hours, analysis at 24–48 hours, escalation decision with a triage report at 48–72 hours (CISA BOD 26-04 sequence, SecOps plan Step 22). The 48-hour production deadline for the patch still applies; only the analysis and the escalation decision may run past it.
+
 ### Process
 
 1. **Triage** the finding into a private tracking issue (see above) within one working day. Label it `security-finding` plus one `sla:*` label from [`docs/findings-labels.md`](docs/findings-labels.md). The SLA clock starts now, except for secrets (from detection).
 2. **Fix** inside the window. A code fix closes the issue with its PR (`Closes #N`) plus a passing re-scan.
 3. **Re-validation before close** when the fix is a configuration, rule, or control change: its PR references the issue without a closing keyword. The technique is re-run and recorded as prevented or detected, the result is linked on the issue, and then the issue is closed ([`docs/validation.md` § 6](docs/validation.md#6-re-validation-gate)).
-4. **Exception** when a fix cannot land in time: file a request with the [security exception template](docs/templates/security-exception.yml) in a private repo. It gets `exception-requested`. A member of `@sparkgeo/security-team` other than the requester checks the compensating control and that the expiry is at most 90 days from approval, then applies `exception-approved`. The finding is re-reviewed at expiry. A second exception for the same finding needs escalation to the accountable executive. Secret findings are not eligible: rotate the credential.
-5. **Monthly review**: findings past their deadline and exceptions near or past expiry are reviewed in the monthly security meeting, using the queries in [`docs/findings-labels.md`](docs/findings-labels.md#monthly-review-queries).
+4. **Exception** when a fix cannot land in time: file a request with the [security exception template](docs/templates/security-exception.yml) in a private repo. It gets `exception-requested`. The compensating control must have a validation run recording it as *prevented*. A member of `@sparkgeo/security-team` other than the requester checks that run and that the expiry is at most 90 days from approval, then applies `exception-approved` and adds `outcome:accept` to the finding's issue. The finding is re-reviewed at expiry, and earlier when the asset, the control, or the threat intelligence changes. A second exception for the same finding needs the accountable executive's approval as a comment on the request; the approver checks that the comment's author is the accountable executive. Secret findings are not eligible: rotate the credential.
+5. **Monthly review**: findings past their deadline, findings older than 14 days without exactly one `outcome:*` label, and exceptions near or past expiry are reviewed in the monthly security meeting, using the queries in [`docs/findings-labels.md`](docs/findings-labels.md#monthly-review-queries).
 
 ## Reporting a security vulnerability
 

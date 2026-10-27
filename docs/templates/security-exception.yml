@@ -11,7 +11,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **File this only in a private repository.** Exceptions are written, time-boxed (90 days maximum), require a compensating control in place before approval, and are approved by a member of `@sparkgeo/security-team` who is not the requester. They are re-reviewed at expiry. A second exception for the same finding needs escalation to the accountable executive.
+        **File this only in a private repository.** Exceptions are written, time-boxed (90 days maximum), require a compensating control in place before approval and recorded as *prevented* under emulation, and are approved by a member of `@sparkgeo/security-team` who is not the requester. They are re-reviewed at expiry, and earlier when the asset, the control, or the threat intelligence changes. A second exception for the same finding needs the accountable executive's approval as a comment here; the approver checks the comment's author before approving.
 
         **Secret / credential findings are not eligible: revoke and rotate within 24 hours of detection.**
 
@@ -68,7 +68,7 @@ body:
       label: Exception number for this finding
       options:
         - First exception
-        - Second exception (escalated; link the accountable executive's approval in the justification)
+        - Second exception (escalated; the accountable executive approves in a comment on this issue)
     validations:
       required: true
   - type: input
@@ -98,7 +98,7 @@ body:
     id: compensating-control
     attributes:
       label: Compensating control
-      description: What reduces the risk while the exception is open, and where it is enforced (network policy, WAF rule, feature flag, monitoring, ...).
+      description: What reduces the risk while the exception is open, where it is enforced (network policy, WAF rule, feature flag, monitoring, ...), and a link to the validation run that recorded the technique as *prevented* by it (`docs/validation.md` in sparkgeo/github-actions). *Detected* does not qualify.
     validations:
       required: true
   - type: textarea
@@ -108,6 +108,16 @@ body:
       description: How and when the finding will be fixed for good, and who owns it.
     validations:
       required: true
+  - type: markdown
+    attributes:
+      value: |
+        **Re-entry triggers.** An approved exception is re-reviewed before expiry when any of these happens; all three always apply:
+
+        - the asset changes exposure, moves environment, or joins the high-value list
+        - the compensating control changes, is retired, or stops showing *prevented* in a validation run
+        - a KEV entry, advisory, or threat-intelligence spike names the vulnerable product or technique
+
+        Whoever triages a validation trigger or a KEV hit checks the open `outcome:accept` findings for the same asset or product.
   - type: checkboxes
     id: acknowledgements
     attributes:
