@@ -30,7 +30,7 @@ Runs are owed on signals, not on the calendar. The scheduled runs are the floor.
 | **Medium** | SIEM, EDR, WAF, or email-gateway rule or policy change; new control onboarded; pre-production deployment of a high-value service; MDR or vendor platform upgrade | 7 days | The rule's own test case (section 7) plus the techniques the control claims to cover; re-run of the last campaign against the changed control | Rule or control owner |
 | **Low** | Routine maintenance, minor configuration change, non-production update | Next scheduled run | Scheduled weekly or monthly campaign | Security owner |
 
-Open a [validation trigger](../.github/ISSUE_TEMPLATE/validation-trigger.yml) issue for every High or Medium signal; the form applies `validation:high` or `validation:medium`. At Baseline the High tier is run by hand when a KEV entry or an unknown asset names something in the register. The deadlines are the plan's proposed values until the first quarter of data calibrates them.
+Open an issue from the [validation trigger template](templates/validation-trigger.yml) for every High or Medium signal, in a private repo only (section 1). The triager applies `validation:high` or `validation:medium` from the form's Tier field the same day; the clock runs from the issue's creation either way. At Baseline the High tier is run by hand when a KEV entry or an unknown asset names something in the register. The deadlines are the plan's proposed values until the first quarter of data calibrates them.
 
 ## 4. Reading a result
 
@@ -40,7 +40,7 @@ Record one outcome per technique:
 |---|---|---|
 | **prevented** | The control blocked the action | Yes |
 | **detected** | An alert reached a person inside the agreed window: 15 minutes for EDR, 1 hour for SIEM | Yes |
-| **logged** | Evidence exists in a log but nobody was told | No. The cheapest gap to close: write the rule |
+| **logged** | Evidence exists in a log but nobody was told | No. The cheapest gap to close: write the rule. Opens no finding; reported in the run summary |
 | **missed** | Nothing | No. A ticket with `validation:miss`, `security-finding`, and `sla:high` |
 
 Report the prevention rate and the detection rate separately. A control that logs but never alerts scores zero.
@@ -52,13 +52,13 @@ The written *Mitigate* procedure for a high-value asset or a CVE that cannot be 
 1. Split the exploitation technique into the layers in front of the asset: perimeter firewall, IPS or WAF, EDR on the host, SIEM rule
 2. Test each layer in isolation with a payload or a sample, and record it as prevented or detected (section 4)
 3. The finding is **Mitigated** only when every layer assumed to cover it is recorded as prevented or detected. One layer at logged or missed leaves the finding open at its original row
-4. Attach the per-layer results to the ticket; the downgrade expires when the next run no longer shows the layer as prevented
+4. Attach the per-layer results to the ticket; the downgrade expires when the next run records any layer below the outcome it was credited with (prevented to anything less, or detected to logged or missed)
 
 ## 6. Re-validation gate
 
 A finding fixed by a configuration, rule, or control change closes only after the technique is re-run and recorded as **prevented** or **detected**. The re-run result is linked on the ticket before it is closed. Code fixes close on the merged PR plus a passing re-scan; they do not need an emulation run.
 
-The same gate applies to a compensating control cited in a [security exception](../.github/ISSUE_TEMPLATE/security-exception.yml): the control counts only with a *prevented* result attached.
+The same gate applies to a compensating control cited in a [security exception](templates/security-exception.yml): the control counts only with a *prevented* result attached.
 
 ## 7. Test-case schema
 
@@ -67,7 +67,7 @@ Every detection rule kept as code (Sigma, checked by `sigma-lint.yml`, #177) has
 File: `<tests-dir>/<rule-id>.yml`
 
 ```yaml
-technique: T1078.004          # ATT&CK technique id the rule detects
+technique: T1136.003          # ATT&CK technique id the rule detects
 source: stratus:aws.persistence.iam-create-admin-user
 #   atomic:<test guid>        Atomic Red Team test, run by hand or by Invoke-AtomicRedTeam
 #   stratus:<technique id>    Stratus Red Team technique, run by stratus-red-team.yml (#178)
@@ -77,4 +77,4 @@ steps: |                      # manual sources only
   Create an IAM user with AdministratorAccess from a non-admin session.
 ```
 
-`stratus-red-team.yml` reads `stratus:` sources to build its technique list; a rule whose test case has not fired in the last run is reported by the lint summary as stale.
+`stratus-red-team.yml` reads `stratus:` sources to build its technique list. Its run summary, not the lint, reports a rule as stale when the last run did not record the test case's `expect` outcome; the lint only checks that the test case exists and is well formed.

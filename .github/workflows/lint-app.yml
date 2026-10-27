@@ -28,6 +28,12 @@ name: Lint App
 on:
   workflow_call:
     inputs:
+      runs-on:
+        description: >-
+          Runner label; must be x64 (the MegaLinter images are linux/amd64
+          only). Use ubuntu-latest in repos without the Blacksmith GitHub App.
+        default: 'blacksmith-2vcpu-ubuntu-2404'
+        type: string
       default-branch:
         description: 'Default branch MegaLinter diffs against'
         default: 'main'
@@ -65,13 +71,24 @@ env:
 jobs:
   megalinter:
     name: MegaLinter
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     steps:
       - name: Checkout repository under test
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
           fetch-depth: 0  # MegaLinter needs history to diff against the base
+          # The MegaLinter container sees only the workspace, not Blacksmith's git
+          # mirror disk, so copy the objects in instead of borrowing them.
+          dissociate: true
+
+      # Blacksmith checkout writes packed-refs with "# pack-refs with: sorted";
+      # MegaLinter's GitPython rejects any header without "peeled" and crashes
+      # listing refs. The header is optional: git reads the file without it.
+      # Runs right before MegaLinter, so no later step can rewrite it.
+      - name: Make packed-refs readable by GitPython
+        run: |
+          if [ -f .git/packed-refs ]; then sed -i '/^# pack-refs with:/d' .git/packed-refs; fi
 
       - name: Resolve MegaLinter settings
         id: settings
@@ -144,7 +161,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         if: ${{ always() && steps.sarif.outputs.upload == 'true' }}
-        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4.35.5
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
         with:
           sarif_file: megalinter-reports/megalinter-report.sarif
           category: megalinter
