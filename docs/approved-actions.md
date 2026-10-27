@@ -22,8 +22,8 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `github/codeql-action/upload-sarif` | GitHub (org-owned) | `9e0d7b8d` (v4.35.5) | `scorecard`, `zizmor` | Upload SARIF to GitHub Security tab | 2026-05-21 |
 | `ossf/scorecard-action` | OpenSSF | `4eaacf05` (v2.4.3) | `scorecard` | OpenSSF Scorecard supply-chain checks | 2026-05-21 |
 | `reviewdog/action-actionlint` | reviewdog | `6fb7acc9` (v1.72.0) | `github-actionlint` | Actionlint via reviewdog; posts Check annotations | 2026-05-21 |
-| `zizmorcore/zizmor-action` | zizmorcore | `5f14fd08` (v0.5.6) | `zizmor` | Zizmor static security analysis; uploads SARIF | 2026-05-21 |
-| `opentofu/setup-opentofu` | OpenTofu | `847eaa4a` (v2.0.1) | `terramate-opentofu-setup` | Install OpenTofu CLI | 2026-05-21 |
+| `zizmorcore/zizmor-action` | zizmorcore | `85b2b9fb` (v0.7.1) | `zizmor` | Zizmor static security analysis; uploads SARIF. From v0.7.0 it installs zizmor from a hash-pinned PyPI wheel instead of a container image | 2026-10-27 |
+| `opentofu/setup-opentofu` | OpenTofu | `a1320f89` (v2.0.2) | `terramate-opentofu-setup` | Install OpenTofu CLI; from v2.0.2 it verifies the download against the published SHA256SUMS | 2026-10-27 |
 | `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress monitor — audits outbound network calls; baseline for enforce mode | 2026-06-01 |
 | `aws-actions/configure-aws-credentials` | AWS (Amazon) | `99214aa6` (v6.1.3) | `aws-oidc-auth` | Assume IAM role via GitHub OIDC; exchanges OIDC token for short-lived AWS credentials | 2026-06-09 |
 | `ghcr.io/oxsecurity/megalinter[-<flavor>]` (Docker image, not an action) | OX Security | tag `v9.6.0` (`MEGALINTER_VERSION` in `lint-app.yml`) | `lint-app.yml` | All-language lint/format gate; auto-detects languages, emits SARIF. Run with `docker run` so the `flavor` input selects the image and only one image is pulled; not in the dependency graph, so no licence exemption needed (AGPL-3.0, run in CI only, never redistributed) | 2026-06-10 |
