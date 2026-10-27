@@ -6,8 +6,6 @@ Reusable GitHub Actions composite actions and CI workflow for the Sparkgeo organ
 
 All action references in this repo are pinned to full commit SHAs. See [CONTRIBUTING.md](CONTRIBUTING.md) for authoring standards and how to add new actions.
 
-Findings from the scan gates map to the Remediation SLA Table in [CONTRIBUTING.md § Findings and SLAs](CONTRIBUTING.md#findings-and-slas). A finding that cannot be fixed inside its window goes through the [security exception](.github/ISSUE_TEMPLATE/security-exception.yml) issue form; the label set is in [`docs/findings-labels.md`](docs/findings-labels.md).
-
 ## Workflow
 
 | Workflow | File | Triggers | Purpose |
@@ -494,5 +492,7 @@ This repo is part of the Sparkgeo GitHub Actions security programme. The pillars
 | OIDC & secret federation | #27 | No static credentials; OIDC for cloud auth; environment-scoped secrets |
 | Runner egress control | #28 | `harden-runner` audit → block; self-hosted runner isolation policy |
 | Enterprise governance & observability | #29 | Org rulesets; OpenSSF Scorecard; audit log → SIEM |
+
+Findings from the scan gates map to the SLA table in [CONTRIBUTING.md § Findings and SLAs](CONTRIBUTING.md#findings-and-slas). Track them, and any exception request ([template](docs/templates/security-exception.yml)), in a private repo, never in a public issue; the label set and monthly review queries are in [`docs/findings-labels.md`](docs/findings-labels.md).
 
 To report a security vulnerability, use the [Security Advisory](../../security/advisories/new) process — do not open a public issue.

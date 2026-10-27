@@ -124,43 +124,52 @@ correct permissions (see README for full usage examples).
 
 ## Findings and SLAs
 
-Every scanning workflow in this repo produces findings that map to one row of the Remediation SLA Table (SecOps plan Step 25). The same signal, finding type by severity by environment, always produces the same deadline, whichever tool reported it. The clock starts when the finding is confirmed at triage, not when the tool first fired.
+Each scan gate listed below maps its findings to one row of the SLA table (from the Sparkgeo SecOps plan, Step 25). The same signal, finding type by severity by environment, always produces the same deadline, whichever tool reported it. For Critical, High, Medium and Low the clock starts when the finding is confirmed at triage. For a secret it starts when the tool first reports it.
+
+**Track findings privately.** This repo and many consuming repos are public. A finding's tracking issue or exception request names an unfixed vulnerability, where it runs and what is holding it back, so it never goes in a public issue. Use a private repo (the org's private security tracker, or the repo itself when it is private) or a draft security advisory.
 
 | SLA row | Definition (any one qualifies) | Production | Non-production (staging / dev) |
 |---|---|---|---|
-| **Secret / credential leak** | Any live credential in a repo, image, log, ticket or AI prompt | Revoke and rotate within 24 hours; hard-blocked in pre-commit and CI at every tier | Same as production |
-| **Critical** | CVSS ≥ 9.0; or EPSS ≥ 0.10; or on CISA KEV; or SAST/DAST finding with a confirmed exploit path | 48 hours | 7 days |
+| **Secret / credential leak** | Any credential that may be live, in a repo, image, log, ticket or AI prompt | Revoke and rotate within 24 hours of detection; hard-blocked in pre-commit and CI by default | Same as production |
+| **Critical** | CVSS ≥ 9.0; or a SAST/DAST finding with a confirmed exploit path; at Advanced tier also EPSS ≥ 0.10 or a CISA KEV listing (issue #80) | 48 hours | 7 days |
 | **High** | CVSS 7.0–8.9; or reachable SAST/DAST finding with significant impact; or cloud/cluster misconfiguration exposing data or admin surfaces | 7 days | 30 days |
 | **Medium** | CVSS 4.0–6.9; or High findings downgraded after reachability analysis | 30 days | 90 days |
 | **Low** | CVSS < 4.0; informational; hardening recommendations | 90 days or next scheduled maintenance | Tracked, no SLA |
 
+### Tiers
+
+- **Baseline**: only the Secret and Critical rows are enforced; other findings are reported.
+- **Standard**: every row is tracked with its deadline.
+- **Advanced**: Standard plus the EPSS / CISA KEV uplift to Critical (`epss-override` on `dep-scan-app.yml`, issue #80).
+
 ### Workflow to SLA row
 
-`fail-on-severity` on each workflow decides what blocks the PR (vocabulary in `docs/gate-policy.md`, issue #79). Findings below that threshold are still findings: at Standard tier they go to the backlog with the SLA below; at Baseline only the Secret and Critical rows are enforced.
+`fail-on-severity` on each workflow decides what blocks the PR (one vocabulary for every gate; issue #79). Findings below that threshold are still findings and follow the tier rules above.
 
 | Workflow / composite | Tool | Finding class | How the SLA row is chosen |
 |---|---|---|---|
-| `secrets-precommit.yml` | gitleaks | Secret pattern match | Every match is the **Secret** row until proven not live. Always blocks. |
-| `secrets-scan.yml` | trufflehog | Verified credential | Verified match: **Secret** row. Unverified match: warning; investigate within the **Medium** window and re-class as Secret if it proves live. |
-| `dep-scan-app.yml` | osv-scanner | Dependency CVE | CVSS via the shared `severity-gate`: ≥ 9.0 **Critical**, ≥ 7.0 **High**, ≥ 4.0 **Medium**, else **Low**. |
+| `secrets-precommit.yml` | gitleaks | Secret pattern match | Every match is the **Secret** row until proven not live. Blocks by default (`fail-on-finding: true`). |
+| `secrets-scan.yml` | trufflehog | Credential | Verified match: **Secret** row, blocks. Unverified match: also the **Secret** row until someone shows it is not live; verification can fail for harmless reasons (network, no verifier, internal service). |
+| `dep-scan-app.yml` (PR #54) | osv-scanner | Dependency CVE | CVSS via the shared `severity-gate`: ≥ 9.0 **Critical**, ≥ 7.0 **High**, ≥ 4.0 **Medium**, else **Low**. |
 | `dependency-review` composite | dependency-review-action | New dependency CVE on a PR | GitHub advisory severity (`moderate` = **Medium**). A non-permitted licence is a merge blocker, not an SLA finding. |
-| `container-scan.yml` | trivy image | Image CVE; secret baked into an image | trivy severity (CVSS) to the matching row; any secret is the **Secret** row. |
-| `container-lint.yml` | hadolint | Dockerfile misconfiguration | `error` **High**, `warning` **Medium**, `info`/`style` **Low**. An unpinned base image blocks the PR regardless. |
-| `iac-scan.yml` | checkov | IaC misconfiguration | checkov reports no severities without a cloud API key; every finding is **High**. |
-| `k8s-scan.yml` | trivy config / fs / image | Helm/Kustomize misconfiguration; secret in a chart; image CVE | trivy severity to the matching row; any secret is the **Secret** row. |
-| `k8s-policy.yml` | conftest | Org policy violation (registry, pinning, resources, root, privileged) | Every `deny` is **High**. It blocks the PR; an exception needs a `data-path` override or the exception process below. |
-| `sast-precommit.yml` | semgrep | Code pattern | `ERROR` **High**, `WARNING` **Medium**, `INFO` **Low**. |
-| `sast-scan.yml` | CodeQL | Code vulnerability | Rule `security-severity` score to the matching row; unscored rules are reported and never block. |
-| `lint-*.yml`, `test-*.yml`, `github-actionlint`, `zizmor`, `kubeconform` | various | Correctness, style, coverage | Not security findings. Must pass to merge; no SLA row. |
+| `container-scan.yml` (PR #143) | trivy image | Image CVE; secret baked into an image | trivy severity (CVSS) to the matching row; any secret is the **Secret** row. |
+| `container-lint.yml` (PR #142) | hadolint | Dockerfile misconfiguration | `error` **High**, `warning` **Medium**, `info`/`style` **Low**. An unpinned base image blocks the PR regardless. |
+| `iac-scan.yml` (PR #141) | checkov | IaC misconfiguration | checkov reports no severities without a cloud API key; every finding is **High**. |
+| `k8s-scan.yml` (PR #150) | trivy config / fs / image | Helm/Kustomize misconfiguration; secret in a chart; image CVE | trivy severity to the matching row; any secret is the **Secret** row. |
+| `k8s-policy.yml` (PR #195) | conftest | Org policy violation (registry, pinning, resources, root, privileged) | Every `deny` is **High**. It blocks the PR; an exception needs a `data-path` override or the exception process below. |
+| `sast-precommit.yml` (PR #144) | semgrep | Code pattern | `ERROR` **High**, `WARNING` **Medium**, `INFO` **Low**. |
+| `sast-scan.yml` (PR #145) | CodeQL | Code vulnerability | Rule `security-severity` score to the matching row; unscored rules are reported and never block. |
+| `zizmor` composite | zizmor | Workflow security (injection, credential exposure, dangerous triggers) | zizmor severity: `high` **High**, `medium` **Medium**, `low`/`informational` **Low**. Reported to the Security tab; the pre-commit hook fails on findings. |
+| `lint-*.yml`, `test-*.yml`, `github-actionlint`, `kubeconform` | various | Correctness, style, coverage | Not security findings. Must pass to merge; no SLA row. |
 
-Advanced tier only: EPSS ≥ 0.10 or a CISA KEV listing uplifts any CVE to **Critical** (issue #80).
+Workflows marked with a PR number are in review and not on `main` yet. A scan gate added later (for example grype, govulncheck, GuardDog, DAST, serverless) adds its row here when it merges; until then its findings take the row that matches the tool's own severity (critical, high, medium, low).
 
 ### Process
 
-1. **Triage** the finding into the tracking issue within one working day. Label it `security-finding` plus one `sla:*` label from [`docs/findings-labels.md`](docs/findings-labels.md). The SLA clock starts now.
+1. **Triage** the finding into a private tracking issue (see above) within one working day. Label it `security-finding` plus one `sla:*` label from [`docs/findings-labels.md`](docs/findings-labels.md). The SLA clock starts now, except for secrets (from detection).
 2. **Fix** inside the window. The PR that fixes it closes the issue.
-3. **Exception** when a fix cannot land in time: open a [security exception request](.github/ISSUE_TEMPLATE/security-exception.yml). Exceptions are written, time-boxed (90 days maximum), require a compensating control, and are signed off by the SecOps lead. They are re-reviewed at expiry. No finding receives a second exception without escalation to the accountable executive. Secret findings are not eligible: rotate the credential.
-4. **Monthly review**: open findings past their deadline and expiring exceptions are reviewed in the monthly security meeting.
+3. **Exception** when a fix cannot land in time: file a request with the [security exception template](docs/templates/security-exception.yml) in a private repo. It gets `exception-requested`. A member of `@sparkgeo/security-team` other than the requester checks the compensating control and that the expiry is at most 90 days from approval, then applies `exception-approved`. The finding is re-reviewed at expiry. A second exception for the same finding needs escalation to the accountable executive. Secret findings are not eligible: rotate the credential.
+4. **Monthly review**: findings past their deadline and exceptions near or past expiry are reviewed in the monthly security meeting, using the queries in [`docs/findings-labels.md`](docs/findings-labels.md#monthly-review-queries).
 
 ## Reporting a security vulnerability
 
