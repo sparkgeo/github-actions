@@ -112,6 +112,10 @@ jobs:
 The composite actions are individually callable and require explicit job shells with
 correct permissions (see README for full usage examples).
 
+## Data classification and PII
+
+Every repository that holds or processes data carries a `docs/data-classification.md` copied from [`docs/data-classification.md`](docs/data-classification.md): the four tiers (Public, Internal, Confidential, Restricted), the handling rules, the storage inventory and the repository's highest tier. That tier sets which PII recognizers block in the gitleaks PII rules (#98) and `pii-scan.yml` (#97). Placeholders that are not PII go in `.pii-allowlist.yml` (starter in [`docs/examples/.pii-allowlist.yml`](docs/examples/.pii-allowlist.yml)); a change to that file needs a second reviewer who checks the reason. Real personal data never enters a repository; fixtures are synthetic.
+
 ## Security pillars reference
 
 | Pillar | Issue | Summary |

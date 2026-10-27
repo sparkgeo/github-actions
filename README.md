@@ -492,6 +492,7 @@ This repo is part of the Sparkgeo GitHub Actions security programme. The pillars
 | OIDC & secret federation | #27 | No static credentials; OIDC for cloud auth; environment-scoped secrets |
 | Runner egress control | #28 | `harden-runner` audit → block; self-hosted runner isolation policy |
 | Enterprise governance & observability | #29 | Org rulesets; OpenSSF Scorecard; audit log → SIEM |
+| Data classification & DLP | #96 | Four-tier [data classification policy](docs/data-classification.md); PII recognizers and blocking derived from the repository's tier; `.pii-allowlist.yml` with second-reviewer rule |
 
 Findings from the scan gates map to the SLA table in [CONTRIBUTING.md § Findings and SLAs](CONTRIBUTING.md#findings-and-slas). Track them, and any exception request ([template](docs/templates/security-exception.yml)), in a private repo, never in a public issue; the label set and monthly review queries are in [`docs/findings-labels.md`](docs/findings-labels.md). Validation runs that prove a control still works, and the signals that owe one, are in [`docs/validation.md`](docs/validation.md).
 
