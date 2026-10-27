@@ -112,9 +112,9 @@ Before approving a new action, verify all of the following:
    ```
 5. CODEOWNERS enforces that `.github/` changes require `@sparkgeo/security-team` review.
 
-## Renovate SHA update policy
+## SHA update policy
 
-Renovate (issue #8) is configured with `pinDigests: true` for the `github-actions` manager. When a new version of an approved action is released, Renovate opens a PR that updates both the SHA and the inline version comment. Do not update SHAs manually — let Renovate handle it. The only exception is an emergency security patch: update immediately, then update this table's review date.
+Dependabot owns `github-actions` updates (issue #87, [docs/dependabot.md](dependabot.md)); Renovate (#86) does not update actions. When a new version of an approved action is released, Dependabot opens a PR after a 7-day cooldown that updates both the SHA and the inline version comment. Do not update SHAs manually — let Dependabot handle it. The only exception is an emergency security patch: update immediately, then update this table's review date.
 
 ## Org allowlist patterns (current)
 
