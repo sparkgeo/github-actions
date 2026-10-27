@@ -1,0 +1,123 @@
+# Issue form template for security exception requests. Do NOT add it to a
+# public repository: the issue would publish an unfixed vulnerability, where
+# it runs and what is holding it back. Copy it to .github/ISSUE_TEMPLATE/ in
+# a PRIVATE repo only (the org's private security tracker, or a private
+# consuming repo). See docs/findings-labels.md.
+name: Security exception request
+description: Request a time-boxed exception (90 days maximum) for a security finding that cannot be fixed inside its SLA. Private repositories only.
+title: "[exception] <finding reference>"
+labels: ["exception-requested"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **File this only in a private repository.** Exceptions are written, time-boxed (90 days maximum), require a compensating control in place before approval, and are approved by a member of `@sparkgeo/security-team` who is not the requester. They are re-reviewed at expiry. A second exception for the same finding needs escalation to the accountable executive.
+
+        **Secret / credential findings are not eligible: revoke and rotate within 24 hours of detection.**
+
+        SLA rows and the workflow mapping: `CONTRIBUTING.md` in sparkgeo/github-actions, section "Findings and SLAs".
+  - type: input
+    id: finding
+    attributes:
+      label: Finding reference
+      description: Tracking issue, advisory ID (CVE / GHSA), rule ID, or the CI run URL that reported it.
+      placeholder: "CVE-2026-12345 in org/repo#123"
+    validations:
+      required: true
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: Reporting workflow
+      options:
+        - dep-scan-app.yml (osv-scanner)
+        - dependency-review (dependency-review-action)
+        - container-scan.yml (trivy image)
+        - container-lint.yml (hadolint)
+        - iac-scan.yml (checkov)
+        - k8s-scan.yml (trivy)
+        - k8s-policy.yml (conftest)
+        - sast-precommit.yml (semgrep)
+        - sast-scan.yml (CodeQL)
+        - zizmor (workflow security)
+        - other (name it in the justification)
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity (SLA row)
+      options:
+        - Critical
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Production
+        - Non-production (staging / dev)
+    validations:
+      required: true
+  - type: dropdown
+    id: occurrence
+    attributes:
+      label: Exception number for this finding
+      options:
+        - First exception
+        - Second exception (escalated; link the accountable executive's approval in the justification)
+    validations:
+      required: true
+  - type: input
+    id: sla-deadline
+    attributes:
+      label: SLA deadline
+      description: Date the remediation window expires (YYYY-MM-DD).
+      placeholder: "2026-11-15"
+    validations:
+      required: true
+  - type: input
+    id: expiry
+    attributes:
+      label: Requested exception expiry
+      description: YYYY-MM-DD, at most 90 days from approval. The approver checks this; the monthly review query reads it from this field.
+      placeholder: "2027-01-15"
+    validations:
+      required: true
+  - type: textarea
+    id: justification
+    attributes:
+      label: Justification
+      description: Why the finding cannot be fixed inside its window (upstream fix pending, breaking change, false positive under review, ...).
+    validations:
+      required: true
+  - type: textarea
+    id: compensating-control
+    attributes:
+      label: Compensating control
+      description: What reduces the risk while the exception is open, and where it is enforced (network policy, WAF rule, feature flag, monitoring, ...).
+    validations:
+      required: true
+  - type: textarea
+    id: remediation-plan
+    attributes:
+      label: Remediation plan
+      description: How and when the finding will be fixed for good, and who owns it.
+    validations:
+      required: true
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Acknowledgements
+      options:
+        - label: This finding is not a secret or credential (those are rotated, never excepted).
+          required: true
+        - label: The compensating control is in place now, before approval.
+          required: true
+        - label: The requested expiry is at most 90 days from approval and the finding will be re-reviewed on that date.
+          required: true
+        - label: I understand the request is approved only when a member of @sparkgeo/security-team other than me applies the exception-approved label.
+          required: true
