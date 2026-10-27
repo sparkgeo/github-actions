@@ -32,12 +32,14 @@ runs:
         set -euo pipefail
         TMP="$(mktemp -d)"
         BASE="https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}"
+        # RUNNER_ARCH is set by the runner (X64, ARM64); asset names differ per tool.
+        case "${RUNNER_ARCH}" in X64) ARCH=amd64 ;; ARM64) ARCH=arm64 ;; *) echo "::error::unsupported runner architecture ${RUNNER_ARCH}"; exit 1 ;; esac
         # Keep the published asset name so the checksum line matches the file.
-        curl -sSfL -o "${TMP}/tflint_linux_amd64.zip" "${BASE}/tflint_linux_amd64.zip"
+        curl -sSfL -o "${TMP}/tflint_linux_${ARCH}.zip" "${BASE}/tflint_linux_${ARCH}.zip"
         curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/checksums.txt"
         # Verify the downloaded binary against the published checksum before use.
-        ( cd "${TMP}" && grep " tflint_linux_amd64.zip\$" checksums.txt | sha256sum -c - )
-        unzip -q "${TMP}/tflint_linux_amd64.zip" -d "${TMP}"
+        ( cd "${TMP}" && grep " tflint_linux_${ARCH}.zip\$" checksums.txt | sha256sum -c - )
+        unzip -q "${TMP}/tflint_linux_${ARCH}.zip" -d "${TMP}"
         # Installed to RUNNER_TEMP and invoked by absolute path; avoids GITHUB_PATH.
         install "${TMP}/tflint" "${RUNNER_TEMP}/tflint"
 

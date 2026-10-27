@@ -1,0 +1,22 @@
+# Starter .pii-allowlist.yml (docs/data-classification.md section 5). Copy to
+# the repository root. Only reserved placeholders belong here; a real value is
+# removed, never allowlisted. Changes need a second reviewer (CODEOWNERS).
+---
+version: 1
+literals:
+  - value: jane.doe@example.com
+    reason: documentation placeholder (example.com is reserved, RFC 2606)
+  - value: "555-0100"
+    reason: reserved fictional phone number (555-01xx)
+regexes:
+  - pattern: '^555-01\d{2}$'
+    reason: the whole reserved fictional phone range
+  - pattern: '^(192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}$'
+    reason: RFC 5737 documentation IPv4 ranges
+  - pattern: '^2001:db8:'
+    reason: RFC 3849 documentation IPv6 prefix
+  - pattern: '^4111 ?1111 ?1111 ?1111$'
+    reason: Visa published test card number; structured entry, source named per section 5
+paths:
+  - glob: tests/fixtures/**
+    reason: synthetic fixtures only (#123); any real data here is a bug

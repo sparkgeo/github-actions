@@ -1,0 +1,76 @@
+# Issue form template for validation triggers. Do NOT add it to a public
+# repository: the issue names an unvalidated asset and, once the run is done,
+# the techniques the controls missed. Copy it to .github/ISSUE_TEMPLATE/ in a
+# PRIVATE repo only. See docs/findings-labels.md.
+name: Validation trigger
+description: A signal that owes a control-validation run (SecOps plan Step 40 trigger table). High tier is validated within 72 hours, Medium within 7 days. Private repositories only.
+title: "[validation] <signal>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **File this only in a private repository.** The clock starts when this issue is opened. The triager applies `validation:high` or `validation:medium` from the Tier field below. Rules of engagement, the trigger table, and how to read a result: `docs/validation.md` in sparkgeo/github-actions. Every technique recorded as *missed* gets its own issue with `validation:miss`, `security-finding`, and `sla:high`.
+  - type: dropdown
+    id: source
+    attributes:
+      label: Signal source
+      options:
+        - External attack-surface scan (unknown asset, new port, new certificate)
+        - KEV listing or CISA advisory naming an inventoried product
+        - Major release or IaC change on a high-value asset
+        - New or materially changed public API
+        - Threat-intelligence spike (technique or actor targeting the sector)
+        - Regulatory change
+        - Rule or policy change (SIEM, EDR, WAF, email gateway)
+        - New control onboarded
+        - Pre-production deployment of a high-value service
+        - MDR or vendor platform upgrade
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Tier
+      options:
+        - High (validate within 72 hours)
+        - Medium (validate within 7 days)
+    validations:
+      required: true
+  - type: input
+    id: deadline
+    attributes:
+      label: Validation deadline
+      description: Opening date plus 72 hours (High) or 7 days (Medium), YYYY-MM-DD.
+      placeholder: "2026-10-17"
+    validations:
+      required: true
+  - type: textarea
+    id: signal
+    attributes:
+      label: Signal
+      description: Link to the finding, advisory, release, or change; the asset or product it names; its register record and `exposure` tag.
+    validations:
+      required: true
+  - type: textarea
+    id: techniques
+    attributes:
+      label: Techniques to run
+      description: One per line, as `atomic:<guid>`, `stratus:<technique>`, or a described manual step; or "control decomposition" with the layers to test.
+      placeholder: |
+        stratus:aws.persistence.iam-create-admin-user
+        atomic:3a1c7f1e-...
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome per technique
+      description: Fill in when the run is done, one line per technique, as `<technique> prevented|detected|logged|missed`, with a link to the evidence (run artifact, VECTR entry, alert).
+  - type: checkboxes
+    id: closure
+    attributes:
+      label: Closure
+      options:
+        - label: Rules of engagement in `docs/validation.md` (sparkgeo/github-actions) section 1 were followed (MDR notified, change ticket, non-destructive subset)
+        - label: Every *missed* technique has its own issue with `validation:miss`, `security-finding`, and `sla:high`
+        - label: Evidence is linked above and classified Confidential

@@ -395,6 +395,8 @@ For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`]
 
 Public and private repos use different subsets of these actions. The key differences are `harden-runner` (sends egress telemetry to StepSecurity — omit on private repos) and `scorecard` (requires public visibility to produce meaningful scores).
 
+**Runners.** The reusable workflows run on Blacksmith x64 (`blacksmith-2vcpu-ubuntu-2404`) by default. Pass `runs-on: ubuntu-latest` in a repo without the Blacksmith GitHub App, or the job waits for a runner until GitHub cancels it. Pass `runs-on: blacksmith-2vcpu-ubuntu-2404-arm` for ARM once your own pre-commit hooks and tflint plugins have arm64 builds; the composites here run on both. `lint-app.yml` must stay on x64 (MegaLinter images are amd64 only).
+
 ### Public repo
 
 ```yaml
@@ -496,6 +498,10 @@ jobs:
 
 See [docs/approved-actions.md](docs/approved-actions.md) for full data handling and telemetry details.
 
+## Dependency management
+
+Two tools, no overlapping version updates. Dependabot owns the `github-actions` ecosystem in every repo: it keeps SHA pins in workflows and composite actions current, with one PR per action per week after a 7-day cooldown ([docs/dependabot.md](docs/dependabot.md)). The central Renovate runner ([#86](https://github.com/sparkgeo/github-actions/issues/86)) owns every other ecosystem: application packages, Terraform providers and modules, Helm and Kustomize references, Docker base image digests. Dependabot alerts and security updates should be on for every repo, but they do not cover SHA-pinned actions; zizmor's `known-vulnerable-actions` audit does.
+
 ## Security
 
 This repo is part of the Sparkgeo GitHub Actions security programme. The pillars are:
@@ -507,5 +513,8 @@ This repo is part of the Sparkgeo GitHub Actions security programme. The pillars
 | OIDC & secret federation | #27 | No static credentials; OIDC for cloud auth; environment-scoped secrets |
 | Runner egress control | #28 | `harden-runner` audit → block; self-hosted runner isolation policy |
 | Enterprise governance & observability | #29 | Org rulesets; OpenSSF Scorecard; audit log → SIEM |
+| Data classification & DLP | #96 | Four-tier [data classification policy](docs/data-classification.md); PII recognizers and blocking derived from the repository's tier; `.pii-allowlist.yml` with second-reviewer rule |
+
+Findings from the scan gates map to the SLA table in [CONTRIBUTING.md § Findings and SLAs](CONTRIBUTING.md#findings-and-slas). Track them, and any exception request ([template](docs/templates/security-exception.yml)), in a private repo, never in a public issue; the label set and monthly review queries are in [`docs/findings-labels.md`](docs/findings-labels.md). Validation runs that prove a control still works, and the signals that owe one, are in [`docs/validation.md`](docs/validation.md).
 
 To report a security vulnerability, use the [Security Advisory](../../security/advisories/new) process — do not open a public issue.

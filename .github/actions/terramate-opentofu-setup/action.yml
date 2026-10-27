@@ -14,15 +14,40 @@ runs:
   using: "composite"
   steps:
     - name: Setup OpenTofu
-      uses: opentofu/setup-opentofu@847eaa4afeb791b06daa46e8eafa8b1b68d7cfb4  # v2.0.1
+      uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4  # v2.0.2
       with:
         tofu_version: ${{ inputs.opentofu_version }}
         tofu_wrapper: false
 
+    # Installed here rather than with terramate-io/terramate-action, whose
+    # install script downloads the x86_64 build on every runner.
     - name: Setup Terramate
-      uses: terramate-io/terramate-action@c5a1375801a3fac44d29fc7e0ebb3757ea0db3e0  # v3.0.0
-      with:
-        version: ${{ inputs.terramate_version }}
+      shell: bash
+      env:
+        TERRAMATE_VERSION: ${{ inputs.terramate_version }}
+      run: |
+        set -euo pipefail
+        case "${RUNNER_ARCH}" in X64) ARCH=x86_64 ;; ARM64) ARCH=arm64 ;; *) echo "::error::unsupported runner architecture ${RUNNER_ARCH}"; exit 1 ;; esac
+        # Accept "0.14.7", "v0.14.7" or "latest" (discouraged: unpinned), as the upstream action did.
+        VERSION="${TERRAMATE_VERSION#v}"
+        if [ "${VERSION}" = latest ]; then
+          echo "::warning::terramate_version 'latest' is unpinned; pin a version"
+          VERSION="$(curl -sSfL -o /dev/null -w '%{url_effective}' https://github.com/terramate-io/terramate/releases/latest)"
+          VERSION="${VERSION##*/v}"
+        fi
+        TMP="$(mktemp -d)"
+        BASE="https://github.com/terramate-io/terramate/releases/download/v${VERSION}"
+        TARBALL="terramate_${VERSION}_linux_${ARCH}.tar.gz"
+        curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
+        curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/checksums.txt"
+        # Verify the downloaded archive against the published checksum before use.
+        ( cd "${TMP}" && grep " ${TARBALL}\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${TMP}/${TARBALL}" -C "${TMP}" terramate
+        # On PATH for the steps below (and the caller's), as the upstream action
+        # did; sudo only when needed, so container jobs running as root work too.
+        if [ -w /usr/local/bin ]; then install "${TMP}/terramate" /usr/local/bin/terramate
+        else sudo install "${TMP}/terramate" /usr/local/bin/terramate; fi
+        terramate --version
 
     - name: Check Terramate configurations are up to date
       shell: bash
