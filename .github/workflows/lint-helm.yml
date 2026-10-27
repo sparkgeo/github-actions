@@ -28,6 +28,14 @@ on:
         description: 'Skip validation for kinds with no schema (e.g. CRDs)'
         default: false
         type: boolean
+      runs-on:
+        description: >-
+          Runner label. Default: Blacksmith x64. Use ubuntu-latest in repos
+          without the Blacksmith GitHub App (otherwise the job waits for a
+          runner until GitHub cancels it), or blacksmith-2vcpu-ubuntu-2404-arm
+          once your hooks/plugins are known to have arm64 builds.
+        default: 'blacksmith-2vcpu-ubuntu-2404'
+        type: string
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the kubeconform
@@ -42,12 +50,12 @@ permissions:
 jobs:
   kubeconform:
     name: Kubeconform
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     permissions:
       contents: read
     steps:
       - name: Checkout repository under test
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
 
@@ -55,7 +63,7 @@ jobs:
       # then invoke it locally. Keeps the action reference immutable (no mutable
       # cross-repo @main) while honouring the repo's SHA-pin policy.
       - name: Checkout kubeconform composite action
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           repository: sparkgeo/github-actions
           ref: ${{ inputs.actions-ref }}
