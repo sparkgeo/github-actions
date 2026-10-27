@@ -380,6 +380,8 @@ For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`]
 
 Public and private repos use different subsets of these actions. The key differences are `harden-runner` (sends egress telemetry to StepSecurity — omit on private repos) and `scorecard` (requires public visibility to produce meaningful scores).
 
+**Runners.** The reusable workflows run on Blacksmith x64 (`blacksmith-2vcpu-ubuntu-2404`) by default. Pass `runs-on: ubuntu-latest` in a repo without the Blacksmith GitHub App, or the job waits for a runner until GitHub cancels it. Pass `runs-on: blacksmith-2vcpu-ubuntu-2404-arm` for ARM once your own pre-commit hooks and tflint plugins have arm64 builds; the composites here run on both. `lint-app.yml` must stay on x64 (MegaLinter images are amd64 only).
+
 ### Public repo
 
 ```yaml
