@@ -20,6 +20,14 @@ on:
         description: 'Lowest severity that fails the build: error, warning, or notice'
         default: 'error'
         type: string
+      runs-on:
+        description: >-
+          Runner label. Default: Blacksmith x64. Use ubuntu-latest in repos
+          without the Blacksmith GitHub App (otherwise the job waits for a
+          runner until GitHub cancels it), or blacksmith-2vcpu-ubuntu-2404-arm
+          once your hooks/plugins are known to have arm64 builds.
+        default: 'blacksmith-2vcpu-ubuntu-2404'
+        type: string
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the tflint
@@ -34,7 +42,7 @@ permissions:
 jobs:
   tflint:
     name: TFLint
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    runs-on: ${{ inputs.runs-on }}
     permissions:
       contents: read
     steps:

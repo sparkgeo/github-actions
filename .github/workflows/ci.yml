@@ -43,11 +43,13 @@ jobs:
   # Lint Terraform/OpenTofu with tflint. This repo has no .tf files, so this is
   # a smoke test that the composite installs and runs (exits 0 on no findings).
   tflint:
-    name: TFLint (${{ matrix.runner == 'blacksmith-2vcpu-ubuntu-2404-arm' && 'arm64' || 'x64' }})
+    name: TFLint (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        runner: [blacksmith-2vcpu-ubuntu-2404, blacksmith-2vcpu-ubuntu-2404-arm]
+        include:
+          - {arch: x64, runner: blacksmith-2vcpu-ubuntu-2404}
+          - {arch: arm64, runner: blacksmith-2vcpu-ubuntu-2404-arm}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -64,13 +66,16 @@ jobs:
       - uses: ./.github/actions/tflint
 
   # Validate Helm/Kustomize with kubeconform against a one-template fixture
-  # chart, so the installed binary actually runs on each architecture.
+  # chart and overlay, so kubeconform, helm and kustomize all run on each
+  # architecture.
   kubeconform:
-    name: Kubeconform (${{ matrix.runner == 'blacksmith-2vcpu-ubuntu-2404-arm' && 'arm64' || 'x64' }})
+    name: Kubeconform (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        runner: [blacksmith-2vcpu-ubuntu-2404, blacksmith-2vcpu-ubuntu-2404-arm]
+        include:
+          - {arch: x64, runner: blacksmith-2vcpu-ubuntu-2404}
+          - {arch: arm64, runner: blacksmith-2vcpu-ubuntu-2404-arm}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -87,6 +92,7 @@ jobs:
       - uses: ./.github/actions/kubeconform
         with:
           charts-dir: tests/kubeconform/charts
+          kustomize-dir: tests/kubeconform/kustomize
 
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
@@ -124,11 +130,13 @@ jobs:
   # Pattern-based secret detection with Gitleaks.
   # Hard-fails the build on any match. On PRs scans only the PR commit range.
   gitleaks:
-    name: Gitleaks (${{ matrix.runner == 'blacksmith-2vcpu-ubuntu-2404-arm' && 'arm64' || 'x64' }})
+    name: Gitleaks (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        runner: [blacksmith-2vcpu-ubuntu-2404, blacksmith-2vcpu-ubuntu-2404-arm]
+        include:
+          - {arch: x64, runner: blacksmith-2vcpu-ubuntu-2404}
+          - {arch: arm64, runner: blacksmith-2vcpu-ubuntu-2404-arm}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -149,11 +157,13 @@ jobs:
   # Hard-fails on any verified secret; unverified matches are warnings in the
   # Security tab. On PRs scans only the PR commit range.
   trufflehog:
-    name: TruffleHog (${{ matrix.runner == 'blacksmith-2vcpu-ubuntu-2404-arm' && 'arm64' || 'x64' }})
+    name: TruffleHog (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        runner: [blacksmith-2vcpu-ubuntu-2404, blacksmith-2vcpu-ubuntu-2404-arm]
+        include:
+          - {arch: x64, runner: blacksmith-2vcpu-ubuntu-2404}
+          - {arch: arm64, runner: blacksmith-2vcpu-ubuntu-2404-arm}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -243,11 +253,13 @@ jobs:
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
   terramate-opentofu-setup:
-    name: Terramate + OpenTofu Setup (${{ matrix.runner == 'blacksmith-2vcpu-ubuntu-2404-arm' && 'arm64' || 'x64' }})
+    name: Terramate + OpenTofu Setup (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        runner: [blacksmith-2vcpu-ubuntu-2404, blacksmith-2vcpu-ubuntu-2404-arm]
+        include:
+          - {arch: x64, runner: blacksmith-2vcpu-ubuntu-2404}
+          - {arch: arm64, runner: blacksmith-2vcpu-ubuntu-2404-arm}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read

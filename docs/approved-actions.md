@@ -16,7 +16,7 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 
 | Action | Publisher | Current pinned version | Used in | Purpose | Review date |
 |---|---|---|---|---|---|
-| `actions/checkout` | GitHub (org-owned) | `de0fac2e` (v6.0.2) | all composite actions | Checkout repo contents | 2026-05-21 |
+| `useblacksmith/checkout` | Blacksmith | `25227e61` (v1.8.1) | every workflow (replaces `actions/checkout`) | Fork of `actions/checkout` that reuses a git mirror on a Blacksmith sticky disk. Receives `github.token` (checkout default) and keeps a copy of the repository on Blacksmith storage, evicted after 7 days unused. `lint-app.yml` sets `dissociate: true` so the MegaLinter container does not depend on the mirror | 2026-10-27 |
 | `actions/upload-artifact` | GitHub (org-owned) | `043fb46d` (v7.0.1) | `scorecard` | Upload SARIF as retained artifact | 2026-05-21 |
 | `actions/dependency-review-action` | GitHub (org-owned) | `a1d282b3` (v5.0.0) | `dependency-review` | Block PRs with vulnerable/denied-license deps | 2026-05-21 |
 | `github/codeql-action/upload-sarif` | GitHub (org-owned) | `9e0d7b8d` (v4.35.5) | `scorecard`, `zizmor` | Upload SARIF to GitHub Security tab | 2026-05-21 |
@@ -104,7 +104,7 @@ Before approving a new action, verify all of the following:
      "github_owned_allowed": true,
      "verified_allowed": false,
      "patterns_allowed": [
-       "ossf/*", "reviewdog/*", "zizmorcore/*", "opentofu/*", "terramate-io/*", "step-security/*", "aws-actions/*", "google-github-actions/*", "pnpm/*",
+       "ossf/*", "reviewdog/*", "zizmorcore/*", "opentofu/*", "terramate-io/*", "step-security/*", "aws-actions/*", "google-github-actions/*", "pnpm/*", "oxsecurity/*", "useblacksmith/*",
        "<new-publisher>/*"
      ]
    }
@@ -129,6 +129,7 @@ aws-actions/*
 google-github-actions/*
 pnpm/*
 oxsecurity/*
+useblacksmith/*
 ```
 
 GitHub-owned actions (`actions/*`, `github/*`) are covered by `github_owned_allowed: true` and do not need explicit patterns.

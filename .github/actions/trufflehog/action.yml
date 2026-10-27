@@ -39,12 +39,8 @@ runs:
         set -euo pipefail
         TMP="$(mktemp -d)"
         BASE="https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}"
-        # Release asset names differ per tool; map the runner's CPU to this one's.
-        case "$(uname -m)" in
-          x86_64) ARCH=amd64 ;;
-          aarch64|arm64) ARCH=arm64 ;;
-          *) echo "::error::unsupported runner architecture $(uname -m)"; exit 1 ;;
-        esac
+        # RUNNER_ARCH is set by the runner (X64, ARM64); asset names differ per tool.
+        case "${RUNNER_ARCH}" in X64) ARCH=amd64 ;; ARM64) ARCH=arm64 ;; *) echo "::error::unsupported runner architecture ${RUNNER_ARCH}"; exit 1 ;; esac
         TARBALL="trufflehog_${TRUFFLEHOG_VERSION}_linux_${ARCH}.tar.gz"
         curl -sSfL -o "${TMP}/${TARBALL}" "${BASE}/${TARBALL}"
         curl -sSfL -o "${TMP}/checksums.txt" "${BASE}/trufflehog_${TRUFFLEHOG_VERSION}_checksums.txt"

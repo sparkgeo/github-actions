@@ -28,6 +28,14 @@ on:
         description: 'Skip validation for kinds with no schema (e.g. CRDs)'
         default: false
         type: boolean
+      runs-on:
+        description: >-
+          Runner label. Default: Blacksmith x64. Use ubuntu-latest in repos
+          without the Blacksmith GitHub App (otherwise the job waits for a
+          runner until GitHub cancels it), or blacksmith-2vcpu-ubuntu-2404-arm
+          once your hooks/plugins are known to have arm64 builds.
+        default: 'blacksmith-2vcpu-ubuntu-2404'
+        type: string
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the kubeconform
@@ -42,7 +50,7 @@ permissions:
 jobs:
   kubeconform:
     name: Kubeconform
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    runs-on: ${{ inputs.runs-on }}
     permissions:
       contents: read
     steps:

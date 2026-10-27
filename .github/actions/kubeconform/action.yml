@@ -6,7 +6,8 @@ description: |
   reach a cluster.
 
   Installs a pinned, checksum-verified kubeconform binary directly. helm and
-  kustomize are preinstalled on GitHub-hosted runners. Each failing chart/overlay
+  kustomize must be on PATH (GitHub-hosted and Blacksmith images ship both;
+  CI checks this on x64 and arm64). Each failing chart/overlay
   is emitted as a job-level error annotation (rendered output has no source-line
   mapping, so inline annotations are not possible); the step fails if any
   chart/overlay has a schema error.
@@ -39,12 +40,8 @@ runs:
         set -euo pipefail
         TMP="$(mktemp -d)"
         BASE="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}"
-        # Release asset names differ per tool; map the runner's CPU to this one's.
-        case "$(uname -m)" in
-          x86_64) ARCH=amd64 ;;
-          aarch64|arm64) ARCH=arm64 ;;
-          *) echo "::error::unsupported runner architecture $(uname -m)"; exit 1 ;;
-        esac
+        # RUNNER_ARCH is set by the runner (X64, ARM64); asset names differ per tool.
+        case "${RUNNER_ARCH}" in X64) ARCH=amd64 ;; ARM64) ARCH=arm64 ;; *) echo "::error::unsupported runner architecture ${RUNNER_ARCH}"; exit 1 ;; esac
         curl -sSfL -o "${TMP}/kubeconform-linux-${ARCH}.tar.gz" "${BASE}/kubeconform-linux-${ARCH}.tar.gz"
         curl -sSfL -o "${TMP}/CHECKSUMS" "${BASE}/CHECKSUMS"
         # Verify the downloaded archive against the published checksum before use.
