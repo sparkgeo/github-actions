@@ -21,60 +21,78 @@ jobs:
   # Lint workflow and action YAML files with actionlint.
   actionlint:
     name: Actionlint
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
     permissions:
       contents: read
       checks: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
 
       - uses: ./.github/actions/github-actionlint
 
+  # Jobs whose composite downloads a per-CPU binary run on both Blacksmith
+  # runner types (x64 and arm64), so a wrong asset name fails here first.
+
   # Lint Terraform/OpenTofu with tflint. This repo has no .tf files, so this is
   # a smoke test that the composite installs and runs (exits 0 on no findings).
   tflint:
-    name: TFLint
-    runs-on: ubuntu-latest
+    name: TFLint (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x64, runner: blacksmith-2vcpu-ubuntu-2404}
+          - {arch: arm64, runner: blacksmith-2vcpu-ubuntu-2404-arm}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
 
       - uses: ./.github/actions/tflint
 
-  # Validate Helm/Kustomize with kubeconform. This repo has no charts/, so this
-  # is a smoke test that the composite installs and runs (exits 0, nothing to
-  # validate).
+  # Validate Helm/Kustomize with kubeconform against a one-template fixture
+  # chart and overlay, so kubeconform, helm and kustomize all run on each
+  # architecture.
   kubeconform:
-    name: Kubeconform
-    runs-on: ubuntu-latest
+    name: Kubeconform (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x64, runner: blacksmith-2vcpu-ubuntu-2404}
+          - {arch: arm64, runner: blacksmith-2vcpu-ubuntu-2404-arm}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
 
       - uses: ./.github/actions/kubeconform
+        with:
+          charts-dir: tests/kubeconform/charts
+          kustomize-dir: tests/kubeconform/kustomize
 
   # Dogfood the app lint gate by calling the reusable workflow directly.
   # (MegaLinter has no composite under .github/actions — its only reliable gate
@@ -93,16 +111,16 @@ jobs:
   # Run this repo's own .pre-commit-config.yaml hooks via the composite.
   pre-commit:
     name: Pre-commit
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
     permissions:
       contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
           fetch-depth: 0  # full history so the PR diff range can be resolved
@@ -112,17 +130,23 @@ jobs:
   # Pattern-based secret detection with Gitleaks.
   # Hard-fails the build on any match. On PRs scans only the PR commit range.
   gitleaks:
-    name: Gitleaks
-    runs-on: ubuntu-latest
+    name: Gitleaks (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x64, runner: blacksmith-2vcpu-ubuntu-2404}
+          - {arch: arm64, runner: blacksmith-2vcpu-ubuntu-2404-arm}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
           fetch-depth: 0  # full history so the PR commit range can be scanned
@@ -133,18 +157,24 @@ jobs:
   # Hard-fails on any verified secret; unverified matches are warnings in the
   # Security tab. On PRs scans only the PR commit range.
   trufflehog:
-    name: TruffleHog
-    runs-on: ubuntu-latest
+    name: TruffleHog (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x64, runner: blacksmith-2vcpu-ubuntu-2404}
+          - {arch: arm64, runner: blacksmith-2vcpu-ubuntu-2404-arm}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       security-events: write  # SARIF upload to the Security tab
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
           fetch-depth: 0  # full history so the PR commit range can be scanned
@@ -154,17 +184,17 @@ jobs:
   # Security-scan workflow and action YAML files with zizmor.
   zizmor:
     name: Zizmor
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
     permissions:
       contents: read
       security-events: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
 
@@ -174,7 +204,8 @@ jobs:
   # Scorecard hard-requires the default branch; skipped on PRs and feature branches.
   scorecard:
     name: OpenSSF Scorecard
-    runs-on: ubuntu-latest
+    # x86: the scorecard-action image is published for linux/amd64 only.
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -182,11 +213,11 @@ jobs:
       security-events: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
 
@@ -199,18 +230,18 @@ jobs:
   # Skipped on first push to a branch (event.before = zero SHA) — no base to compare.
   dependency-review:
     name: Dependency Review
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before != '0000000000000000000000000000000000000000')
     permissions:
       contents: read
       pull-requests: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
 
@@ -222,17 +253,23 @@ jobs:
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
   terramate-opentofu-setup:
-    name: Terramate + OpenTofu Setup
-    runs-on: ubuntu-latest
+    name: Terramate + OpenTofu Setup (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x64, runner: blacksmith-2vcpu-ubuntu-2404}
+          - {arch: arm64, runner: blacksmith-2vcpu-ubuntu-2404-arm}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
           fetch-depth: 0  # terramate --changed requires full git history
@@ -243,17 +280,17 @@ jobs:
   # Runs on push to main (demonstration) and workflow_dispatch (on-demand).
   storage-optimizer:
     name: Storage Optimizer
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     permissions:
       contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
 
