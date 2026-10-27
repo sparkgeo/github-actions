@@ -55,7 +55,7 @@ gh api repos/<owner>/<repo>/commits/<tag> --jq '.sha'
 gh api repos/actions/checkout/commits/v6 --jq '.sha'
 ```
 
-Once configured, Renovate (issue #8) will keep pinned SHAs current automatically via automated PRs — do not update SHAs manually unless fixing a security incident.
+Dependabot keeps pinned SHAs current with automated PRs ([docs/dependabot.md](docs/dependabot.md)) — do not update SHAs manually unless fixing a security incident.
 
 ## Adding a new action
 

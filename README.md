@@ -481,6 +481,10 @@ jobs:
 
 See [docs/approved-actions.md](docs/approved-actions.md) for full data handling and telemetry details.
 
+## Dependency management
+
+Two tools, no overlapping version updates. Dependabot owns the `github-actions` ecosystem in every repo: it keeps SHA pins in workflows and composite actions current, with one PR per action per week after a 7-day cooldown ([docs/dependabot.md](docs/dependabot.md)). The central Renovate runner ([#86](https://github.com/sparkgeo/github-actions/issues/86)) owns every other ecosystem: application packages, Terraform providers and modules, Helm and Kustomize references, Docker base image digests. Dependabot alerts and security updates should be on for every repo, but they do not cover SHA-pinned actions; zizmor's `known-vulnerable-actions` audit does.
+
 ## Security
 
 This repo is part of the Sparkgeo GitHub Actions security programme. The pillars are:
