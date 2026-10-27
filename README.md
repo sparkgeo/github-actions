@@ -493,6 +493,6 @@ This repo is part of the Sparkgeo GitHub Actions security programme. The pillars
 | Runner egress control | #28 | `harden-runner` audit → block; self-hosted runner isolation policy |
 | Enterprise governance & observability | #29 | Org rulesets; OpenSSF Scorecard; audit log → SIEM |
 
-Findings from the scan gates map to the SLA table in [CONTRIBUTING.md § Findings and SLAs](CONTRIBUTING.md#findings-and-slas). Track them, and any exception request ([template](docs/templates/security-exception.yml)), in a private repo, never in a public issue; the label set and monthly review queries are in [`docs/findings-labels.md`](docs/findings-labels.md).
+Findings from the scan gates map to the SLA table in [CONTRIBUTING.md § Findings and SLAs](CONTRIBUTING.md#findings-and-slas). Track them, and any exception request ([template](docs/templates/security-exception.yml)), in a private repo, never in a public issue; the label set and monthly review queries are in [`docs/findings-labels.md`](docs/findings-labels.md). Validation runs that prove a control still works, and the signals that owe one, are in [`docs/validation.md`](docs/validation.md).
 
 To report a security vulnerability, use the [Security Advisory](../../security/advisories/new) process — do not open a public issue.

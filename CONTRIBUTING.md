@@ -160,6 +160,7 @@ Each scan gate listed below maps its findings to one row of the SLA table (from 
 | `sast-precommit.yml` (PR #144) | semgrep | Code pattern | `ERROR` **High**, `WARNING` **Medium**, `INFO` **Low**. |
 | `sast-scan.yml` (PR #145) | CodeQL | Code vulnerability | Rule `security-severity` score to the matching row; unscored rules are reported and never block. |
 | `zizmor` composite | zizmor | Workflow security (injection, credential exposure, dangerous triggers) | zizmor severity: `high` **High**, `medium` **Medium**, `low`/`informational` **Low**. Reported to the Security tab; the pre-commit hook fails on findings. |
+| Validation runs: `stratus-red-team.yml` (issue #178, not built yet), manual Atomic Red Team sessions, control decomposition | Stratus Red Team, Atomic Red Team | A technique recorded as *missed* by the deployed controls | Always **High**; the issue carries `validation:miss`. A High-tier trigger (unknown internet-facing asset, KEV hit on an inventoried product, release on a high-value asset) is validated within 72 hours, a Medium-tier one within 7 days: [`docs/validation.md`](docs/validation.md). |
 | `lint-*.yml`, `test-*.yml`, `github-actionlint`, `kubeconform` | various | Correctness, style, coverage | Not security findings. Must pass to merge; no SLA row. |
 
 Workflows marked with a PR number are in review and not on `main` yet. A scan gate added later (for example grype, govulncheck, GuardDog, DAST, serverless) adds its row here when it merges; until then its findings take the row that matches the tool's own severity (critical, high, medium, low).
@@ -167,9 +168,10 @@ Workflows marked with a PR number are in review and not on `main` yet. A scan ga
 ### Process
 
 1. **Triage** the finding into a private tracking issue (see above) within one working day. Label it `security-finding` plus one `sla:*` label from [`docs/findings-labels.md`](docs/findings-labels.md). The SLA clock starts now, except for secrets (from detection).
-2. **Fix** inside the window. The PR that fixes it closes the issue.
-3. **Exception** when a fix cannot land in time: file a request with the [security exception template](docs/templates/security-exception.yml) in a private repo. It gets `exception-requested`. A member of `@sparkgeo/security-team` other than the requester checks the compensating control and that the expiry is at most 90 days from approval, then applies `exception-approved`. The finding is re-reviewed at expiry. A second exception for the same finding needs escalation to the accountable executive. Secret findings are not eligible: rotate the credential.
-4. **Monthly review**: findings past their deadline and exceptions near or past expiry are reviewed in the monthly security meeting, using the queries in [`docs/findings-labels.md`](docs/findings-labels.md#monthly-review-queries).
+2. **Fix** inside the window. A code fix closes the issue with its PR (`Closes #N`) plus a passing re-scan.
+3. **Re-validation before close** when the fix is a configuration, rule, or control change: its PR references the issue without a closing keyword. The technique is re-run and recorded as prevented or detected, the result is linked on the issue, and then the issue is closed ([`docs/validation.md` § 6](docs/validation.md#6-re-validation-gate)).
+4. **Exception** when a fix cannot land in time: file a request with the [security exception template](docs/templates/security-exception.yml) in a private repo. It gets `exception-requested`. A member of `@sparkgeo/security-team` other than the requester checks the compensating control and that the expiry is at most 90 days from approval, then applies `exception-approved`. The finding is re-reviewed at expiry. A second exception for the same finding needs escalation to the accountable executive. Secret findings are not eligible: rotate the credential.
+5. **Monthly review**: findings past their deadline and exceptions near or past expiry are reviewed in the monthly security meeting, using the queries in [`docs/findings-labels.md`](docs/findings-labels.md#monthly-review-queries).
 
 ## Reporting a security vulnerability
 
