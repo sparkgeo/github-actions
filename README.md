@@ -11,6 +11,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Workflow | File | Triggers | Purpose |
 |---|---|---|---|
 | CI | [`ci.yml`](.github/workflows/ci.yml) | `push` to `main`, `pull_request`, `schedule` (weekly), `workflow_dispatch` | Dogfoods all composite actions in this repo; serves as a live reference implementation |
+| Load Test | [`load-test.yml`](.github/workflows/load-test.yml) | `workflow_call` | Reusable pre-release load test — runs the repo's k6 script against a staging URL; the script's thresholds (p95, error rate, checks) are the gate; summary JSON as artefact and in the job summary |
 | Secrets Pre-commit | [`secrets-precommit.yml`](.github/workflows/secrets-precommit.yml) | `workflow_call` | Reusable Gitleaks gate — call from a consuming repo's PR workflow to block secrets in CI |
 | Secrets PR Scan | [`secrets-scan.yml`](.github/workflows/secrets-scan.yml) | `workflow_call` | Reusable TruffleHog gate — verifies matched credentials are live; hard-blocks on verified secrets; uploads SARIF to the Security tab |
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
@@ -41,6 +42,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | Pre-commit | [`pre-commit`](.github/actions/pre-commit/action.yml) | Runs the consuming repo's `.pre-commit-config.yaml` hooks; changed files on PRs, all files otherwise. Language-agnostic | `version` (default: `4.6.0`), `config-path` (default: `.pre-commit-config.yaml`), `from-ref`/`to-ref` (default: PR base/head) |
 | TFLint | [`tflint`](.github/actions/tflint/action.yml) | Recursive Terraform/OpenTofu lint; provider rule sets via consuming-repo `.tflint.hcl`; inline PR annotations. Installs a checksum-verified tflint binary | `version` (default: `0.63.1`), `directory` (default: `.`), `minimum-failure-severity` (default: `error`) |
 | Kubeconform | [`kubeconform`](.github/actions/kubeconform/action.yml) | Renders Helm charts (`helm template`) and Kustomize overlays (`kustomize build`) and validates output against Kubernetes API schemas. Installs a checksum-verified kubeconform binary | `version` (default: `0.8.0`), `charts-dir` (default: `charts`), `kustomize-dir` (default: `""`), `kubernetes-version` (default: `1.32.0`), `ignore-missing-schemas` (default: `false`) |
+| k6 Load Test | [`k6`](.github/actions/k6/action.yml) | Runs a k6 script with `BASE_URL` set to `target-url`; fails when the script's thresholds are crossed; renders requests, p95, error rate, checks and every threshold into the job summary. Installs a checksum-verified k6 binary | `version` (default: `2.3.0`), `script` (default: `tests/load/script.js`), `target-url` (required), `vus` (default: `10`), `duration` (default: `1m`), `extra-args`, `summary-file` |
 
 ### GitHub Actionlint
 
@@ -373,6 +375,32 @@ The PR-stage gate for Helm charts and Kustomize overlays. For each chart under `
 Findings are emitted as job-level error annotations naming the failing chart/overlay — rendered manifests have no source-line mapping, so inline annotations aren't possible.
 
 For the local fast-feedback stage, copy [`examples/helm.pre-commit-config.yaml`](examples/helm.pre-commit-config.yaml) to your repo root as `.pre-commit-config.yaml` (`helm lint`) and gate it in CI with `lint-precommit.yml`.
+
+### Load Test (k6)
+
+A load test is a gate, not a report: the k6 script in the consuming repo declares thresholds, and [`load-test.yml`](.github/workflows/load-test.yml) fails when any is crossed (issue #74). Run it against staging or a preview URL before a production release, never against production.
+
+```yaml
+# .github/workflows/load-test.yml in the consuming repo
+on:
+  workflow_dispatch:
+    inputs:
+      target-url:
+        default: https://stac-staging.example.com
+jobs:
+  load:
+    permissions:
+      contents: read
+    uses: sparkgeo/github-actions/.github/workflows/load-test.yml@<SHA>
+    with:
+      actions-ref: <SHA>
+      script: tests/load/script.js
+      target-url: ${{ inputs.target-url }}
+      vus: 20
+      duration: 2m
+```
+
+The script reads `__ENV.BASE_URL`. [`docs/examples/k6/stac-search.js`](docs/examples/k6/stac-search.js) exercises `GET /collections` and `POST /search` with a bbox on a STAC API with thresholds `p(95)<800`, `rate<0.01` failed requests and every check passing; copy it to `tests/load/script.js` and adjust the bbox. `vus` and `duration` are ignored when the script defines `scenarios`. The job summary shows requests, requests per second, p95 and max latency, error rate, checks and a pass/fail row per threshold; `k6-summary.json` is the artefact. k6's usage report is disabled (`K6_NO_USAGE_REPORT`).
 
 ## Consuming repo CI setup
 
