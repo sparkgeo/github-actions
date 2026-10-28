@@ -5,8 +5,8 @@ inputs:
     description: "Minimum vulnerability severity to fail: critical|high|moderate|low"
     default: "high"
   allow-licenses:
-    description: "Comma-separated list of SPDX license identifiers that are permitted. Dependencies using any other license will fail the check."
-    default: "MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, CC0-1.0"
+    description: "Comma-separated list of SPDX license identifiers that are permitted (the allowed class of docs/license-policy.md). Dependencies using any other license will fail the check."
+    default: "MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, ISC, Unlicense, CC0-1.0, Zlib, BSL-1.0, PSF-2.0, Python-2.0, PostgreSQL, Unicode-DFS-2016"
   allow-dependencies-licenses:
     description: "Comma-separated purls exempt from the license check (e.g. pkg:githubactions/owner/repo). Use for tools run in CI but not redistributed, where a copyleft licence does not apply."
     default: ""
@@ -22,6 +22,12 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Validate allow-licenses
+      if: ${{ inputs.allow-licenses == '' }}
+      shell: bash
+      run: |
+        echo "::error::dependency-review: allow-licenses is empty, which turns the licence check off. Leave the input out to use the policy default."
+        exit 1
     - name: Validate ref inputs
       if: ${{ (inputs.base-ref != '' && inputs.head-ref == '') || (inputs.base-ref == '' && inputs.head-ref != '') }}
       shell: bash
@@ -32,6 +38,7 @@ runs:
         echo "::error::dependency-review: base-ref and head-ref must both be set or both be empty. Got base-ref='${BASE_REF}' head-ref='${HEAD_REF}'."
         exit 1
     - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+      id: review-pr
       if: ${{ inputs.base-ref == '' }}
       with:
         fail-on-severity: ${{ inputs.fail-on-severity }}
@@ -39,6 +46,7 @@ runs:
         allow-dependencies-licenses: ${{ inputs.allow-dependencies-licenses }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
     - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+      id: review-refs
       if: ${{ inputs.base-ref != '' }}
       with:
         base-ref: ${{ inputs.base-ref }}
@@ -47,3 +55,17 @@ runs:
         allow-licenses: ${{ inputs.allow-licenses }}
         allow-dependencies-licenses: ${{ inputs.allow-dependencies-licenses }}
         comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
+    # dependency-review-action only prints dependencies with no detectable
+    # licence (null or NOASSERTION); docs/license-policy.md denies them. Action
+    # pins are skipped: the graph reports no licence for them, and they are
+    # governed by the org actions allowlist (docs/approved-actions.md).
+    - name: Deny dependencies with no detectable licence
+      shell: bash
+      env:
+        INVALID: ${{ steps.review-pr.outputs.invalid-license-changes || steps.review-refs.outputs.invalid-license-changes }}
+      run: |
+        [ -n "$INVALID" ] || exit 0
+        unknown=$(jq -c '[.unlicensed[] | select(.package_url | startswith("pkg:githubactions/") | not)]' <<<"$INVALID")
+        [ "$(jq length <<<"$unknown")" -eq 0 ] && exit 0
+        jq -r '.[] | "::error::dependency-review: \(.name)@\(.version) (\(.package_url)) has no detectable licence. Denied by docs/license-policy.md; exempt its purl in allow-dependencies-licenses after review."' <<<"$unknown"
+        exit 1

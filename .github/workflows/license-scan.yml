@@ -1,0 +1,91 @@
+name: License Scan
+
+# Reusable licence gate (issue #69, plan Step 7 Baseline): wraps the
+# dependency-review composite with the allowlist from docs/license-policy.md
+# so every consuming repository applies the same policy. A PR that adds a
+# dependency outside the allowlist, or (fail-on-severity) with a known
+# vulnerability, fails and gets a summary comment.
+#
+# Works on pull_request (base and head from the event) and on push to the
+# default branch (github.event.before .. github.sha). Needs the repository's
+# dependency graph.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      allow-licenses:
+        description: 'Comma-separated SPDX identifiers that are permitted; default is the allowed class of docs/license-policy.md'
+        default: 'MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, ISC, Unlicense, CC0-1.0, Zlib, BSL-1.0, PSF-2.0, Python-2.0, PostgreSQL, Unicode-DFS-2016'
+        type: string
+      allow-with-notice:
+        description: 'Also permit the allowed-with-notice class (MPL, LGPL, EPL, CDDL, OFL, CC-BY); the repository keeps a third-party notice'
+        default: false
+        type: boolean
+      allow-dependencies-licenses:
+        description: 'Comma-separated purls exempt from the licence check (CI-only tools, approved exceptions)'
+        default: ''
+        type: string
+      fail-on-severity:
+        description: 'Minimum vulnerability severity to fail: critical|high|moderate|low'
+        default: 'high'
+        type: string
+      comment-summary-in-pr:
+        description: 'Post a summary comment on the PR: always|on-failure|never'
+        default: 'on-failure'
+        type: string
+      runs-on:
+        description: >-
+          Runner label. Default: Blacksmith x64. Use ubuntu-latest in repos
+          without the Blacksmith GitHub App (otherwise the job waits for a
+          runner until GitHub cancels it).
+        default: 'blacksmith-2vcpu-ubuntu-2404'
+        type: string
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the
+          dependency-review composite from. Pin this to the SAME SHA you pinned
+          license-scan.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  license-scan:
+    name: License scan
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 10
+    # The most this job needs; the caller grants the same or less.
+    permissions:
+      contents: read
+      pull-requests: write   # summary comment
+    steps:
+      - name: Checkout repository under test
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout dependency-review composite action
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/dependency-review
+        with:
+          allow-licenses: ${{ inputs.allow-with-notice && format('{0}, {1}', inputs.allow-licenses, 'MPL-2.0, LGPL-2.1, LGPL-2.1-only, LGPL-2.1-or-later, LGPL-3.0, LGPL-3.0-only, LGPL-3.0-or-later, EPL-1.0, EPL-2.0, CDDL-1.0, CDDL-1.1, OFL-1.1, CC-BY-4.0') || inputs.allow-licenses }}
+          allow-dependencies-licenses: ${{ inputs.allow-dependencies-licenses }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
+          base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
+          head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
