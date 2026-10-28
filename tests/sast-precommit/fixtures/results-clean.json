@@ -1,0 +1,10 @@
+{
+  "version": "1.179.0",
+  "results": [],
+  "errors": [],
+  "paths": {
+    "scanned": [
+      "tests/sast-precommit/fixtures/clean/app.py"
+    ]
+  }
+}

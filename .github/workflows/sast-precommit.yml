@@ -1,0 +1,75 @@
+name: SAST Pre-commit
+
+# Reusable PR gate mirroring the semgrep pre-commit hook, so PRs from
+# contributors without the local hook are still checked. Fast pattern-based
+# SAST for application source in any language; the deep data-flow scan is
+# sast-scan.yml (CodeQL, #19). Findings appear as inline PR annotations and
+# as SARIF in the Security tab; the job blocks per fail-on-severity.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      config:
+        description: 'semgrep config: registry pack(s) such as p/default or p/owasp-top-ten, auto, or a local rules path; comma-separated for several'
+        default: 'p/default'
+        type: string
+      directory:
+        description: 'Directory to scan'
+        default: '.'
+        type: string
+      fail-on-severity:
+        description: 'Lowest severity that fails the build: critical, high, medium, low, or none'
+        default: 'high'
+        type: string
+      exclude:
+        description: 'Comma-separated glob patterns to skip (in addition to .semgrepignore)'
+        default: ''
+        type: string
+      sarif-upload:
+        description: 'Upload SARIF results to the GitHub Security tab'
+        default: true
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the semgrep
+          composite from. Pin this to the SAME SHA you pinned
+          sast-precommit.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+
+# No permissions block: a reusable workflow inherits the caller job's granted
+# permissions. The caller grants `contents: read` (always) and adds
+# `security-events: write` only when it wants SARIF upload. See README.
+
+jobs:
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout semgrep composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - uses: ./.sparkgeo-github-actions/.github/actions/semgrep
+        with:
+          config: ${{ inputs.config }}
+          directory: ${{ inputs.directory }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          exclude: ${{ inputs.exclude }}
+          sarif-upload: ${{ inputs.sarif-upload }}
