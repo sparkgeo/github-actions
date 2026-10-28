@@ -16,7 +16,7 @@ All action references in this repo are pinned to full commit SHAs. See [CONTRIBU
 | Lint Pre-commit | [`lint-precommit.yml`](.github/workflows/lint-precommit.yml) | `workflow_call` | Reusable gate that runs the consuming repo's `.pre-commit-config.yaml` hooks in CI; language-agnostic; shared across app/IaC/Helm lint stages |
 | Lint App | [`lint-app.yml`](.github/workflows/lint-app.yml) | `workflow_call` | Reusable MegaLinter gate — auto-detects all languages, blocks on any linter error, uploads SARIF to the Security tab |
 | Lint IaC | [`lint-iac.yml`](.github/workflows/lint-iac.yml) | `workflow_call` | Reusable tflint gate — recursive Terraform/OpenTofu lint, provider-agnostic via `.tflint.hcl`, inline PR annotations, plugin caching |
-| License Scan | [`license-scan.yml`](.github/workflows/license-scan.yml) | `workflow_call` | Reusable licence gate — dependency review with the allowlist from [`docs/license-policy.md`](docs/license-policy.md); `allow-with-notice` adds the weak-copyleft class; blocks on vulnerable additions by `fail-on-severity` (#69) |
+| License Scan | [`license-scan.yml`](.github/workflows/license-scan.yml) | `workflow_call` | Reusable licence gate — dependency review with the allowlist from [`docs/license-policy.md`](docs/license-policy.md); `allow-with-notice` adds the weak-copyleft class; blocks on vulnerable additions by `fail-on-severity`; `runs-on` defaults to Blacksmith x64 (#69) |
 | Lint Helm | [`lint-helm.yml`](.github/workflows/lint-helm.yml) | `workflow_call` | Reusable kubeconform gate — renders Helm charts / Kustomize overlays and validates against Kubernetes API schemas; blocks on schema errors |
 
 ## Composite Actions
@@ -33,7 +33,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 | GitHub Actionlint | [`github-actionlint`](.github/actions/github-actionlint/action.yml) | Lints workflow and action YAML files using actionlint via reviewdog; posts annotations as GitHub Checks | None |
 | Zizmor | [`zizmor`](.github/actions/zizmor/action.yml) | Runs zizmor static security analysis against workflow and action YAML files; uploads findings as SARIF to the Security tab | None |
 | OpenSSF Scorecard | [`scorecard`](.github/actions/scorecard/action.yml) | Runs OpenSSF Scorecard checks; uploads SARIF to the Security tab | `publish_results` (default: `false` — always fails with HTTP 400 if set to `true`; see action description) |
-| Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or non-permitted licenses; posts a summary comment. Also supports non-PR invocation via `base-ref`/`head-ref`. | `fail-on-severity` (default: `high`), `allow-licenses` (default: the allowed class of [`docs/license-policy.md`](docs/license-policy.md)), `allow-dependencies-licenses` (default: `""`; purls exempt from the licence check), `comment-summary-in-pr` (default: `on-failure`), `base-ref` (default: `""`), `head-ref` (default: `""`) |
+| Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities, non-permitted licenses, or no detectable licence (GitHub Actions pins excepted); posts a summary comment. An empty `allow-licenses` fails instead of turning the licence check off. Also supports non-PR invocation via `base-ref`/`head-ref`. | `fail-on-severity` (default: `high`), `allow-licenses` (default: the allowed class of [`docs/license-policy.md`](docs/license-policy.md)), `allow-dependencies-licenses` (default: `""`; purls exempt from the licence check), `comment-summary-in-pr` (default: `on-failure`), `base-ref` (default: `""`), `head-ref` (default: `""`) |
 | Storage Optimizer | [`storage-optimizer`](.github/actions/storage-optimizer/action.yml) | Frees disk space on GitHub-hosted runners by removing unused toolchains (JDK, .NET, Swift, Android SDK, etc.) and pruning Docker | None |
 | Terramate + OpenTofu Setup | [`terramate-opentofu-setup`](.github/actions/terramate-opentofu-setup/action.yml) | Installs Terramate and OpenTofu, validates generated files are up to date, initialises changed stacks, and lists changed stacks | `opentofu_version` (default: `1.10.0`), `terramate_version` (default: `0.14.7`) |
 | AWS OIDC Auth | [`aws-oidc-auth`](.github/actions/aws-oidc-auth/action.yml) | Assumes an IAM role via GitHub OIDC — no static credentials stored; enforces traceable session name `{repo}-{run_id}` | `role-arn` (required), `aws-region` (required), `role-session-name` (default: `{repo}-{run_id}`) |
@@ -136,6 +136,7 @@ jobs:
     uses: sparkgeo/github-actions/.github/workflows/license-scan.yml@<SHA>
     with:
       actions-ref: <SHA>   # same SHA as above
+      # runs-on: ubuntu-latest   # without the Blacksmith GitHub App
 ```
 
 ### Storage Optimizer

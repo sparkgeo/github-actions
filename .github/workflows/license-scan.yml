@@ -37,6 +37,13 @@ on:
         description: 'Post a summary comment on the PR: always|on-failure|never'
         default: 'on-failure'
         type: string
+      runs-on:
+        description: >-
+          Runner label. Default: Blacksmith x64. Use ubuntu-latest in repos
+          without the Blacksmith GitHub App (otherwise the job waits for a
+          runner until GitHub cancels it).
+        default: 'blacksmith-2vcpu-ubuntu-2404'
+        type: string
       actions-ref:
         description: >-
           Ref or commit SHA of sparkgeo/github-actions to load the
@@ -45,16 +52,21 @@ on:
         default: 'main'
         type: string
 
-# No permissions block: a reusable workflow inherits the caller job's granted
-# permissions. The caller grants `contents: read` and `pull-requests: write`
-# for the summary comment.
+permissions:
+  contents: read
+
 jobs:
   license-scan:
     name: License scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 10
+    # The most this job needs; the caller grants the same or less.
+    permissions:
+      contents: read
+      pull-requests: write   # summary comment
     steps:
       - name: Checkout repository under test
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           persist-credentials: false
 
@@ -62,7 +74,7 @@ jobs:
       # then invoke it locally. Keeps the action reference immutable (no mutable
       # cross-repo @main) while honouring the repo's SHA-pin policy.
       - name: Checkout dependency-review composite action
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
         with:
           repository: sparkgeo/github-actions
           ref: ${{ inputs.actions-ref }}
@@ -71,7 +83,7 @@ jobs:
 
       - uses: ./.sparkgeo-github-actions/.github/actions/dependency-review
         with:
-          allow-licenses: ${{ inputs.allow-with-notice && format('{0}, {1}', inputs.allow-licenses, 'MPL-2.0, LGPL-2.1-only, LGPL-2.1-or-later, LGPL-3.0-only, LGPL-3.0-or-later, EPL-1.0, EPL-2.0, CDDL-1.0, CDDL-1.1, OFL-1.1, CC-BY-4.0') || inputs.allow-licenses }}
+          allow-licenses: ${{ inputs.allow-with-notice && format('{0}, {1}', inputs.allow-licenses, 'MPL-2.0, LGPL-2.1, LGPL-2.1-only, LGPL-2.1-or-later, LGPL-3.0, LGPL-3.0-only, LGPL-3.0-or-later, EPL-1.0, EPL-2.0, CDDL-1.0, CDDL-1.1, OFL-1.1, CC-BY-4.0') || inputs.allow-licenses }}
           allow-dependencies-licenses: ${{ inputs.allow-dependencies-licenses }}
           fail-on-severity: ${{ inputs.fail-on-severity }}
           comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}

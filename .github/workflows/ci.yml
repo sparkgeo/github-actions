@@ -251,7 +251,9 @@ jobs:
           head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
 
   # Dogfood the licence gate (#69): the reusable workflow with the policy
-  # allowlist, loading the composite from this PR's own commit.
+  # allowlist, loading the composite from this PR's own commit. The
+  # dependency-review job above stays the required check and owns the PR
+  # comment; this one only tests the reusable workflow, so it never comments.
   license-scan:
     name: License Scan
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before != '0000000000000000000000000000000000000000')
@@ -261,6 +263,7 @@ jobs:
     uses: ./.github/workflows/license-scan.yml
     with:
       actions-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      comment-summary-in-pr: never
 
   # Verify Terramate and OpenTofu are installed correctly.
   # Terramate stack steps are no-ops in this repo (no stacks defined).
