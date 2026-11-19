@@ -3,7 +3,7 @@ description: "Lints GitHub Actions workflow and composite action YAML files usin
 runs:
   using: "composite"
   steps:
-    - uses: reviewdog/action-actionlint@419a49378266e892f40c773b4f2fc6de9aa87499  # v1.80.4
+    - uses: reviewdog/action-actionlint@ae857e78c1b42b3d0a49637181b09d3d56d402b4  # v1.84.1
       with:
         github_token: ${{ github.token }}
         # github-check creates a separate check run and then PATCHes it; the PATCH
