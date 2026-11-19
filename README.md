@@ -29,7 +29,7 @@ gh api repos/sparkgeo/github-actions/commits/main --jq '.sha'
 
 | Action | Path | Purpose | Inputs |
 |---|---|---|---|
-| GitHub Actionlint | [`github-actionlint`](.github/actions/github-actionlint/action.yml) | Lints workflow and action YAML files using actionlint via reviewdog; posts annotations as GitHub Checks | None |
+| GitHub Actionlint | [`github-actionlint`](.github/actions/github-actionlint/action.yml) | Lints workflow and action YAML files using actionlint via reviewdog; posts findings as workflow annotations | None |
 | Zizmor | [`zizmor`](.github/actions/zizmor/action.yml) | Runs zizmor static security analysis against workflow and action YAML files; uploads findings as SARIF to the Security tab | None |
 | OpenSSF Scorecard | [`scorecard`](.github/actions/scorecard/action.yml) | Runs OpenSSF Scorecard checks; uploads SARIF to the Security tab | `publish_results` (default: `false` — always fails with HTTP 400 if set to `true`; see action description) |
 | Dependency Review | [`dependency-review`](.github/actions/dependency-review/action.yml) | Blocks PRs introducing dependencies with known vulnerabilities or non-permitted licenses; posts a summary comment. Also supports non-PR invocation via `base-ref`/`head-ref`. | `fail-on-severity` (default: `high`), `allow-licenses` (default: `MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, CC0-1.0`), `allow-dependencies-licenses` (default: `""`; purls exempt from the licence check), `comment-summary-in-pr` (default: `on-failure`), `base-ref` (default: `""`), `head-ref` (default: `""`) |
@@ -50,7 +50,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      checks: write
     steps:
       - uses: actions/checkout@<SHA>
         with:
@@ -395,7 +394,7 @@ permissions:
 jobs:
   actionlint:
     runs-on: ubuntu-latest
-    permissions: { contents: read, checks: write }
+    permissions: { contents: read }
     steps:
       - uses: step-security/harden-runner@<SHA>
         with: { egress-policy: audit }
@@ -451,7 +450,7 @@ permissions:
 jobs:
   actionlint:
     runs-on: ubuntu-latest
-    permissions: { contents: read, checks: write }
+    permissions: { contents: read }
     steps:
       # harden-runner omitted — sends egress telemetry to StepSecurity (third party)
       - uses: actions/checkout@<SHA>

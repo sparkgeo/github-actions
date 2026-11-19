@@ -21,7 +21,7 @@ This is enforced at: **Org Settings → Actions → General → Allow selected a
 | `actions/dependency-review-action` | GitHub (org-owned) | `a1d282b3` (v5.0.0) | `dependency-review` | Block PRs with vulnerable/denied-license deps | 2026-05-21 |
 | `github/codeql-action/upload-sarif` | GitHub (org-owned) | `9e0d7b8d` (v4.35.5) | `scorecard`, `zizmor` | Upload SARIF to GitHub Security tab | 2026-05-21 |
 | `ossf/scorecard-action` | OpenSSF | `4eaacf05` (v2.4.3) | `scorecard` | OpenSSF Scorecard supply-chain checks | 2026-05-21 |
-| `reviewdog/action-actionlint` | reviewdog | `6fb7acc9` (v1.72.0) | `github-actionlint` | Actionlint via reviewdog; posts Check annotations | 2026-05-21 |
+| `reviewdog/action-actionlint` | reviewdog | `6fb7acc9` (v1.72.0) | `github-actionlint` | Actionlint via reviewdog; posts workflow annotations | 2026-05-21 |
 | `zizmorcore/zizmor-action` | zizmorcore | `5f14fd08` (v0.5.6) | `zizmor` | Zizmor static security analysis; uploads SARIF | 2026-05-21 |
 | `opentofu/setup-opentofu` | OpenTofu | `847eaa4a` (v2.0.1) | `terramate-opentofu-setup` | Install OpenTofu CLI | 2026-05-21 |
 | `step-security/harden-runner` | StepSecurity | `9af89fc7` (v2.19.4) | `ci.yml` (all jobs) | Runner egress monitor — audits outbound network calls; baseline for enforce mode | 2026-06-01 |
