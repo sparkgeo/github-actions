@@ -55,7 +55,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository under test
-        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
+        uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # v1.8.2
         with:
           persist-credentials: false
 
@@ -63,7 +63,7 @@ jobs:
       # then invoke it locally. Keeps the action reference immutable (no mutable
       # cross-repo @main) while honouring the repo's SHA-pin policy.
       - name: Checkout kubeconform composite action
-        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
+        uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # v1.8.2
         with:
           repository: sparkgeo/github-actions
           ref: ${{ inputs.actions-ref }}

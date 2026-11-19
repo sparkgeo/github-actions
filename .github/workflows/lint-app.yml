@@ -74,7 +74,7 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     steps:
       - name: Checkout repository under test
-        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
+        uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # v1.8.2
         with:
           persist-credentials: false
           fetch-depth: 0  # MegaLinter needs history to diff against the base
