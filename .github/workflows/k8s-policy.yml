@@ -1,0 +1,83 @@
+name: K8s Policy
+
+# Reusable PR gate that enforces Sparkgeo org policy on rendered Kubernetes
+# manifests. Renders each Helm chart (helm template) / Kustomize overlay
+# (kustomize build) and evaluates the output with conftest (OPA/Rego) against
+# the policy bundle shipped in this repo (.github/actions/k8s-policy/policies).
+# Blocks on any deny. Org-specific rules live here, not in trivy/checkov.
+#
+# Deliberately does NOT use step-security/harden-runner: this workflow runs in
+# the caller's context and may be consumed by private repos where third-party
+# CI telemetry is not acceptable. See docs/approved-actions.md.
+
+on:
+  workflow_call:
+    inputs:
+      charts-dir:
+        description: 'Directory containing Helm charts (empty to skip)'
+        default: 'charts'
+        type: string
+      kustomize-dir:
+        description: 'Directory containing Kustomize overlays (empty to skip)'
+        default: ''
+        type: string
+      policy-path:
+        description: 'Extra Rego policy directory in the calling repo, evaluated alongside the bundled set'
+        default: ''
+        type: string
+      data-path:
+        description: 'Directory of YAML/JSON data files (e.g. k8s_policy.allowed_registries override)'
+        default: ''
+        type: string
+      fail-on-warn:
+        description: 'Also fail on warn results'
+        default: false
+        type: boolean
+      actions-ref:
+        description: >-
+          Ref or commit SHA of sparkgeo/github-actions to load the k8s-policy
+          composite (and its policy bundle) from. Pin this to the SAME SHA you
+          pinned k8s-policy.yml to, so the whole workflow is immutable.
+        default: 'main'
+        type: string
+    outputs:
+      deny-count:
+        description: 'Number of policy denies'
+        value: ${{ jobs.conftest.outputs.deny-count }}
+
+permissions:
+  contents: read
+
+jobs:
+  conftest:
+    name: Conftest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deny-count: ${{ steps.policy.outputs.deny-count }}
+    steps:
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Load the composite action at the caller-pinned ref into a fixed path,
+      # then invoke it locally. Keeps the action reference immutable (no mutable
+      # cross-repo @main) while honouring the repo's SHA-pin policy.
+      - name: Checkout k8s-policy composite action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: sparkgeo/github-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .sparkgeo-github-actions
+          persist-credentials: false
+
+      - id: policy
+        uses: ./.sparkgeo-github-actions/.github/actions/k8s-policy
+        with:
+          charts-dir: ${{ inputs.charts-dir }}
+          kustomize-dir: ${{ inputs.kustomize-dir }}
+          policy-path: ${{ inputs.policy-path }}
+          data-path: ${{ inputs.data-path }}
+          fail-on-warn: ${{ inputs.fail-on-warn }}

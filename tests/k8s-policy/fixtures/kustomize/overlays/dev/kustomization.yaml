@@ -1,0 +1,5 @@
+resources:
+  - ../../base
+images:
+  - name: ghcr.io/sparkgeo/api
+    newTag: 2.3.1

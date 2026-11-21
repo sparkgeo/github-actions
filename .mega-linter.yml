@@ -31,6 +31,10 @@ DISABLE_ERRORS_LINTERS:
   - MARKDOWN_MARKDOWNLINT
   - MARKDOWN_MARKDOWN_TABLE_FORMATTER
 
+# Recorded tool output and deliberately insecure inputs used by tests/*/run.sh
+# and the CI dogfood jobs; not code to lint.
+FILTER_REGEX_EXCLUDE: 'tests/[^/]+/fixtures/'
+
 SHOW_ELAPSED_TIME: true
 FLAVOR_SUGGESTIONS: false
 PRINT_ALPACA: false
