@@ -1,0 +1,6 @@
+apiVersion: v2
+name: insecure
+description: Fixture chart with deliberate misconfigurations for the k8s-scan gate
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
